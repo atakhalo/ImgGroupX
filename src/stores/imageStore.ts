@@ -22,6 +22,8 @@ const defaultSettings: AppSettings = {
   rootTitleBgColor: '#222240',
   childTitleBgColor: '#1a1a2e',
   language: 'zh',
+  viewerBgMode: 'overlay',
+  viewerBgColor: '#202020',
 }
 
 /** 全局状态 */

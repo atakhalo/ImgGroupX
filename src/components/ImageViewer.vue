@@ -30,6 +30,14 @@ const offset = ref({ x: 0, y: 0 })
 
 const currentItem = computed(() => props.images[currentIndex.value])
 
+const backdropStyle = computed(() => {
+  if (state.settings.viewerBgMode === 'color') {
+    return { background: state.settings.viewerBgColor }
+  }
+  // overlay 模式保持原有蒙灰效果
+  return { background: 'rgba(0, 0, 0, 0.85)' }
+})
+
 function formatSize(bytes?: number): string {
   if (bytes == null) return ''
   if (bytes < 1024) return bytes + 'B'
@@ -75,8 +83,8 @@ function handleKeydown(e: KeyboardEvent) {
 
 function prevImage() { if (currentIndex.value > 0) currentIndex.value-- }
 function nextImage() { if (currentIndex.value < props.images.length - 1) currentIndex.value++ }
-function zoomIn() { scale.value = Math.min(5, scale.value + 0.25) }
-function zoomOut() { scale.value = Math.max(0.1, scale.value - 0.25) }
+function zoomIn() { scale.value = Math.min(5, scale.value + 0.1) }
+function zoomOut() { scale.value = Math.max(0.1, scale.value - 0.1) }
 function fitToWindow() { scale.value = 1; offset.value = { x: 0, y: 0 } }
 
 function toggleFullscreen() {
@@ -93,7 +101,7 @@ function exitFullscreen() {
 
 function handleWheel(e: WheelEvent) {
   e.preventDefault()
-  scale.value = Math.max(0.1, Math.min(10, scale.value + (e.deltaY > 0 ? -0.25 : 0.25)))
+  scale.value = Math.max(0.1, Math.min(10, scale.value + (e.deltaY > 0 ? -0.1 : 0.1)))
 }
 
 function togglePanMode() { panMode.value = !panMode.value }
@@ -145,7 +153,7 @@ function handleDeleteImage() {
     :class="{ fullscreen: isFullscreen }"
     @wheel="handleWheel"
   >
-    <div class="viewer-backdrop"></div>
+    <div class="viewer-backdrop" :style="backdropStyle"></div>
 
     <div class="viewer-content">
       <div

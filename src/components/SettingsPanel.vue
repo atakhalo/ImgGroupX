@@ -46,6 +46,8 @@ function reset() {
     rootTitleBgColor: '#222240',
     childTitleBgColor: '#1a1a2e',
     language: 'zh',
+    viewerBgMode: 'overlay',
+    viewerBgColor: '#202020',
   }
 }
 </script>
@@ -122,6 +124,23 @@ function reset() {
               <label>{{ $t('settings.child_bg') }}</label>
               <input type="color" v-model="localSettings.childTitleBgColor" class="color-input" />
               <span class="setting-value" :style="{ backgroundColor: localSettings.childTitleBgColor }">&nbsp;&nbsp;&nbsp;&nbsp;</span>
+            </div>
+          </div>
+
+          <!-- 大图背景 -->
+          <div class="setting-section">
+            <h4>{{ $t('settings.viewer_bg') }}</h4>
+            <div class="setting-row">
+              <label>{{ $t('settings.viewer_bg_mode') }}</label>
+              <select v-model="localSettings.viewerBgMode" class="language-select">
+                <option value="overlay">{{ $t('settings.viewer_bg_overlay') }}</option>
+                <option value="color">{{ $t('settings.viewer_bg_color') }}</option>
+              </select>
+            </div>
+            <div class="setting-row" v-if="localSettings.viewerBgMode === 'color'">
+              <label>{{ $t('settings.viewer_bg_color_pick') }}</label>
+              <input type="color" v-model="localSettings.viewerBgColor" class="color-input" />
+              <span class="setting-value">{{ localSettings.viewerBgColor }}</span>
             </div>
           </div>
 

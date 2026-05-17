@@ -33,6 +33,11 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.select_program': '选择程序',
     'settings.exe_filter': '可执行文件',
     'settings.language': '语言',
+    'settings.viewer_bg': '大图背景',
+    'settings.viewer_bg_mode': '背景模式',
+    'settings.viewer_bg_overlay': '蒙灰',
+    'settings.viewer_bg_color': '纯色背景',
+    'settings.viewer_bg_color_pick': '背景颜色',
 
     // 控制栏
     'control.open': '打开',
@@ -162,6 +167,11 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.select_program': 'Select Program',
     'settings.exe_filter': 'Executables',
     'settings.language': 'Language',
+    'settings.viewer_bg': 'Viewer Background',
+    'settings.viewer_bg_mode': 'Background Mode',
+    'settings.viewer_bg_overlay': 'Dark Overlay',
+    'settings.viewer_bg_color': 'Solid Color',
+    'settings.viewer_bg_color_pick': 'Background Color',
 
     'control.open': 'Open',
     'control.images': 'Images',

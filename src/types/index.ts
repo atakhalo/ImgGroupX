@@ -57,6 +57,9 @@ export type SortOrder = 'asc' | 'desc'
 /** 筛选目标 */
 export type FilterTarget = 'name' | 'group' | 'path'
 
+/** 大图查看器背景模式 */
+export type ViewerBgMode = 'overlay' | 'color'
+
 /** 应用设置 */
 export interface AppSettings {
   /** 格子圆角 */
@@ -93,4 +96,8 @@ export interface AppSettings {
   childTitleBgColor: string
   /** 界面语言 */
   language: 'zh' | 'en'
+  /** 大图查看器背景模式：'overlay' 蒙灰 | 'color' 纯色背景 */
+  viewerBgMode: ViewerBgMode
+  /** 大图查看器背景颜色（color 模式时使用） */
+  viewerBgColor: string
 }
