@@ -9,6 +9,7 @@ import FolderPanel from './components/FolderPanel.vue'
 import FilterSortBar from './components/FilterSortBar.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import CompareViewer from './components/CompareViewer.vue'
+import LoadPanel from './components/LoadPanel.vue'
 import { open, ask } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
@@ -291,6 +292,11 @@ function handleContentWheel(e: WheelEvent) {
     state.settings.gridSize = Math.max(10, Math.min(400, state.settings.gridSize + delta))
   }
 }
+
+function handleLoadPanelRelease() {
+  // 释放后，可见的 GridItem 会自动重新加载
+  // LoadPanel 已调用 releaseBase64，这里通知 GridView 重置显示上限
+}
 </script>
 
 <template>
@@ -301,6 +307,7 @@ function handleContentWheel(e: WheelEvent) {
     <div class="main-area">
       <div class="top-bar">
         <FilterSortBar @openSettings="openSettings" />
+        <LoadPanel @releaseAll="handleLoadPanelRelease" />
       </div>
 
       <div class="content-area" @wheel="handleContentWheel">
@@ -433,7 +440,7 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
 .app-root { width: 100%; height: 100vh; display: flex; flex-direction: column; background-color: #1a1a2e; position: relative; overflow: hidden; }
 .app-root.drag-over { background-color: #1a1a3e; }
 .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
-.top-bar { padding: 8px 16px 0; flex-shrink: 0; }
+.top-bar { padding: 8px 16px 0; flex-shrink: 0; display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
 .content-area { flex: 1; overflow-y: auto; overflow-x: hidden; }
 
 /* 未分组模式下的虚拟分组区域 */

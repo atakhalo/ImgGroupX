@@ -105,6 +105,13 @@ const messages: Record<Lang, Record<string, string>> = {
     'dialog.select_images': '选择图片',
     'dialog.image_filter': '图片',
 
+    // 加载面板
+    'load.total': '总数',
+    'load.loaded': '已加载',
+    'load.memory': '内存',
+    'load.release': '释放',
+    'load.release_hint': '释放所有已缓存的图片缩略图以节省内存',
+
     // 错误
     'error.scan_failed': '扫描文件夹失败',
     'error.open_failed': '打开图片失败',
@@ -219,6 +226,13 @@ const messages: Record<Lang, Record<string, string>> = {
     'dialog.image_filter': 'Images',
 
     'error.scan_failed': 'Failed to scan folder',
+
+    // Load Panel
+    'load.total': 'Total',
+    'load.loaded': 'Loaded',
+    'load.memory': 'Memory',
+    'load.release': 'Release',
+    'load.release_hint': 'Release all cached thumbnails to free memory',
     'error.open_failed': 'Failed to open images',
     'error.load_failed': 'Failed to load files',
     'error.save_config': 'Failed to save config',

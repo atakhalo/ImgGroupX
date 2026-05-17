@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { ImageItem } from '../types'
-import { state, getProcessedImages } from '../stores/imageStore'
+import { state, getProcessedImages, releaseBase64, getLoadStats } from '../stores/imageStore'
 import GridItem from './GridItem.vue'
 
 const props = defineProps<{
@@ -13,11 +13,55 @@ const emit = defineEmits<{
   selectImage: [item: ImageItem, ctrl: boolean]
 }>()
 
-const containerRef = ref<HTMLElement | null>(null)
+const sentinelRef = ref<HTMLElement | null>(null)
 
-const processedImages = computed(() => {
-  return getProcessedImages(props.images)
-})
+/** 初始 DOM 渲染上限 */
+const INITIAL_LIMIT = 100
+/** 每次增量 */
+const LOAD_MORE = 50
+const MIN_KEEP = 100
+
+const displayLimit = ref(INITIAL_LIMIT)
+
+const processedImages = computed(() => getProcessedImages(props.images))
+
+/** 当前 DOM 中渲染的图片 */
+const visibleImages = computed(() =>
+  processedImages.value.slice(0, displayLimit.value)
+)
+
+const hasMore = computed(() => displayLimit.value < processedImages.value.length)
+
+let sentinelObserver: IntersectionObserver | null = null
+
+function setupSentinel() {
+  if (!sentinelRef.value) return
+  sentinelObserver?.disconnect()
+  sentinelObserver = new IntersectionObserver((entries) => {
+    if (entries[0]?.isIntersecting) {
+      loadMore()
+    }
+  }, { rootMargin: '800px' })
+  sentinelObserver.observe(sentinelRef.value)
+}
+
+function loadMore() {
+  if (displayLimit.value < processedImages.value.length) {
+    displayLimit.value = Math.min(
+      displayLimit.value + LOAD_MORE,
+      processedImages.value.length
+    )
+  }
+}
+
+/** 释放所有 base64（保留当前可见范围） */
+function releaseAll() {
+  displayLimit.value = Math.max(MIN_KEEP, Math.min(displayLimit.value, processedImages.value.length))
+  const keepPaths = new Set(
+    processedImages.value.slice(0, displayLimit.value + LOAD_MORE).map(i => i.path)
+  )
+  releaseBase64(keepPaths)
+}
 
 function handleClick(item: ImageItem) {
   emit('viewImage', item, processedImages.value)
@@ -30,11 +74,25 @@ function handleSelect(item: ImageItem, ctrl: boolean) {
 function isSelected(item: ImageItem): boolean {
   return state.selectedPaths.has(item.path)
 }
+
+defineExpose({ releaseAll, loadMore, getLoadStats: () => getLoadStats() })
+
+onMounted(() => {
+  nextTick(() => setupSentinel())
+})
+
+onUnmounted(() => {
+  sentinelObserver?.disconnect()
+})
+
+watch(() => props.images, () => {
+  displayLimit.value = INITIAL_LIMIT
+  nextTick(() => setupSentinel())
+}, { deep: false })
 </script>
 
 <template>
   <div
-    ref="containerRef"
     class="grid-container"
     :style="{
       gap: state.settings.gap + 'px',
@@ -48,7 +106,7 @@ function isSelected(item: ImageItem): boolean {
       }"
     >
       <GridItem
-        v-for="item in processedImages"
+        v-for="item in visibleImages"
         :key="item.path"
         :item="item"
         :gridSize="state.settings.gridSize"
@@ -57,6 +115,17 @@ function isSelected(item: ImageItem): boolean {
         @click="handleClick"
         @select="handleSelect"
       />
+
+      <!-- 加载哨兵 -->
+      <div
+        v-if="hasMore"
+        ref="sentinelRef"
+        class="load-sentinel"
+      >
+        <span class="load-more-hint">
+          已显示 {{ displayLimit }} / {{ processedImages.length }}
+        </span>
+      </div>
     </div>
     <div v-if="processedImages.length === 0 && !state.loading" class="empty-hint">
       <p>{{ $t('empty.no_results') }}</p>
@@ -89,6 +158,20 @@ function isSelected(item: ImageItem): boolean {
   height: 60px;
   color: rgba(255, 255, 255, 0.25);
   font-size: 14px;
+  user-select: none;
+}
+
+.load-sentinel {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.load-more-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.25);
   user-select: none;
 }
 </style>

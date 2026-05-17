@@ -376,6 +376,46 @@ export async function loadImageBase64(item: ImageItem): Promise<string> {
   }
 }
 
+/** 批量加载base64（带并发控制） */
+export async function loadImageBase64Batch(items: ImageItem[], concurrency = 4): Promise<void> {
+  const toLoad = items.filter(i => !i.base64 && !i.loading)
+  if (toLoad.length === 0) return
+
+  let idx = 0
+  async function worker() {
+    while (idx < toLoad.length) {
+      const item = toLoad[idx++]
+      try {
+        await loadImageBase64(item)
+      } catch { /* 单个失败不中断批量 */ }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, toLoad.length) }, () => worker()))
+}
+
+/** 释放base64缓存（保留 keepPaths 中的图片） */
+export function releaseBase64(keepPaths: Set<string>) {
+  for (const img of state.allImages) {
+    if (img.base64 && !keepPaths.has(img.path)) {
+      img.base64 = undefined
+    }
+  }
+}
+
+/** 获取已加载统计 */
+export function getLoadStats(): { total: number; loaded: number; memoryBytes: number } {
+  let loaded = 0
+  let memoryBytes = 0
+  for (const img of state.allImages) {
+    if (img.base64) {
+      loaded++
+      // base64 字符串 ≈ 原始字节的 4/3，这里粗略按字符数估算
+      memoryBytes += img.base64.length
+    }
+  }
+  return { total: state.allImages.length, loaded, memoryBytes }
+}
+
 /** 在资源管理器中打开 */
 export async function openInExplorer(path: string): Promise<void> {
   await invoke('open_in_explorer', { path })
