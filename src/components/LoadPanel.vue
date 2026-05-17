@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { state, getLoadStats, releaseBase64 } from '../stores/imageStore'
+import { getLoadStats, releaseBase64 } from '../stores/imageStore'
 
 const emit = defineEmits<{
   releaseAll: []
