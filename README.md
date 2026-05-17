@@ -1,8 +1,11 @@
 # 格图X - 图片分组浏览器
 
-[功能清单](Docs/功能清单.md)
-[技术架构](Docs/技术架构.md)
-[开发指南](Docs/开发指南.md)
+<img src="DocImage/view.webp" height ="150">
+
+<img src="DocImage/bigView.webp" height ="150">
+
+<img src="DocImage/compare.webp" height ="150">
+
 
 # 核心功能
 分组网格视图：
@@ -12,8 +15,12 @@
 # 其他功能
 对比功能
 1. 可选择两张图片进行对比
+
 筛选功能
 1. 可按文件名、分组、路径 进行筛选；
 2. 可保存为预设
 
-
+# 文档
+[功能清单](Docs/功能清单.md)
+[技术架构](Docs/技术架构.md)
+[开发指南](Docs/开发指南.md)
