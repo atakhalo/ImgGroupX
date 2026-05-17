@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vue-tsc *)",
+      "Bash(cargo check *)",
+      "Bash(xxd)"
+    ]
+  }
+}

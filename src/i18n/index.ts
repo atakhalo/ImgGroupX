@@ -1,0 +1,251 @@
+import { state } from '../stores/imageStore'
+
+type Lang = 'zh' | 'en'
+
+const messages: Record<Lang, Record<string, string>> = {
+  zh: {
+    // 通用
+		'app.title': 'ImgGroup - 图片分组浏览器',
+
+    // 设置面板
+    'settings.title': '设置',
+    'settings.apply': '应用',
+    'settings.reset': '重置',
+    'settings.grid_style': '格子样式',
+    'settings.border_radius': '圆角',
+    'settings.gap': '间距',
+    'settings.grid_size': '格子大小',
+    'settings.bg_color': '背景色',
+    'settings.title_color': '组标题颜色',
+    'settings.root_text': '根-文字',
+    'settings.root_bg': '根-背景',
+    'settings.child_text': '子-文字',
+    'settings.child_bg': '子-背景',
+    'settings.preview': '预览',
+    'settings.filter_presets': '筛选预设',
+    'settings.presets_hint': '可在筛选栏快速切换',
+    'settings.add_preset': '+ 添加预设',
+    'settings.regex_placeholder': '正则表达式...',
+    'settings.open_with': '其他打开方式',
+    'settings.open_with_hint': '在大图查看的"打开"菜单中显示',
+    'settings.program_placeholder': '程序路径，如 C:\\Program Files\\...\\app.exe',
+    'settings.add_program': '+ 添加程序',
+    'settings.select_program': '选择程序',
+    'settings.exe_filter': '可执行文件',
+    'settings.language': '语言',
+
+    // 控制栏
+    'control.open': '打开',
+    'control.images': '图片',
+    'control.group': '分组',
+    'control.title': '标题',
+    'control.collapse_all': '全部折叠',
+    'control.expand_all': '全部展开',
+    'control.view': '查看',
+    'control.select': '选择',
+    'control.selected': '已选',
+    'control.new_group': '新分组',
+    'control.compare': '对比',
+    'control.clear': '清空',
+
+    // 筛选排序栏
+    'filter.sort': '排序',
+    'filter.sort_name': '文件名',
+    'filter.sort_modified': '修改日期',
+    'filter.sort_size': '文件大小',
+    'filter.asc': '升序',
+    'filter.desc': '降序',
+    'filter.file': '文件',
+    'filter.group': '分组',
+    'filter.path': '路径',
+    'filter.placeholder': '正则筛选...',
+    'filter.presets': '筛选预设',
+
+    // 文件夹组
+    'folder.remove': '移除此文件夹',
+    'folder.remove_group': '删除分组「{name}」',
+
+    // 空状态
+    'empty.drop_hint': '拖入图片或文件夹到此处',
+    'empty.format_hint': '支持 JPG、PNG、WebP 格式',
+    'empty.no_results': '无',
+
+    // 大图查看器
+    'viewer.fullscreen': '全屏查看',
+    'viewer.exit_fullscreen': '退出全屏',
+    'viewer.hide_info': '隐藏信息',
+    'viewer.show_info': '显示信息',
+    'viewer.open': '打开',
+    'viewer.explorer': '资源管理器',
+    'viewer.default': '默认方式',
+    'viewer.close': '关闭',
+
+    // 对比视图
+    'compare.drag_hint': '拖动中间分隔条对比',
+
+    // 图片信息
+    'image.fit_window': '适应窗口',
+    'image.zoom_in': '放大',
+    'image.zoom_out': '缩小',
+    'image.pan': '平移模式',
+
+    // 提示
+    'hint.loading': '正在加载...',
+    'hint.drag_over': '拖入图片或文件夹',
+    'hint.create_group': '创建虚拟分组',
+    'hint.selected_count': '已选择 {n} 张图片',
+    'hint.group_name': '输入分组名称（可选）',
+    'hint.no_meta': '无元数据',
+    'hint.copy_all': '复制全部',
+    'hint.copy_field': '复制此字段',
+    'hint.meta_title': '图片元信息',
+
+    // 文件夹对话框
+    'dialog.select_folder': '选择文件夹',
+    'dialog.select_images': '选择图片',
+    'dialog.image_filter': '图片',
+
+    // 错误
+    'error.scan_failed': '扫描文件夹失败',
+    'error.open_failed': '打开图片失败',
+    'error.load_failed': '加载文件失败',
+    'error.save_config': '保存配置失败',
+    'error.drag_register': '拖拽事件注册失败',
+    'error.explorer_open': '在资源管理器中打开失败',
+    'error.default_open': '默认方式打开失败',
+    'error.external_open': '外部程序打开失败',
+
+    // 设置面板-按钮
+    'settings.btn_browse': '...',
+
+    // 控制栏标题
+    'control.open_folder': '打开文件夹',
+    'control.open_images': '打开图片',
+    'control.toggle_group': '切换为紧凑模式',
+    'control.toggle_compact': '切换为分组模式',
+    'control.toggle_titles': '显示/隐藏分组标题',
+            'virtual_group_default': '临时图片分组',
+  },
+
+  en: {
+	  'app.title': 'ImgGroup - Image Group Browser',
+
+    'settings.title': 'Settings',
+    'settings.apply': 'Apply',
+    'settings.reset': 'Reset',
+    'settings.grid_style': 'Grid Style',
+    'settings.border_radius': 'Radius',
+    'settings.gap': 'Gap',
+    'settings.grid_size': 'Grid Size',
+    'settings.bg_color': 'Background',
+    'settings.title_color': 'Title Color',
+    'settings.root_text': 'Root-Text',
+    'settings.root_bg': 'Root-BG',
+    'settings.child_text': 'Child-Text',
+    'settings.child_bg': 'Child-BG',
+    'settings.preview': 'Preview',
+    'settings.filter_presets': 'Filter Presets',
+    'settings.presets_hint': 'Quick switch in filter bar',
+    'settings.add_preset': '+ Add Preset',
+    'settings.regex_placeholder': 'Regex pattern...',
+    'settings.open_with': 'Open With',
+    'settings.open_with_hint': 'Shown in viewer "Open" menu',
+    'settings.program_placeholder': 'Program path, e.g. C:\\Program Files\\...\\app.exe',
+    'settings.add_program': '+ Add Program',
+    'settings.select_program': 'Select Program',
+    'settings.exe_filter': 'Executables',
+    'settings.language': 'Language',
+
+    'control.open': 'Open',
+    'control.images': 'Images',
+    'control.group': 'Group',
+    'control.title': 'Title',
+    'control.collapse_all': 'Collapse All',
+    'control.expand_all': 'Expand All',
+    'control.view': 'View',
+    'control.select': 'Select',
+    'control.selected': 'Selected',
+    'control.new_group': 'New Group',
+    'control.compare': 'Compare',
+    'control.clear': 'Clear',
+
+    'filter.sort': 'Sort',
+    'filter.sort_name': 'Name',
+    'filter.sort_modified': 'Modified',
+    'filter.sort_size': 'Size',
+    'filter.asc': 'Asc',
+    'filter.desc': 'Desc',
+    'filter.file': 'File',
+    'filter.group': 'Group',
+    'filter.path': 'Path',
+    'filter.placeholder': 'Regex filter...',
+    'filter.presets': 'Filter Presets',
+
+    'folder.remove': 'Remove this folder',
+    'folder.remove_group': 'Remove group "{name}"',
+
+    'empty.drop_hint': 'Drop images or folders here',
+    'empty.format_hint': 'Supports JPG, PNG, WebP formats',
+    'empty.no_results': 'None',
+
+    'viewer.fullscreen': 'Fullscreen',
+    'viewer.exit_fullscreen': 'Exit Fullscreen',
+    'viewer.hide_info': 'Hide Info',
+    'viewer.show_info': 'Show Info',
+    'viewer.open': 'Open',
+    'viewer.explorer': 'Explorer',
+    'viewer.default': 'Default',
+    'viewer.close': 'Close',
+
+    'compare.drag_hint': 'Drag the divider to compare',
+
+    'image.fit_window': 'Fit to Window',
+    'image.zoom_in': 'Zoom In',
+    'image.zoom_out': 'Zoom Out',
+    'image.pan': 'Pan Mode',
+
+    'hint.loading': 'Loading...',
+    'hint.drag_over': 'Drop images or folders',
+    'hint.create_group': 'Create Virtual Group',
+    'hint.selected_count': '{n} images selected',
+    'hint.group_name': 'Enter group name (optional)',
+    'hint.no_meta': 'No metadata',
+    'hint.copy_all': 'Copy All',
+    'hint.copy_field': 'Copy this field',
+    'hint.meta_title': 'Image Metadata',
+
+    'dialog.select_folder': 'Select Folder',
+    'dialog.select_images': 'Select Images',
+    'dialog.image_filter': 'Images',
+
+    'error.scan_failed': 'Failed to scan folder',
+    'error.open_failed': 'Failed to open images',
+    'error.load_failed': 'Failed to load files',
+    'error.save_config': 'Failed to save config',
+    'error.drag_register': 'Failed to register drag-drop',
+    'error.explorer_open': 'Failed to open in explorer',
+    'error.default_open': 'Failed to open with default program',
+    'error.external_open': 'Failed to open with external program',
+
+    'settings.btn_browse': '...',
+
+    'control.open_folder': 'Open Folder',
+    'control.open_images': 'Open Images',
+    'control.toggle_group': 'Switch to Compact Mode',
+    'control.toggle_compact': 'Switch to Group Mode',
+    'control.toggle_titles': 'Show/Hide Group Titles',
+            'virtual_group_default': 'Temp Group',
+  }
+}
+
+/** 翻译函数 */
+export function t(key: string, params?: Record<string, string | number>): string {
+  const lang = state.settings.language as Lang || 'zh'
+  let text = messages[lang]?.[key] || messages.zh[key] || key
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      text = text.replace(`{${k}}`, String(v))
+    }
+  }
+  return text
+}
