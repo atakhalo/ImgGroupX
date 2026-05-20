@@ -28,6 +28,7 @@ const isDragging = ref(false)
 const dragStart = ref({ x: 0, y: 0 })
 const offset = ref({ x: 0, y: 0 })
 
+const prevImageSize = ref({ width: 0, height: 0 })
 const currentItem = computed(() => props.images[currentIndex.value])
 
 const backdropStyle = computed(() => {
@@ -49,8 +50,12 @@ async function loadCurrentImage() {
   const item = currentItem.value
   if (!item) return
   isLoaded.value = false
-  scale.value = 1
-  offset.value = { x: 0, y: 0 }
+  // 同尺寸图片切换时保持缩放比和平移偏移
+  if (item.width !== prevImageSize.value.width || item.height !== prevImageSize.value.height) {
+    scale.value = 1
+    offset.value = { x: 0, y: 0 }
+  }
+  prevImageSize.value = { width: item.width, height: item.height }
   try {
     const b64 = await loadImageBase64(item)
     imgSrc.value = b64
