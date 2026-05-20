@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ImageItem } from '../types'
 import { state, loadImageBase64 } from '../stores/imageStore'
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 
 const props = defineProps<{
   item: ImageItem
@@ -19,7 +19,16 @@ const elRef = ref<HTMLElement | null>(null)
 const imgSrc = ref('')
 const isLoaded = ref(false)
 const hasError = ref(false)
-const aspectRatio = ref(1)
+const aspectRatio = computed(() => {
+  if (props.item.width && props.item.height) {
+    return props.item.width / props.item.height
+  }
+  return 1
+})
+
+const itemWidth = computed(() => {
+  return Math.round(props.gridSize * aspectRatio.value)
+})
 
 let loadingPromise: Promise<string> | null = null
 let visObserver: IntersectionObserver | null = null
@@ -49,10 +58,6 @@ async function doLoad() {
 }
 
 onMounted(() => {
-  if (props.item.width && props.item.height) {
-    aspectRatio.value = props.item.width / props.item.height
-  }
-
   // 使用 IntersectionObserver：进入视口才加载
   if (!elRef.value) return
   visObserver = new IntersectionObserver(
@@ -106,7 +111,8 @@ function handleClick(e: MouseEvent) {
     class="grid-item"
     :class="{ selected: isSelected }"
     :style="{
-      width: gridSize + 'px',
+      height: gridSize + 'px',
+      width: itemWidth + 'px',
       borderRadius: borderRadius + 'px',
     }"
     @click="handleClick"
@@ -169,6 +175,7 @@ function handleClick(e: MouseEvent) {
 
 .item-inner {
   width: 100%;
+  height: 100%;
   overflow: hidden;
   position: relative;
   background: #2a2a3e;
@@ -176,7 +183,7 @@ function handleClick(e: MouseEvent) {
 
 .item-placeholder {
   width: 100%;
-  aspect-ratio: 1;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -202,9 +209,8 @@ function handleClick(e: MouseEvent) {
 
 .item-img {
   width: 100%;
+  height: 100%;
   display: block;
-  object-fit: cover;
-  aspect-ratio: auto;
   transition: opacity 0.3s;
 }
 
