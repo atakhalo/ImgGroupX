@@ -86,6 +86,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
     </div>
 
     <div class="filter-right-area">
+      <slot name="right-prepend" />
       <!-- 筛选模式切换 -->
       <button
         class="filter-mode-btn"
@@ -146,6 +147,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
   align-items: center;
   gap: 12px;
   padding: 8px 0;
+  width: 100%;
 }
 
 .sort-group {

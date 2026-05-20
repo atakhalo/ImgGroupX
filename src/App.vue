@@ -306,8 +306,11 @@ function handleLoadPanelRelease() {
   >
     <div class="main-area">
       <div class="top-bar">
-        <FilterSortBar @openSettings="openSettings" />
-        <LoadPanel @releaseAll="handleLoadPanelRelease" />
+        <FilterSortBar @openSettings="openSettings">
+          <template #right-prepend>
+            <LoadPanel @releaseAll="handleLoadPanelRelease" />
+          </template>
+        </FilterSortBar>
       </div>
 
       <div class="content-area" @wheel="handleContentWheel">
