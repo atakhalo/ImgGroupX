@@ -2,12 +2,12 @@
 
 <table>
   <tr>
-    <td><img src="DocImage/mainView.webp" height ="150"></td>
-    <td><img src="DocImage/rainbow.webp" height ="150"></td>
+    <td><img src="DocImage/mainView.webp" height ="300"></td>
+    <td><img src="DocImage/rainbow.webp" height ="300"></td>
   </tr>
   <tr>
-    <td><img src="DocImage/bigView.webp" height ="150"></td>
-    <td><img src="DocImage/compare.webp" height ="150"></td>
+    <td><img src="DocImage/bigView.webp" height ="300"></td>
+    <td><img src="DocImage/compare.webp" height ="300"></td>
   </tr>
 </table>
 
