@@ -100,6 +100,10 @@ export interface AppSettings {
   nodeGridBorderEnabled: boolean
   /** 节点网格视图边框颜色 */
   nodeGridBorderColor: string
+  /** 彩虹层级着色开关 */
+  rainbowEnabled: boolean
+  /** 彩虹层级颜色列表 */
+  rainbowColors: string[]
   /** 界面语言 */
   language: 'zh' | 'en'
   /** 大图查看器背景模式：'overlay' 蒙灰 | 'color' 纯色背景 */

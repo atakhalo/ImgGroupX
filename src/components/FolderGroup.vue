@@ -48,15 +48,75 @@ function handleRemove() {
     emit('excludeNode', props.rootPath, props.node.path)
   }
 }
+
+/** hex → rgba */
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
+/** 获取节点基础色（子标题背景色 or 彩虹色） */
+function getBaseColor(depth: number): string {
+  if (depth === 0) return state.settings.rootTitleBgColor
+  if (!state.settings.rainbowEnabled) return state.settings.childTitleBgColor
+  const colors = state.settings.rainbowColors
+  if (!colors.length) return state.settings.childTitleBgColor
+  return colors[(depth - 1) % colors.length]
+}
+
+/** 获取节点整体背景色（folder-group） */
+function getNodeGroupBg(depth: number): string {
+  if (depth === 0) return state.settings.rootTitleBgColor
+  return hexToRgba(getBaseColor(depth), 1)
+//   return hexToRgba(getBaseColor(depth), 0.30)
+}
+
+/** 获取节点标题背景色（folder-header） */
+function getNodeHeaderBg(depth: number): string {
+	return 'transparent'
+  if (depth === 0) return state.settings.rootTitleBgColor
+  return hexToRgba(getBaseColor(depth), 1)
+}
+
+/** 获取节点网格包装背景色（folder-grid-wrapper） */
+function getNodeGridWrapperBg(depth: number): string {
+	return 'transparent'
+  if (depth === 0) return 'transparent'
+  return hexToRgba(getBaseColor(depth), 0.12)
+}
+
+/** 获取网格容器背景色（grid-container） */
+function getNodeGridContainerBg(depth: number): string {
+  if (!state.settings.rainbowEnabled)
+  {
+	return state.settings.bgColor
+  }
+  else
+  {
+  	return hexToRgba(getBaseColor(depth), 1)
+  }
+}
 </script>
 
 <template>
-  <div class="folder-group">
+  <div
+    class="folder-group"
+    :class="{ 'has-border': state.settings.nodeGridBorderEnabled }"
+    :style="{ 
+		borderRadius:'20px', marginLeft: 20 + 'px', 
+		backgroundColor: getNodeGroupBg(depth),
+	    marginTop: state.settings.nodeGridGap + 'px',
+	    marginBottom: state.settings.nodeGridGap + 'px',
+        borderColor: state.settings.nodeGridBorderEnabled ? state.settings.nodeGridBorderColor : 'transparent',
+	}"
+  >
     <div
       v-if="showTitle"
       class="folder-header"
       :class="{ 'root-header': depth === 0, 'child-header': depth > 0 }"
-      :style="{ paddingLeft: (depth * 20 + 12) + 'px', backgroundColor: depth === 0 ? state.settings.rootTitleBgColor : state.settings.childTitleBgColor }"
+      :style="{ borderRadius:'20px', backgroundColor: getNodeHeaderBg(depth) }"
       @click="handleToggle"
     >
       <span class="folder-left">
@@ -100,15 +160,15 @@ function handleRemove() {
       <div
         v-if="node.images.length"
         class="folder-grid-wrapper"
-        :class="{ 'has-border': state.settings.nodeGridBorderEnabled }"
         :style="{
-          paddingLeft: ((depth + 1) * 12) + 'px',
-          marginBottom: state.settings.nodeGridGap + 'px',
-          borderColor: state.settings.nodeGridBorderEnabled ? state.settings.nodeGridBorderColor : 'transparent',
+          marginLeft: 20 + 'px',
+		  borderRadius:'20px',
+          backgroundColor: getNodeGridWrapperBg(depth),
         }"
       >
         <GridView
           :images="node.images"
+          :bgColor="getNodeGridContainerBg(depth)"
           @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
           @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
         />
@@ -219,8 +279,8 @@ function handleRemove() {
   overflow: hidden;
 }
 
-.folder-grid-wrapper.has-border {
-  border: 1px solid;
+.folder-group.has-border {
+  border: 2px solid;
   border-radius: 6px;
 }
 </style>

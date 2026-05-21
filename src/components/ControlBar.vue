@@ -72,6 +72,15 @@ const emit = defineEmits<{
             <path d="M6 9l6 6 6-6" />
           </svg>
         </button>
+        <button
+          class="ctrl-btn"
+          :class="{ active: state.settings.rainbowEnabled }"
+          :title="$t('control.toggle_rainbow')"
+          @click="state.settings.rainbowEnabled = !state.settings.rainbowEnabled"
+        >
+          <span class="rainbow-icon">🌈</span>
+          <span>{{ $t('control.rainbow') }}</span>
+        </button>
       </template>
     </div>
 
@@ -204,6 +213,11 @@ const emit = defineEmits<{
 .ctrl-btn.active {
   background: rgba(100, 108, 255, 0.2);
   color: #aab0ff;
+}
+
+.rainbow-icon {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .mode-group {

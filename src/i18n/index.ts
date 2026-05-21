@@ -37,6 +37,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.node_grid_gap': '网格间距',
     'settings.node_grid_border': '显示边框',
     'settings.node_grid_border_color': '边框颜色',
+    'settings.rainbow': '彩虹层级',
+    'settings.rainbow_enable': '启用彩虹着色',
+    'settings.rainbow_color': '颜色',
     'settings.viewer_bg': '大图背景',
     'settings.viewer_bg_mode': '背景模式',
     'settings.viewer_bg_overlay': '蒙灰',
@@ -140,6 +143,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.toggle_group': '切换为紧凑模式',
     'control.toggle_compact': '切换为分组模式',
     'control.toggle_titles': '显示/隐藏分组标题',
+    'control.rainbow': '彩虹',
+    'control.toggle_rainbow': '彩虹层级着色',
             'virtual_group_default': '临时图片分组',
   },
 
@@ -175,6 +180,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.node_grid_gap': 'Grid Gap',
     'settings.node_grid_border': 'Show Border',
     'settings.node_grid_border_color': 'Border Color',
+    'settings.rainbow': 'Rainbow Tier',
+    'settings.rainbow_enable': 'Enable Rainbow',
+    'settings.rainbow_color': 'Color',
     'settings.viewer_bg': 'Viewer Background',
     'settings.viewer_bg_mode': 'Background Mode',
     'settings.viewer_bg_overlay': 'Dark Overlay',
@@ -266,6 +274,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.toggle_group': 'Switch to Compact Mode',
     'control.toggle_compact': 'Switch to Group Mode',
     'control.toggle_titles': 'Show/Hide Group Titles',
+    'control.rainbow': 'Rainbow',
+    'control.toggle_rainbow': 'Rainbow Hierarchy',
             'virtual_group_default': 'Temp Group',
   }
 }

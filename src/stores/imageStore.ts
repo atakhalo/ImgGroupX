@@ -24,6 +24,8 @@ const defaultSettings: AppSettings = {
   nodeGridGap: 12,
   nodeGridBorderEnabled: false,
   nodeGridBorderColor: 'rgba(255,255,255,0.08)',
+  rainbowEnabled: false,
+  rainbowColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   language: 'zh',
   viewerBgMode: 'overlay',
   viewerBgColor: '#202020',

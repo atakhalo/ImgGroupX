@@ -48,6 +48,8 @@ function reset() {
     nodeGridGap: 12,
     nodeGridBorderEnabled: false,
     nodeGridBorderColor: 'rgba(255,255,255,0.08)',
+    rainbowEnabled: false,
+    rainbowColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
     language: 'zh',
     viewerBgMode: 'overlay',
     viewerBgColor: '#202020',
@@ -124,6 +126,31 @@ function reset() {
               <label>{{ $t('settings.node_grid_border_color') }}</label>
               <input type="color" v-model="localSettings.nodeGridBorderColor" class="color-input" />
               <span class="setting-value">{{ localSettings.nodeGridBorderColor }}</span>
+            </div>
+          </div>
+
+          <!-- 彩虹层级 -->
+          <div class="setting-section">
+            <h4>{{ $t('settings.rainbow') }}</h4>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.rainbowEnabled" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.rainbow_enable') }}
+              </label>
+            </div>
+            <div
+              v-for="(_c, i) in localSettings.rainbowColors"
+              :key="i"
+              class="setting-row"
+              :style="{ marginLeft: '12px' }"
+            >
+              <label>{{ $t('settings.rainbow_color') }} {{ i + 1 }}</label>
+              <input type="color" v-model="localSettings.rainbowColors[i]" class="color-input" />
+              <div
+                class="rainbow-swatch"
+                :style="{ backgroundColor: localSettings.rainbowColors[i] }"
+              ></div>
             </div>
           </div>
 
@@ -356,6 +383,14 @@ function reset() {
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
+}
+
+.rainbow-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.1);
+  flex-shrink: 0;
 }
 
 .preset-row {

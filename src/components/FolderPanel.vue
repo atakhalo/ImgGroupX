@@ -170,6 +170,7 @@ defineExpose({ toggleAll })
         >
           <GridView
             :images="node.images"
+            :bgColor="state.settings.bgColor"
             @viewImage="(item: ImageItem, scope?: ImageItem[]) => handleViewImage(item, scope)"
             @selectImage="handleSelectImage"
           />

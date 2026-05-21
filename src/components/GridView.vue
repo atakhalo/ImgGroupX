@@ -6,6 +6,7 @@ import GridItem from './GridItem.vue'
 
 const props = defineProps<{
   images: ImageItem[]
+  bgColor?: string
 }>()
 
 const emit = defineEmits<{
@@ -96,7 +97,7 @@ watch(() => props.images, () => {
     class="grid-container"
     :style="{
       gap: state.settings.gap + 'px',
-      backgroundColor: state.settings.bgColor,
+      backgroundColor: props.bgColor || state.settings.bgColor,
     }"
   >
     <div
