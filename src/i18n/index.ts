@@ -140,6 +140,7 @@ const messages: Record<Lang, Record<string, string>> = {
     // 控制栏标题
     'control.open_folder': '打开文件夹',
     'control.open_images': '打开图片',
+    'control.refresh': '刷新',
     'control.toggle_group': '切换为紧凑模式',
     'control.toggle_compact': '切换为分组模式',
     'control.toggle_titles': '显示/隐藏分组标题',
@@ -271,6 +272,7 @@ const messages: Record<Lang, Record<string, string>> = {
 
     'control.open_folder': 'Open Folder',
     'control.open_images': 'Open Images',
+    'control.refresh': 'Refresh',
     'control.toggle_group': 'Switch to Compact Mode',
     'control.toggle_compact': 'Switch to Group Mode',
     'control.toggle_titles': 'Show/Hide Group Titles',

@@ -1,10 +1,13 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 use base64::Engine;
 use chrono::{DateTime, Local};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
 
 const SUPPORTED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "bmp", "gif"];
@@ -272,6 +275,42 @@ fn get_cli_args() -> Vec<String> {
     std::env::args().skip(1).collect()
 }
 
+/// 更新文件监听器（监视根文件夹的变更）
+#[tauri::command]
+fn update_watcher(app_handle: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    let handle = app_handle.clone();
+
+    // 创建递归监听器
+    let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+        if let Ok(event) = res {
+            // 只关注创建、修改、删除事件
+            if matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)) {
+                let _ = handle.emit("fs-changed", ());
+            }
+        }
+    })
+    .map_err(|e| e.to_string())?;
+
+    // 添加所有根路径
+    for p in &paths {
+        let dir = Path::new(p);
+        if dir.exists() {
+            watcher
+                .watch(dir, RecursiveMode::Recursive)
+                .map_err(|e| format!("监听 {} 失败: {}", p, e))?;
+        }
+    }
+
+    // 替换旧的监听器
+    if let Some(state) = app_handle.try_state::<Mutex<Option<RecommendedWatcher>>>() {
+        if let Ok(mut guard) = state.lock() {
+            *guard = Some(watcher);
+        }
+    }
+
+    Ok(())
+}
+
 /// 保存配置
 #[tauri::command]
 fn save_config(settings: serde_json::Value) -> Result<(), String> {
@@ -296,6 +335,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(Mutex::new(None::<RecommendedWatcher>))
         .invoke_handler(tauri::generate_handler![
             scan_folder,
             scan_folders,
@@ -308,6 +348,7 @@ pub fn run() {
             save_config,
             get_cli_args,
             delete_file,
+            update_watcher,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -30,4 +30,5 @@ imagesize = "0.12"
 exif = { package = "kamadak-exif", version = "0.5" }
 chrono = "0.4"
 trash = "5"
+notify = "7"
 

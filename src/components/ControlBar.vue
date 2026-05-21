@@ -14,6 +14,7 @@ const emit = defineEmits<{
   deleteSelection: []
   viewMode: []
   selectMode: []
+  refresh: []
 }>()
 </script>
 
@@ -35,6 +36,19 @@ const emit = defineEmits<{
           <path d="M21 15l-5-5L5 21" />
         </svg>
         <span>{{ $t('control.images') }}</span>
+      </button>
+
+      <!-- 刷新 -->
+      <button class="ctrl-btn refresh-btn" :class="{ 'has-update': state.refreshAvailable }" :title="$t('control.refresh')" @click="emit('refresh')">
+        <span class="refresh-icon-wrap">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="refresh-icon">
+            <path d="M23 4v6h-6" />
+            <path d="M1 20v-6h6" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+          <span v-if="state.refreshAvailable" class="refresh-dot"></span>
+        </span>
+        <span>{{ $t('control.refresh') }}</span>
       </button>
 
       <!-- 目录分组切换 -->
@@ -218,6 +232,45 @@ const emit = defineEmits<{
 .rainbow-icon {
   font-size: 16px;
   line-height: 1;
+}
+
+.refresh-btn {
+  position: relative;
+}
+
+.refresh-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.refresh-icon {
+  transition: transform 0.3s ease;
+}
+
+.refresh-btn:hover .refresh-icon {
+  transform: rotate(90deg);
+}
+
+.refresh-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 8px;
+  height: 8px;
+  background: #ff6b6b;
+  border-radius: 50%;
+  border: 2px solid rgba(30, 30, 58, 0.9);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.2); }
+}
+
+.refresh-btn.has-update {
+  color: #ff6b6b;
 }
 
 .mode-group {

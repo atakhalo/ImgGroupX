@@ -57,6 +57,8 @@ export const state = reactive({
   showImageInfo: true,
   /** 缩放系数 */
   zoomFactor: 1,
+  /** 刷新提示（检测到外部变更） */
+  refreshAvailable: false,
 })
 
 /** 按路径去重后添加到allImages */
@@ -168,6 +170,39 @@ export async function scanFolders(paths: string[]): Promise<void> {
   } catch (e) {
     console.error('扫描文件夹失败:', e)
     throw e
+  } finally {
+    state.loading = false
+  }
+}
+
+/** 更新文件系统监听器（监视已加载根路径的变更） */
+export async function setupFolderWatcher(): Promise<void> {
+  if (state.loadedRootPaths.length === 0) return
+  try {
+    await invoke('update_watcher', { paths: [...state.loadedRootPaths] })
+  } catch (e) {
+    console.error('设置文件监听失败:', e)
+  }
+}
+
+/** 刷新所有已加载文件夹 */
+export async function refreshFolders(): Promise<void> {
+  if (state.loadedRootPaths.length === 0) return
+  state.loading = true
+  state.refreshAvailable = false
+  // 记录旧路径，防止重复添加
+  const paths = [...state.loadedRootPaths]
+  // 清除所有图片（保留根路径记录）
+  state.allImages = []
+  state.selectedPaths.clear()
+  for (const vg of state.virtualGroups) {
+    vg.images = []
+  }
+  try {
+    await scanFolders(paths)
+    await setupFolderWatcher()
+  } catch (e) {
+    console.error('刷新失败:', e)
   } finally {
     state.loading = false
   }

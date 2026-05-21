@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { state, scanFolders, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages } from './stores/imageStore'
+import { state, scanFolders, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders } from './stores/imageStore'
 import type { ImageItem } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -32,6 +32,7 @@ const showCompare = ref(false)
 const comparePair = ref<{ left: ImageItem; right: ImageItem } | null>(null)
 
 let unlistenDragDrop: (() => void) | null = null
+let unlistenFsChange: (() => void) | null = null
 
 /** 未分组模式：所有图片平铺 */
 const displayImages = computed(() => {
@@ -65,11 +66,21 @@ onMounted(async () => {
       await handleDroppedPaths(cliArgs)
     }
   } catch { /* 忽略 */ }
+  // 监听文件系统变更事件
+  try {
+    const { listen } = await import('@tauri-apps/api/event')
+    unlistenFsChange = await listen('fs-changed', () => {
+      state.refreshAvailable = true
+    })
+  } catch { /* 兼容非Tauri环境 */ }
+  // 初始化文件监听器
+  await setupFolderWatcher()
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   if (unlistenDragDrop) unlistenDragDrop()
+  if (unlistenFsChange) unlistenFsChange()
 })
 
 let settingsReady = false
@@ -118,7 +129,10 @@ async function handleDroppedPaths(paths: string[]) {
     }
   }
   // 文件夹走扫描
-  if (folders.length > 0) await scanFolders(folders)
+  if (folders.length > 0) {
+    await scanFolders(folders)
+    await setupFolderWatcher()
+  }
   // 文件走虚拟分组
   if (files.length > 0) await scanFilesAsVirtualGroup(files)
 }
@@ -148,6 +162,7 @@ async function handleOpenFolder() {
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected]
       await scanFolders(paths)
+      await setupFolderWatcher()
     }
   } catch (e) {
     console.error('打开文件夹失败:', e)
@@ -297,6 +312,10 @@ function handleLoadPanelRelease() {
   // 释放后，可见的 GridItem 会自动重新加载
   // LoadPanel 已调用 releaseBase64，这里通知 GridView 重置显示上限
 }
+
+function handleRefresh() {
+  refreshFolders()
+}
 </script>
 
 <template>
@@ -363,6 +382,7 @@ function handleLoadPanelRelease() {
           @createGroup="createVirtualGroup"
           @compare="handleCompare"
           @deleteSelection="handleDeleteSelection"
+          @refresh="handleRefresh"
         />
       </div>
     </div>
