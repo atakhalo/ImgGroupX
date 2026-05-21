@@ -55,14 +55,15 @@ function handleRemove() {
     <div
       v-if="showTitle"
       class="folder-header"
+      :class="{ 'root-header': depth === 0, 'child-header': depth > 0 }"
       :style="{ paddingLeft: (depth * 20 + 12) + 'px', backgroundColor: depth === 0 ? state.settings.rootTitleBgColor : state.settings.childTitleBgColor }"
       @click="handleToggle"
     >
       <span class="folder-left">
-        <span class="folder-arrow">{{ getExpanded(node) ? '▼' : '▶' }}</span>
         <span v-if="depth === 0" class="folder-path">{{ parentPath(node.path) }}</span>
       </span>
       <span class="folder-label">
+        <span class="folder-arrow">{{ getExpanded(node) ? '▼' : '▶' }}</span>
         <span class="folder-name" :style="{ color: depth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ node.name }}</span>
         <span v-if="totalCount(node)" class="folder-count">({{ totalCount(node) }})</span>
       </span>
@@ -99,7 +100,12 @@ function handleRemove() {
       <div
         v-if="node.images.length"
         class="folder-grid-wrapper"
-        :style="{ paddingLeft: ((depth + 1) * 12) + 'px' }"
+        :class="{ 'has-border': state.settings.nodeGridBorderEnabled }"
+        :style="{
+          paddingLeft: ((depth + 1) * 12) + 'px',
+          marginBottom: state.settings.nodeGridGap + 'px',
+          borderColor: state.settings.nodeGridBorderEnabled ? state.settings.nodeGridBorderColor : 'transparent',
+        }"
       >
         <GridView
           :images="node.images"
@@ -129,7 +135,7 @@ function handleRemove() {
 }
 
 .folder-header:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background-image: linear-gradient(rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.09));
 }
 
 .folder-left {
@@ -138,6 +144,8 @@ function handleRemove() {
   gap: 6px;
   min-width: 0;
   overflow: hidden;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .folder-right {
@@ -172,6 +180,11 @@ function handleRemove() {
   color: rgba(255, 255, 255, 0.4);
   width: 12px;
   flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.folder-header:hover .folder-arrow {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .folder-path {
@@ -185,7 +198,7 @@ function handleRemove() {
 .folder-label {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .folder-name {
@@ -203,5 +216,11 @@ function handleRemove() {
 
 .folder-grid-wrapper {
   padding: 0;
+  overflow: hidden;
+}
+
+.folder-grid-wrapper.has-border {
+  border: 1px solid;
+  border-radius: 6px;
 }
 </style>

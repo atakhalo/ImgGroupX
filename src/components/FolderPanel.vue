@@ -139,10 +139,10 @@ defineExpose({ toggleAll })
       <div v-if="(node as any).isVirtualGroup" class="virtual-group-root">
         <div v-if="state.showGroupTitle" class="virtual-group-header" :style="{ backgroundColor: state.settings.rootTitleBgColor }" @click="toggleNode(node)">
           <span class="vg-left">
-            <span class="folder-arrow">{{ isExpanded(node) ? '▼' : '▶' }}</span>
             <span class="vg-icon">📦</span>
           </span>
           <span class="vg-label">
+            <span class="folder-arrow">{{ isExpanded(node) ? '▼' : '▶' }}</span>
             <span class="folder-name" :style="{ color: state.settings.rootTitleColor }">{{ node.name }}</span>
             <span class="folder-count">({{ node.images.length }})</span>
           </span>
@@ -158,7 +158,16 @@ defineExpose({ toggleAll })
             </button>
           </span>
         </div>
-        <div v-if="isExpanded(node) && node.images.length" class="folder-grid-wrapper" style="paddingLeft: 32px">
+        <div
+          v-if="isExpanded(node) && node.images.length"
+          class="folder-grid-wrapper"
+          :class="{ 'has-border': state.settings.nodeGridBorderEnabled }"
+          :style="{
+            paddingLeft: '32px',
+            marginBottom: state.settings.nodeGridGap + 'px',
+            borderColor: state.settings.nodeGridBorderEnabled ? state.settings.nodeGridBorderColor : 'transparent',
+          }"
+        >
           <GridView
             :images="node.images"
             @viewImage="(item: ImageItem, scope?: ImageItem[]) => handleViewImage(item, scope)"
@@ -210,7 +219,7 @@ defineExpose({ toggleAll })
 }
 
 .virtual-group-header:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background-image: linear-gradient(rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.09));
 }
 
 .folder-count {
@@ -230,7 +239,7 @@ defineExpose({ toggleAll })
 .vg-label {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .vg-right {
@@ -241,6 +250,10 @@ defineExpose({ toggleAll })
 .vg-icon {
   font-size: 14px;
   opacity: 0.7;
+}
+
+.virtual-group-header:hover .folder-arrow {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .vg-delete-btn {
@@ -269,6 +282,16 @@ defineExpose({ toggleAll })
   font-size: 13px;
   margin-top: 8px;
   color: rgba(255, 255, 255, 0.18);
+}
+
+.folder-grid-wrapper {
+  padding: 0;
+  overflow: hidden;
+}
+
+.folder-grid-wrapper.has-border {
+  border: 1px solid;
+  border-radius: 6px;
 }
 </style>
 

@@ -94,6 +94,12 @@ export interface AppSettings {
   rootTitleBgColor: string
   /** 子节点标题背景色 */
   childTitleBgColor: string
+  /** 节点网格视图间距 */
+  nodeGridGap: number
+  /** 是否显示节点网格视图边框 */
+  nodeGridBorderEnabled: boolean
+  /** 节点网格视图边框颜色 */
+  nodeGridBorderColor: string
   /** 界面语言 */
   language: 'zh' | 'en'
   /** 大图查看器背景模式：'overlay' 蒙灰 | 'color' 纯色背景 */

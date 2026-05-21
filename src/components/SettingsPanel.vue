@@ -44,7 +44,10 @@ function reset() {
     rootTitleColor: '#ffffff',
     childTitleColor: 'rgba(255,255,255,0.75)',
     rootTitleBgColor: '#222240',
-    childTitleBgColor: '#1a1a2e',
+    childTitleBgColor: '#23234d',
+    nodeGridGap: 12,
+    nodeGridBorderEnabled: false,
+    nodeGridBorderColor: 'rgba(255,255,255,0.08)',
     language: 'zh',
     viewerBgMode: 'overlay',
     viewerBgColor: '#202020',
@@ -99,6 +102,28 @@ function reset() {
               <label>{{ $t('settings.bg_color') }}</label>
               <input type="color" v-model="localSettings.bgColor" class="color-input" />
               <span class="setting-value">{{ localSettings.bgColor }}</span>
+            </div>
+          </div>
+
+          <!-- 节点网格 -->
+          <div class="setting-section">
+            <h4>{{ $t('settings.node_grid') }}</h4>
+            <div class="setting-row">
+              <label>{{ $t('settings.node_grid_gap') }}</label>
+              <input type="range" v-model.number="localSettings.nodeGridGap" min="0" max="40" step="1" />
+              <span class="setting-value">{{ localSettings.nodeGridGap }}px</span>
+            </div>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.nodeGridBorderEnabled" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.node_grid_border') }}
+              </label>
+            </div>
+            <div class="setting-row" v-if="localSettings.nodeGridBorderEnabled">
+              <label>{{ $t('settings.node_grid_border_color') }}</label>
+              <input type="color" v-model="localSettings.nodeGridBorderColor" class="color-input" />
+              <span class="setting-value">{{ localSettings.nodeGridBorderColor }}</span>
             </div>
           </div>
 
@@ -414,4 +439,51 @@ function reset() {
   color: rgba(255,255,255,0.5);
 }
 .settings-btn.secondary:hover { background: rgba(255,255,255,0.06); color: white; }
+
+/* 开关样式 */
+.toggle-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  width: auto !important;
+  cursor: pointer;
+  font-size: 13px;
+  color: rgba(255,255,255,0.6);
+  user-select: none;
+}
+
+.toggle-input {
+  display: none;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: rgba(255,255,255,0.12);
+  border-radius: 10px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: rgba(255,255,255,0.5);
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+}
+
+.toggle-input:checked + .toggle-switch {
+  background: rgba(100, 108, 255, 0.5);
+}
+
+.toggle-input:checked + .toggle-switch::after {
+  transform: translateX(16px);
+  background: white;
+}
 </style>
