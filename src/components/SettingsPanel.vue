@@ -9,6 +9,8 @@ const emit = defineEmits<{
 
 const localSettings = ref({ ...state.settings })
 
+
+
 function apply() {
   Object.assign(state.settings, localSettings.value)
   emit('close')
@@ -42,12 +44,12 @@ function reset() {
     filterPresets: [],
     openWithPrograms: [],
     rootTitleColor: '#ffffff',
-    childTitleColor: 'rgba(255,255,255,0.75)',
+    childTitleColor: '#c0c0e0',
     rootTitleBgColor: '#222240',
     childTitleBgColor: '#23234d',
     nodeGridGap: 12,
-    nodeGridBorderEnabled: false,
-    nodeGridBorderColor: 'rgba(255,255,255,0.08)',
+    nodeGridBorderWidth: 0,
+    nodeGridBorderColor: '#444466',
     rainbowEnabled: false,
     rainbowColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
     language: 'zh',
@@ -116,13 +118,11 @@ function reset() {
               <span class="setting-value">{{ localSettings.nodeGridGap }}px</span>
             </div>
             <div class="setting-row">
-              <label class="toggle-label">
-                <input type="checkbox" v-model="localSettings.nodeGridBorderEnabled" class="toggle-input" />
-                <span class="toggle-switch"></span>
-                {{ $t('settings.node_grid_border') }}
-              </label>
+              <label>{{ $t('settings.node_grid_border') }}</label>
+              <input type="range" v-model.number="localSettings.nodeGridBorderWidth" min="0" max="8" step="1" />
+              <span class="setting-value">{{ localSettings.nodeGridBorderWidth }}px</span>
             </div>
-            <div class="setting-row" v-if="localSettings.nodeGridBorderEnabled">
+            <div class="setting-row" v-if="localSettings.nodeGridBorderWidth > 0">
               <label>{{ $t('settings.node_grid_border_color') }}</label>
               <input type="color" v-model="localSettings.nodeGridBorderColor" class="color-input" />
               <span class="setting-value">{{ localSettings.nodeGridBorderColor }}</span>
@@ -151,7 +151,15 @@ function reset() {
                 class="rainbow-swatch"
                 :style="{ backgroundColor: localSettings.rainbowColors[i] }"
               ></div>
+              <button class="preset-remove" @click="localSettings.rainbowColors.splice(i, 1)" :title="$t('settings.remove')">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
             </div>
+            <button class="preset-add" @click="localSettings.rainbowColors.push('#cccccc')">
+              {{ $t('settings.add_color') }}
+            </button>
           </div>
 
           <!-- 标题颜色 -->
@@ -390,6 +398,13 @@ function reset() {
   height: 28px;
   border-radius: 4px;
   border: 1px solid rgba(255,255,255,0.1);
+  flex-shrink: 0;
+}
+
+.alpha-slider {
+  width: 60px;
+  accent-color: #646cff;
+  background: transparent;
   flex-shrink: 0;
 }
 

@@ -70,32 +70,24 @@ function getBaseColor(depth: number): string {
 function getNodeGroupBg(depth: number): string {
   if (depth === 0) return state.settings.rootTitleBgColor
   return hexToRgba(getBaseColor(depth), 1)
-//   return hexToRgba(getBaseColor(depth), 0.30)
 }
 
 /** 获取节点标题背景色（folder-header） */
-function getNodeHeaderBg(depth: number): string {
-	return 'transparent'
-  if (depth === 0) return state.settings.rootTitleBgColor
-  return hexToRgba(getBaseColor(depth), 1)
+function getNodeHeaderBg(_depth: number): string {
+  return 'transparent'
 }
 
 /** 获取节点网格包装背景色（folder-grid-wrapper） */
-function getNodeGridWrapperBg(depth: number): string {
-	return 'transparent'
-  if (depth === 0) return 'transparent'
-  return hexToRgba(getBaseColor(depth), 0.12)
+function getNodeGridWrapperBg(_depth: number): string {
+  return 'transparent'
 }
 
 /** 获取网格容器背景色（grid-container） */
 function getNodeGridContainerBg(depth: number): string {
-  if (!state.settings.rainbowEnabled)
-  {
-	return state.settings.bgColor
-  }
-  else
-  {
-  	return hexToRgba(getBaseColor(depth), 1)
+  if (!state.settings.rainbowEnabled) {
+    return state.settings.bgColor
+  } else {
+    return hexToRgba(getBaseColor(depth), 1)
   }
 }
 </script>
@@ -103,20 +95,25 @@ function getNodeGridContainerBg(depth: number): string {
 <template>
   <div
     class="folder-group"
-    :class="{ 'has-border': state.settings.nodeGridBorderEnabled }"
     :style="{ 
-		borderRadius:'20px', marginLeft: 20 + 'px', 
-		backgroundColor: getNodeGroupBg(depth),
-	    marginTop: state.settings.nodeGridGap + 'px',
-	    marginBottom: state.settings.nodeGridGap + 'px',
-        borderColor: state.settings.nodeGridBorderEnabled ? state.settings.nodeGridBorderColor : 'transparent',
-	}"
+      borderRadius: '20px',
+      marginLeft: 20 + 'px',
+      backgroundColor: getNodeGroupBg(depth),
+      marginTop: state.settings.nodeGridGap + 'px',
+      marginBottom: state.settings.nodeGridGap + 'px',
+      boxShadow: 'inset 0 0 0px 2px rgba(255,255,255,0.08)',
+	  padding: '4px',
+    }"
   >
     <div
       v-if="showTitle"
       class="folder-header"
       :class="{ 'root-header': depth === 0, 'child-header': depth > 0 }"
-      :style="{ borderRadius:'20px', backgroundColor: getNodeHeaderBg(depth) }"
+      :style="{
+        borderRadius: '20px',
+        backgroundColor: getNodeHeaderBg(depth),
+        boxShadow: 'inset 0 0 0px 1px rgba(255,255,255,0.06)',
+      }"
       @click="handleToggle"
     >
       <span class="folder-left">
@@ -161,7 +158,6 @@ function getNodeGridContainerBg(depth: number): string {
         v-if="node.images.length"
         class="folder-grid-wrapper"
         :style="{
-          marginLeft: 20 + 'px',
 		  borderRadius:'20px',
           backgroundColor: getNodeGridWrapperBg(depth),
         }"
@@ -277,10 +273,5 @@ function getNodeGridContainerBg(depth: number): string {
 .folder-grid-wrapper {
   padding: 0;
   overflow: hidden;
-}
-
-.folder-group.has-border {
-  border: 2px solid;
-  border-radius: 6px;
 }
 </style>

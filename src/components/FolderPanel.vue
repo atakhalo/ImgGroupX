@@ -161,11 +161,9 @@ defineExpose({ toggleAll })
         <div
           v-if="isExpanded(node) && node.images.length"
           class="folder-grid-wrapper"
-          :class="{ 'has-border': state.settings.nodeGridBorderEnabled }"
           :style="{
             paddingLeft: '32px',
             marginBottom: state.settings.nodeGridGap + 'px',
-            borderColor: state.settings.nodeGridBorderEnabled ? state.settings.nodeGridBorderColor : 'transparent',
           }"
         >
           <GridView
@@ -288,11 +286,6 @@ defineExpose({ toggleAll })
 .folder-grid-wrapper {
   padding: 0;
   overflow: hidden;
-}
-
-.folder-grid-wrapper.has-border {
-  border: 1px solid;
-  border-radius: 6px;
 }
 </style>
 
