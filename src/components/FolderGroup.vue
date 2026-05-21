@@ -97,7 +97,7 @@ function getNodeGridContainerBg(depth: number): string {
     class="folder-group"
     :style="{ 
       borderRadius: '20px',
-      marginLeft: 20 + 'px',
+      marginLeft: depth === 0 ? 0: 20 + 'px',
       backgroundColor: getNodeGroupBg(depth),
       marginTop: state.settings.nodeGridGap + 'px',
       marginBottom: state.settings.nodeGridGap + 'px',
@@ -175,7 +175,7 @@ function getNodeGridContainerBg(depth: number): string {
 
 <style scoped>
 .folder-group {
-  width: 100%;
+  /* width: 100%; */
 }
 
 .folder-header {
