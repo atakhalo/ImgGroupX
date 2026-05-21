@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { getLoadStats, releaseBase64 } from '../stores/imageStore'
+import { state, getLoadStats, releaseBase64 } from '../stores/imageStore'
 
 const emit = defineEmits<{
   releaseAll: []
@@ -38,6 +38,10 @@ function handleRelease() {
 
 <template>
   <div class="load-panel">
+    <span v-if="state.loading" class="lp-loading">
+      <span class="loading-spinner-sm"></span>
+      <span class="lp-scanning">{{ $t('load.scanning') }}</span>
+    </span>
     <div class="lp-row">
       <span class="lp-label">{{ $t('load.total') }}</span>
       <span class="lp-value">{{ stats.total }}</span>
@@ -108,5 +112,33 @@ function handleRelease() {
 .lp-release-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.lp-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+}
+
+.lp-scanning {
+  color: #aab0ff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.loading-spinner-sm {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #646cff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

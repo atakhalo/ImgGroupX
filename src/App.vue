@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { state, scanFolders, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges } from './stores/imageStore'
+import { state, scanFolders, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete } from './stores/imageStore'
 import type { ImageItem } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -81,8 +81,14 @@ onMounted(async () => {
         }
       }
       state.refreshAvailable = true
+    })    // 监听渐进扫描进度
+    await listen<{ dir: string; images: any[]; root: string }>('scan-dir-progress', (event) => {
+      handleDirProgress(event.payload)
     })
-  } catch { /* 兼容非Tauri环境 */ }
+    await listen('scan-all-complete', () => {
+      handleScanComplete()
+      setupFolderWatcher()
+    })  } catch { /* 兼容非Tauri环境 */ }
   // 初始化文件监听器
   await setupFolderWatcher()
 })
@@ -138,10 +144,9 @@ async function handleDroppedPaths(paths: string[]) {
       files.push(p)
     }
   }
-  // 文件夹走扫描
+  // 文件夹走渐进式扫描
   if (folders.length > 0) {
-    await scanFolders(folders)
-    await setupFolderWatcher()
+    await startProgressiveScan(folders)
   }
   // 文件走虚拟分组
   if (files.length > 0) await scanFilesAsVirtualGroup(files)
@@ -173,8 +178,7 @@ async function handleOpenFolder() {
     })
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected]
-      await scanFolders(paths)
-      await setupFolderWatcher()
+      await startProgressiveScan(paths)
     }
   } catch (e) {
     console.error('打开文件夹失败:', e)
@@ -450,13 +454,6 @@ async function handleRefresh() {
       </div>
     </div>
 
-    <!-- 加载指示器 -->
-    <div v-if="state.loading" class="loading-overlay">
-      <div class="loading-indicator">
-        <span class="loading-spinner-lg"></span>
-        <p>{{ $t('hint.loading') }}</p>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -508,10 +505,7 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
 .drop-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(26,26,46,0.9); display: flex; align-items: center; justify-content: center; z-index: 500; pointer-events: none; }
 .drop-hint { text-align: center; color: rgba(255,255,255,0.5); }
 .drop-hint p { margin-top: 16px; font-size: 18px; }
-.loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; z-index: 500; }
-.loading-indicator { text-align: center; color: rgba(255,255,255,0.6); }
-.loading-spinner-lg { display: block; width: 32px; height: 32px; margin: 0 auto 12px; border: 3px solid rgba(255,255,255,0.15); border-top-color: #646cff; border-radius: 50%; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+
 
 /* 命名弹窗 */
 .name-input-overlay {

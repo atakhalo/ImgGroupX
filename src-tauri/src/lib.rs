@@ -111,6 +111,117 @@ fn scan_folders(paths: Vec<String>) -> Result<Vec<ScanResult>, String> {
     Ok(results)
 }
 
+#[derive(serde::Serialize, Clone)]
+struct DirProgress {
+    dir: String,
+    images: Vec<ImageInfo>,
+    root: String,
+}
+
+/// 渐进式扫描：边遍历边发送事件，前端实时构建树
+#[tauri::command]
+fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    std::thread::spawn(move || {
+        for root_path in &paths {
+            let root_dir = Path::new(root_path);
+            if !root_dir.exists() {
+                continue;
+            }
+            // 缓存当前正在收集的目录及其图片
+            let mut current_dir: Option<String> = None;
+            let mut current_images: Vec<ImageInfo> = Vec::new();
+
+            // 发送已收集的目录批次
+            let flush = |dir: &str, images: &mut Vec<ImageInfo>| {
+                if !images.is_empty() {
+                    let _ = app_handle.emit(
+                        "scan-dir-progress",
+                        DirProgress {
+                            dir: dir.to_string(),
+                            images: std::mem::take(images),
+                            root: root_path.clone(),
+                        },
+                    );
+                }
+            };
+
+            for entry in WalkDir::new(root_dir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+            {
+                let entry_path = entry.path();
+                if !entry_path.is_file() {
+                    continue;
+                }
+                let ext = entry_path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.to_lowercase())
+                    .unwrap_or_default();
+                if !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+                    continue;
+                }
+                let metadata = match fs::metadata(entry_path) {
+                    Ok(m) => m,
+                    _ => continue,
+                };
+                let modified = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| {
+                        let dt: DateTime<Local> =
+                            DateTime::from_timestamp(d.as_secs() as i64, 0)
+                                .unwrap_or_default()
+                                .into();
+                        dt.format("%Y-%m-%d %H:%M:%S").to_string()
+                    })
+                    .unwrap_or_default();
+                let (width, height) = get_image_dimensions(entry_path);
+                let full_path = entry_path.to_string_lossy().to_string();
+                let name = entry_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                let dir = entry_path
+                    .parent()
+                    .and_then(|p| p.to_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                // 切换目录时，先发走上一批
+                if let Some(ref cur) = current_dir {
+                    if cur != &dir {
+                        flush(cur, &mut current_images);
+                        current_dir = Some(dir.clone());
+                    }
+                } else {
+                    current_dir = Some(dir.clone());
+                }
+
+                current_images.push(ImageInfo {
+                    path: full_path,
+                    name,
+                    dir,
+                    ext,
+                    size_bytes: metadata.len(),
+                    modified,
+                    width,
+                    height,
+                });
+            }
+
+            // 发送最后一个目录
+            if let Some(ref dir) = current_dir {
+                flush(dir, &mut current_images);
+            }
+        }
+        let _ = app_handle.emit("scan-all-complete", ());
+    });
+    Ok(())
+}
+
 /// 获取图片文件的基础64编码数据（按需加载）
 #[tauri::command]
 fn load_image_base64(path: String) -> Result<String, String> {
@@ -436,6 +547,7 @@ pub fn run() {
             update_watcher,
             set_suppress_watcher,
             get_files_info,
+            scan_folders_progressive,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

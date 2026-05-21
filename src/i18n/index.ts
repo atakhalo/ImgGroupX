@@ -121,6 +121,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'load.total': '总数',
     'load.loaded': '已加载',
     'load.memory': '内存',
+    'load.scanning': '扫描中',
     'load.release': '释放',
     'load.release_hint': '释放所有已缓存的图片缩略图以节省内存',
 
@@ -258,6 +259,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'load.total': 'Total',
     'load.loaded': 'Loaded',
     'load.memory': 'Memory',
+    'load.scanning': 'Scanning',
     'load.release': 'Release',
     'load.release_hint': 'Release all cached thumbnails to free memory',
     'error.open_failed': 'Failed to open images',

@@ -177,6 +177,35 @@ export async function scanFolders(paths: string[]): Promise<void> {
   }
 }
 
+/** 渐进式扫描：启动后台扫描线程，结果通过事件流式返回 */
+export async function startProgressiveScan(paths: string[]): Promise<void> {
+  state.loading = true
+  try {
+    await invoke('scan_folders_progressive', { paths })
+  } catch (e) {
+    console.error('启动渐进扫描失败:', e)
+    state.loading = false
+  }
+}
+
+/** 处理单目录扫描结果（由 scan-dir-progress 事件触发） */
+export function handleDirProgress(payload: { dir: string; images: ImageInfo[]; root: string }): void {
+  const norm = payload.root.replace(/\\/g, '/').replace(/\/$/, '')
+  if (!state.loadedRootPaths.includes(norm)) {
+    state.loadedRootPaths.push(norm)
+  }
+  const items: ImageItem[] = payload.images.map(img => ({
+    ...img,
+    loading: false,
+  }))
+  addImagesUnique(items)
+}
+
+/** 渐进扫描完成（由 scan-all-complete 事件触发） */
+export function handleScanComplete(): void {
+  state.loading = false
+}
+
 /** 更新文件系统监听器（监视已加载根路径的变更，paths为空时停止所有监听） */
 export async function setupFolderWatcher(): Promise<void> {
   try {

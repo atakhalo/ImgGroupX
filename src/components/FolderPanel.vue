@@ -18,13 +18,54 @@ const emit = defineEmits<{
   excludeNode: [rootPath: string, subPath: string]
 }>()
 
-/** 响应式展开状态表（路径 → 是否展开） */
+/** 展开状态存储：首次构造时确定，用户可切换，永不重算 */
 const expandedMap = reactive(new Map<string, boolean>())
+/** 每个根路径的大文件夹检测标志 */
+const rootLargeDetected = reactive(new Map<string, boolean>())
 
-/** 获取节点展开状态（默认展开） */
+/** 计算节点子树中的图片总数 */
+function totalNodeImages(node: FolderNode): number {
+  let n = node.images.length
+  for (const child of node.children) {
+    n += totalNodeImages(child)
+  }
+  return n
+}
+
+/** 在树中递归搜索指定路径的节点，返回其根节点 */
+function findRootForNode(node: FolderNode, roots: FolderNode[]): FolderNode | undefined {
+  return roots.find(r => isNodeInTree(r, node))
+}
+
+function isNodeInTree(parent: FolderNode, target: FolderNode): boolean {
+  if (parent.path === target.path) return true
+  return parent.children.some(c => isNodeInTree(c, target))
+}
+
+/** 判断根节点是否已达到大型标准（>100张图 或 >5个子文件夹） */
+function isRootLarge(rootNode: FolderNode): boolean {
+  if (rootNode.children.length > 5) return true
+  return totalNodeImages(rootNode) > 100
+}
+
+/** 获取节点展开状态：仅在首次构造时决定，之后不变 */
 function isExpanded(node: FolderNode): boolean {
-  if (!expandedMap.has(node.path)) {
-    expandedMap.set(node.path, true)
+  if (expandedMap.has(node.path)) {
+    return expandedMap.get(node.path)!
+  }
+  // 首次构造：找到所属根节点
+  const rootNode = folderTree.value.find(r => r.path === node.path) ?? findRootForNode(node, folderTree.value)
+  const rootKey = rootNode?.path ?? node.path
+  // 查该根路径的检测标志
+  if (rootLargeDetected.get(rootKey)) {
+    expandedMap.set(node.path, false)
+    return false
+  }
+  // 默认为展开，然后检查根节点维度是否达到大型标准
+  expandedMap.set(node.path, true)
+  if (rootNode && isRootLarge(rootNode)) {
+    rootLargeDetected.set(rootKey, true)
+    expandedMap.set(node.path, false) // 触发节点自身也折叠
   }
   return expandedMap.get(node.path)!
 }
@@ -39,24 +80,17 @@ const allRootNodes = computed<(FolderNode & { isVirtualGroup?: boolean })[]>(() 
     ...vg,
     isVirtualGroup: true,
     _vgIndex: i,
-    // 虚拟分组的展开状态也走 expandedMap
   }))
-  // 确保虚拟分组在 expandedMap 中有记录
-  for (const vg of props.virtualGroups) {
-    if (!expandedMap.has(vg.path)) {
-      expandedMap.set(vg.path, true)
-    }
-  }
   return [...virtualRoots, ...folderTree.value]
 })
 
 function toggleNode(node: FolderNode) {
-  const current = isExpanded(node)
-  expandedMap.set(node.path, !current)
+  expandedMap.set(node.path, !(expandedMap.get(node.path) ?? true))
 }
 
 function toggleAll(expand: boolean) {
-  // 切换文件夹树
+  expandedMap.clear()
+  rootLargeDetected.clear()
   function setAll(node: FolderNode) {
     expandedMap.set(node.path, expand)
     for (const child of node.children) {
@@ -66,11 +100,17 @@ function toggleAll(expand: boolean) {
   for (const node of folderTree.value) {
     setAll(node)
   }
-  // 切换虚拟分组
   for (const vg of props.virtualGroups) {
     expandedMap.set(vg.path, expand)
   }
 }
+
+// 加载完成时重置检测标志，下次扫描重新判断
+watch(() => state.loading, (loading) => {
+  if (!loading) {
+    rootLargeDetected.clear()
+  }
+})
 
 /** 根据筛选状态自动展开/折叠节点 */
 function hasMatchingImages(node: FolderNode): boolean {
