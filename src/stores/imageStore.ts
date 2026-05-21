@@ -54,6 +54,7 @@ export const state = reactive({
   /** 加载状态 */
   loading: false,
   /** 是否显示图片信息（文件名、缩放系数） */
+  showImageInfo: true,
   /** 缩放系数 */
   zoomFactor: 1,
   /** 刷新提示（检测到外部变更） */
