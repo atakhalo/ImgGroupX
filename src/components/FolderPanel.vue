@@ -105,6 +105,25 @@ function toggleAll(expand: boolean) {
   }
 }
 
+/** 折叠叶子节点（仅图片无子文件夹），展开其他节点 */
+function collapseLeaves() {
+  expandedMap.clear()
+  rootLargeDetected.clear()
+  function walk(node: FolderNode) {
+    const isLeaf = node.images.length > 0 && node.children.length === 0
+    expandedMap.set(node.path, !isLeaf) // 叶子折叠，非叶子展开
+    for (const child of node.children) {
+      walk(child)
+    }
+  }
+  for (const root of folderTree.value) {
+    walk(root)
+  }
+  for (const vg of props.virtualGroups) {
+    expandedMap.set(vg.path, true)
+  }
+}
+
 // 加载完成时重置检测标志，下次扫描重新判断
 watch(() => state.loading, (loading) => {
   if (!loading) {
@@ -168,7 +187,7 @@ function handleExcludeNode(rootPath: string, subPath: string) {
   emit('excludeNode', rootPath, subPath)
 }
 
-defineExpose({ toggleAll })
+defineExpose({ toggleAll, collapseLeaves })
 </script>
 
 <template>

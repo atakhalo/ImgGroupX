@@ -47,7 +47,7 @@ function reset() {
     childTitleColor: '#c0c0e0',
     rootTitleBgColor: '#222240',
     childTitleBgColor: '#23234d',
-    nodeGridGap: 12,
+    nodeGridGap: 4,
     rainbowEnabled: false,
     rainbowColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
     language: 'zh',

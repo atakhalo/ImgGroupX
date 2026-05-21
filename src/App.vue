@@ -243,6 +243,7 @@ function toggleFolderGroup() { state.folderGroup = !state.folderGroup }
 function toggleGroupTitles() { state.showGroupTitle = !state.showGroupTitle }
 function collapseAll() { folderPanelRef.value?.toggleAll(false) }
 function expandAll() { folderPanelRef.value?.toggleAll(true) }
+function collapseLeaves() { folderPanelRef.value?.collapseLeaves() }
 
 function switchToViewMode() {
   state.selectMode = 'view'
@@ -403,6 +404,7 @@ async function handleRefresh() {
           @toggleGroupTitles="toggleGroupTitles"
           @collapseAll="collapseAll"
           @expandAll="expandAll"
+          @collapseLeaves="collapseLeaves"
           @clearAll="clearAll"
           @createGroup="createVirtualGroup"
           @compare="handleCompare"
@@ -500,8 +502,23 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
   display: flex; align-items: center;
 }
 .vg-section-del:hover { color: #ff6b6b; background: rgba(255,60,60,0.1); }
-.bottom-bar { flex-shrink: 0; padding: 8px 16px; display: flex; justify-content: center; transition: opacity 0.3s, transform 0.3s; }
-.bottom-bar.hidden { opacity: 0; transform: translateY(100%); pointer-events: none; }
+.bottom-bar {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  display: flex;
+  justify-content: center;
+  transition: opacity 0.3s, transform 0.3s, bottom 0.3s;
+  z-index: 100;
+  pointer-events: auto;
+}
+.bottom-bar.hidden {
+  opacity: 0;
+  bottom: -20px;
+  pointer-events: none;
+}
 .drop-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(26,26,46,0.9); display: flex; align-items: center; justify-content: center; z-index: 500; pointer-events: none; }
 .drop-hint { text-align: center; color: rgba(255,255,255,0.5); }
 .drop-hint p { margin-top: 16px; font-size: 18px; }

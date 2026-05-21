@@ -147,6 +147,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.toggle_titles': '显示/隐藏分组标题',
     'control.rainbow': '彩虹',
     'control.toggle_rainbow': '彩虹层级着色',
+    'control.collapse_leaves': '折叠叶子',
             'virtual_group_default': '临时图片分组',
   },
 
@@ -280,6 +281,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.toggle_titles': 'Show/Hide Group Titles',
     'control.rainbow': 'Rainbow',
     'control.toggle_rainbow': 'Rainbow Hierarchy',
+    'control.collapse_leaves': 'Collapse Leaves',
             'virtual_group_default': 'Temp Group',
   }
 }
