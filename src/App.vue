@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { state, scanFolders, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders } from './stores/imageStore'
+import { state, scanFolders, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges } from './stores/imageStore'
 import type { ImageItem } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -66,10 +66,20 @@ onMounted(async () => {
       await handleDroppedPaths(cliArgs)
     }
   } catch { /* 忽略 */ }
-  // 监听文件系统变更事件
+  // 监听文件系统变更事件（记录变更路径，仅显示提示不自动应用）
   try {
     const { listen } = await import('@tauri-apps/api/event')
-    unlistenFsChange = await listen('fs-changed', () => {
+    unlistenFsChange = await listen<string[]>('fs-changed', (event) => {
+      const paths = event.payload
+      if (paths.length === 0) return
+      // 合并新路径到待处理列表（去重）
+      const existing = new Set(state.pendingChanges)
+      for (const p of paths) {
+        if (!existing.has(p)) {
+          state.pendingChanges.push(p)
+          existing.add(p)
+        }
+      }
       state.refreshAvailable = true
     })
   } catch { /* 兼容非Tauri环境 */ }
@@ -150,6 +160,8 @@ function removeFolderRoot(path: string) {
     return remainingRoots.some(r => imgDir.startsWith(r))
   })
   state.selectedPaths.clear()
+  // 更新文件监听器
+  setupFolderWatcher()
 }
 
 async function handleOpenFolder() {
@@ -313,8 +325,17 @@ function handleLoadPanelRelease() {
   // LoadPanel 已调用 releaseBase64，这里通知 GridView 重置显示上限
 }
 
-function handleRefresh() {
-  refreshFolders()
+async function handleRefresh() {
+  if (state.refreshAvailable && state.pendingChanges.length > 0) {
+    // 有变更提示时，细粒度刷新
+    const paths = [...state.pendingChanges]
+    state.pendingChanges = []
+    state.refreshAvailable = false
+    await applyFileChanges(paths)
+  } else {
+    // 无变更提示时，全量刷新
+    await refreshFolders()
+  }
 }
 </script>
 

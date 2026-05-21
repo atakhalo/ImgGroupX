@@ -275,6 +275,17 @@ fn get_cli_args() -> Vec<String> {
     std::env::args().skip(1).collect()
 }
 
+/// 设置是否抑制文件变更事件（自身操作时忽略）
+#[tauri::command]
+fn set_suppress_watcher(app_handle: AppHandle, suppress: bool) -> Result<(), String> {
+    if let Some(state) = app_handle.try_state::<Mutex<bool>>() {
+        if let Ok(mut guard) = state.lock() {
+            *guard = suppress;
+        }
+    }
+    Ok(())
+}
+
 /// 更新文件监听器（监视根文件夹的变更）
 #[tauri::command]
 fn update_watcher(app_handle: AppHandle, paths: Vec<String>) -> Result<(), String> {
@@ -283,9 +294,27 @@ fn update_watcher(app_handle: AppHandle, paths: Vec<String>) -> Result<(), Strin
     // 创建递归监听器
     let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
         if let Ok(event) = res {
+            // 被抑制时跳过（自身操作导致的变更）
+            if let Some(s) = handle.try_state::<Mutex<bool>>() {
+                if let Ok(flag) = s.lock() {
+                    if *flag {
+                        return;
+                    }
+                }
+            }
             // 只关注创建、修改、删除事件
             if matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)) {
-                let _ = handle.emit("fs-changed", ());
+                let paths: Vec<String> = event.paths.iter().filter_map(|p| {
+                    let ext = p.extension()?.to_str()?.to_lowercase();
+                    if SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+                        Some(p.to_string_lossy().to_string())
+                    } else {
+                        None
+                    }
+                }).collect();
+                if !paths.is_empty() {
+                    let _ = handle.emit("fs-changed", paths);
+                }
             }
         }
     })
@@ -309,6 +338,61 @@ fn update_watcher(app_handle: AppHandle, paths: Vec<String>) -> Result<(), Strin
     }
 
     Ok(())
+}
+
+/// 获取多个文件的信息（用于细粒度刷新）
+#[tauri::command]
+fn get_files_info(paths: Vec<String>) -> Result<Vec<ImageInfo>, String> {
+    let mut result = Vec::new();
+    for p in &paths {
+        let entry_path = Path::new(p);
+        if !entry_path.exists() || !entry_path.is_file() {
+            continue;
+        }
+        let ext = entry_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .unwrap_or_default();
+        if !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+            continue;
+        }
+        let metadata = fs::metadata(entry_path).map_err(|e| e.to_string())?;
+        let modified = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| {
+                let dt: DateTime<Local> =
+                    DateTime::from_timestamp(d.as_secs() as i64, 0)
+                        .unwrap_or_default()
+                        .into();
+                dt.format("%Y-%m-%d %H:%M:%S").to_string()
+            })
+            .unwrap_or_default();
+        let (width, height) = get_image_dimensions(entry_path);
+        let name = entry_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        let dir = entry_path
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("")
+            .to_string();
+        result.push(ImageInfo {
+            path: p.clone(),
+            name,
+            dir,
+            ext,
+            size_bytes: metadata.len(),
+            modified,
+            width,
+            height,
+        });
+    }
+    Ok(result)
 }
 
 /// 保存配置
@@ -336,6 +420,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(None::<RecommendedWatcher>))
+        .manage(Mutex::new(false))
         .invoke_handler(tauri::generate_handler![
             scan_folder,
             scan_folders,
@@ -349,6 +434,8 @@ pub fn run() {
             get_cli_args,
             delete_file,
             update_watcher,
+            set_suppress_watcher,
+            get_files_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -59,6 +59,8 @@ export const state = reactive({
   zoomFactor: 1,
   /** 刷新提示（检测到外部变更） */
   refreshAvailable: false,
+  /** 待处理的变更路径列表 */
+  pendingChanges: [] as string[],
 })
 
 /** 按路径去重后添加到allImages */
@@ -175,14 +177,90 @@ export async function scanFolders(paths: string[]): Promise<void> {
   }
 }
 
-/** 更新文件系统监听器（监视已加载根路径的变更） */
+/** 更新文件系统监听器（监视已加载根路径的变更，paths为空时停止所有监听） */
 export async function setupFolderWatcher(): Promise<void> {
-  if (state.loadedRootPaths.length === 0) return
   try {
     await invoke('update_watcher', { paths: [...state.loadedRootPaths] })
   } catch (e) {
     console.error('设置文件监听失败:', e)
   }
+}
+
+/** 抑制/恢复文件变更监听（自身操作时抑制） */
+export async function setSuppressWatcher(suppress: boolean): Promise<void> {
+  try {
+    await invoke('set_suppress_watcher', { suppress })
+  } catch { /* 忽略 */ }
+}
+
+/** 获取单文件信息 */
+export async function getFileInfo(path: string): Promise<ImageInfo | null> {
+  try {
+    const infos = await invoke<ImageInfo[]>('get_files_info', { paths: [path] })
+    return infos[0] || null
+  } catch { return null }
+}
+
+/** 规范化路径（统一小写+前斜杠，用于比较） */
+function normPath(p: string): string {
+  return p.replace(/\\/g, '/').toLowerCase()
+}
+
+/** 细粒度应用文件变更（新增/修改/删除） */
+export async function applyFileChanges(changedPaths: string[]): Promise<boolean> {
+  if (changedPaths.length === 0) return false
+
+  // 构建规范化路径映射：normPath → 原始路径
+  const normToOrig = new Map<string, string>()
+  for (const img of state.allImages) {
+    normToOrig.set(normPath(img.path), img.path)
+  }
+
+  // 1. 找出变更路径中需要在 state 中删除的条目
+  const pathsToRemove = new Set<string>()
+  const toCheck: string[] = []
+
+  for (const p of changedPaths) {
+    const n = normPath(p)
+    if (normToOrig.has(n)) {
+      toCheck.push(p)
+    }
+  }
+
+  if (toCheck.length > 0) {
+    const existingInfos = await invoke<ImageInfo[]>('get_files_info', { paths: toCheck })
+    const existingSet = new Set(existingInfos.map(i => normPath(i.path)))
+    for (const p of toCheck) {
+      if (!existingSet.has(normPath(p))) {
+        pathsToRemove.add(normToOrig.get(normPath(p))!)
+      }
+    }
+  }
+
+  // 执行删除
+  if (pathsToRemove.size > 0) {
+    state.allImages = state.allImages.filter(i => !pathsToRemove.has(i.path))
+    for (const p of pathsToRemove) state.selectedPaths.delete(p)
+    for (const vg of state.virtualGroups) {
+      vg.images = vg.images.filter(i => !pathsToRemove.has(i.path))
+    }
+  }
+
+  // 2. 处理新增/修改：获取文件信息并更新
+  const newInfos = await invoke<ImageInfo[]>('get_files_info', { paths: changedPaths })
+
+  for (const info of newInfos) {
+    const n = normPath(info.path)
+    // 先按规范化路径查找已有条目
+    const idx = state.allImages.findIndex(i => normPath(i.path) === n)
+    if (idx >= 0) {
+      Object.assign(state.allImages[idx], info)
+    } else {
+      state.allImages.push({ ...info, loading: false })
+    }
+  }
+
+  return true
 }
 
 /** 刷新所有已加载文件夹 */
@@ -463,22 +541,27 @@ export async function openInExplorer(path: string): Promise<void> {
 
 /** 删除图片（从磁盘和所有分组中移除） */
 export async function deleteImages(paths: string[]): Promise<void> {
-  for (const p of paths) {
-    try { await invoke('delete_file', { path: p }) } catch { /* */ }
+  await setSuppressWatcher(true)
+  try {
+    for (const p of paths) {
+      try { await invoke('delete_file', { path: p }) } catch { /* */ }
+    }
+    const pathSet = new Set(paths)
+    state.allImages = state.allImages.filter(img => !pathSet.has(img.path))
+    for (const p of paths) state.selectedPaths.delete(p)
+    // 从虚拟分组中移除
+    for (const vg of state.virtualGroups) {
+      vg.images = vg.images.filter(img => !pathSet.has(img.path))
+    }
+    state.virtualGroups = state.virtualGroups.filter(vg => vg.images.length > 0)
+    // 清理空根路径
+    state.loadedRootPaths = state.loadedRootPaths.filter(r => {
+      const norm = r.replace(/\\/g, '/')
+      return state.allImages.some(img => img.dir.replace(/\\/g, '/').startsWith(norm))
+    })
+  } finally {
+    await setSuppressWatcher(false)
   }
-  const pathSet = new Set(paths)
-  state.allImages = state.allImages.filter(img => !pathSet.has(img.path))
-  for (const p of paths) state.selectedPaths.delete(p)
-  // 从虚拟分组中移除
-  for (const vg of state.virtualGroups) {
-    vg.images = vg.images.filter(img => !pathSet.has(img.path))
-  }
-  state.virtualGroups = state.virtualGroups.filter(vg => vg.images.length > 0)
-  // 清理空根路径
-  state.loadedRootPaths = state.loadedRootPaths.filter(r => {
-    const norm = r.replace(/\\/g, '/')
-    return state.allImages.some(img => img.dir.replace(/\\/g, '/').startsWith(norm))
-  })
 }
 
 /** 清除所有图片 */
