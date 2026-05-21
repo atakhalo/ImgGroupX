@@ -96,10 +96,6 @@ export interface AppSettings {
   childTitleBgColor: string
   /** 节点网格视图间距 */
   nodeGridGap: number
-  /** 节点网格视图边框宽度（0=无边框） */
-  nodeGridBorderWidth: number
-  /** 节点网格视图边框颜色 */
-  nodeGridBorderColor: string
   /** 彩虹层级着色开关 */
   rainbowEnabled: boolean
   /** 彩虹层级颜色列表 */

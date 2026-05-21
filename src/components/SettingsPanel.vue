@@ -48,8 +48,6 @@ function reset() {
     rootTitleBgColor: '#222240',
     childTitleBgColor: '#23234d',
     nodeGridGap: 12,
-    nodeGridBorderWidth: 0,
-    nodeGridBorderColor: '#444466',
     rainbowEnabled: false,
     rainbowColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
     language: 'zh',
@@ -117,16 +115,7 @@ function reset() {
               <input type="range" v-model.number="localSettings.nodeGridGap" min="0" max="40" step="1" />
               <span class="setting-value">{{ localSettings.nodeGridGap }}px</span>
             </div>
-            <div class="setting-row">
-              <label>{{ $t('settings.node_grid_border') }}</label>
-              <input type="range" v-model.number="localSettings.nodeGridBorderWidth" min="0" max="8" step="1" />
-              <span class="setting-value">{{ localSettings.nodeGridBorderWidth }}px</span>
-            </div>
-            <div class="setting-row" v-if="localSettings.nodeGridBorderWidth > 0">
-              <label>{{ $t('settings.node_grid_border_color') }}</label>
-              <input type="color" v-model="localSettings.nodeGridBorderColor" class="color-input" />
-              <span class="setting-value">{{ localSettings.nodeGridBorderColor }}</span>
-            </div>
+
           </div>
 
           <!-- 彩虹层级 -->
