@@ -303,5 +303,6 @@ const emit = defineEmits<{
   color: #aab0ff;
   font-size: 12px;
   padding: 0 8px;
+  white-space: nowrap;
 }
 </style>
