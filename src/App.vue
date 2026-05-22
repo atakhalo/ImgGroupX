@@ -224,7 +224,7 @@ function closeViewer() {
   viewingImages.value = []
 }
 
-async function handleViewerDelete(path: string) {
+async function handleViewerDelete(path: string, index: number) {
   await deleteImages([path])
   const updated = viewingImages.value.filter(img => img.path !== path)
   if (updated.length === 0) {
@@ -233,9 +233,8 @@ async function handleViewerDelete(path: string) {
     return
   }
   viewingImages.value = updated
-  if (viewingIndex.value >= updated.length) {
-    viewingIndex.value = updated.length - 1
-  }
+  // 使用删除时的实际索引计算新位置，避免因查看器内导航导致索引不同步
+  viewingIndex.value = Math.min(index, updated.length - 1)
   viewerKey.value++
 }
 

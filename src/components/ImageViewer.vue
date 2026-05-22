@@ -13,7 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  deleteImage: [path: string]
+  deleteImage: [path: string, index: number]
 }>()
 
 const currentIndex = ref(props.initialIndex)
@@ -147,7 +147,7 @@ async function handleOpenWith(program: string) {
 
 function handleDeleteImage() {
   const item = currentItem.value
-  if (item) emit('deleteImage', item.path)
+  if (item) emit('deleteImage', item.path, currentIndex.value)
 }
 </script>
 
