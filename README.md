@@ -1,14 +1,18 @@
 # 格图X - 图片分组浏览器
 
 <table>
-  <tr>
-    <td><img src="DocImage/mainView.webp" height ="300"></td>
-    <td><img src="DocImage/rainbow.webp" height ="300"></td>
-  </tr>
-  <tr>
-    <td><img src="DocImage/bigView.webp" height ="300"></td>
-    <td><img src="DocImage/compare.webp" height ="300"></td>
-  </tr>
+	<tr>
+		<td align="center"><img src="DocImage/mainView.webp" height ="300">分组视图</td>
+		<td align="center"><img src="DocImage/rainbow.webp" height ="300">彩虹视图</td>
+	</tr>
+	<tr>
+		<td align="center"><img src="DocImage/groupNoTitle.webp" height ="300">分组无标题视图</td>
+		<td align="center"><img src="DocImage/nogroup.webp" height ="300">无分组视图</td>
+	</tr>
+	<tr>
+		<td align="center"><img src="DocImage/bigView.webp" height ="300">大图模式</td>
+		<td align="center"><img src="DocImage/compare.webp" height ="300">对比模式</td>
+	</tr>
 </table>
 
 # 核心功能
