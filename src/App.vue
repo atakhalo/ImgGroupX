@@ -483,7 +483,12 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
 .app-root.drag-over { background-color: #1a1a3e; }
 .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 .top-bar { padding: 8px 16px 0; flex-shrink: 0; display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
-.content-area { flex: 1; overflow-y: auto; overflow-x: hidden; }
+.content-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 80px; /* 为底部固定控制栏留出空间，避免最后图片被遮挡 */
+}
 
 /* 未分组模式下的虚拟分组区域 */
 .vg-section { padding: 0 16px; margin-bottom: 12px; }
