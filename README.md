@@ -1,5 +1,7 @@
 # 格图X - 图片分组浏览器
 
+[bilibili视频演示](https://www.bilibili.com/video/BV1hHLi6ZE8P/)
+
 <table>
 	<tr>
 		<td align="center"><img src="DocImage/mainView.webp" height ="300">分组视图</td>
