@@ -61,6 +61,8 @@ export const state = reactive({
   refreshAvailable: false,
   /** 待处理的变更路径列表 */
   pendingChanges: [] as string[],
+  /** 用户取消扫描的根路径集合（忽略其后续事件） */
+  cancelledRoots: new Set<string>(),
 })
 
 /** 按路径去重后添加到allImages */
@@ -198,8 +200,12 @@ export async function startProgressiveScan(paths: string[]): Promise<void> {
 /** 处理单目录扫描结果（由 scan-dir-progress 事件触发） */
 export function handleDirProgress(payload: { dir: string; images: ImageInfo[]; root: string }): void {
   const norm = payload.root.replace(/\\/g, '/').replace(/\/$/, '')
-  // 根路径已被用户移除（点击了 x），忽略后续事件
-  if (!state.loadedRootPaths.includes(norm)) return
+  // 根路径已被用户取消扫描（点击了 x），忽略后续事件
+  if (state.cancelledRoots.has(norm)) return
+  // 确保根路径已登记（startProgressiveScan 会预登记，但兼容手动调用场景）
+  if (!state.loadedRootPaths.includes(norm)) {
+    state.loadedRootPaths.push(norm)
+  }
   const items: ImageItem[] = payload.images.map(img => ({
     ...img,
     loading: false,
@@ -210,6 +216,7 @@ export function handleDirProgress(payload: { dir: string; images: ImageInfo[]; r
 /** 渐进扫描完成（由 scan-all-complete 事件触发） */
 export function handleScanComplete(): void {
   state.loading = false
+  state.cancelledRoots.clear()
 }
 
 /** 更新文件系统监听器（监视已加载根路径的变更，paths为空时停止所有监听） */

@@ -31,6 +31,9 @@ const showGroupNameInput = ref(false)
 const showCompare = ref(false)
 const comparePair = ref<{ left: ImageItem; right: ImageItem } | null>(null)
 
+// 命令行单图：待打开图片路径（加载完父文件夹后自动大图显示）
+const pendingOpenImagePath = ref('')
+
 let unlistenDragDrop: (() => void) | null = null
 let unlistenFsChange: (() => void) | null = null
 
@@ -59,20 +62,13 @@ onMounted(async () => {
   setupDragDrop()
   await loadConfig()
   settingsReady = true
-  // 处理命令行传入的图片路径
-  try {
-    const cliArgs = await invoke<string[]>('get_cli_args')
-    if (cliArgs.length > 0) {
-      await handleDroppedPaths(cliArgs)
-    }
-  } catch { /* 忽略 */ }
-  // 监听文件系统变更事件（记录变更路径，仅显示提示不自动应用）
+
+  // 先注册事件监听器（确保 CLI 扫描时事件不丢失）
   try {
     const { listen } = await import('@tauri-apps/api/event')
     unlistenFsChange = await listen<string[]>('fs-changed', (event) => {
       const paths = event.payload
       if (paths.length === 0) return
-      // 合并新路径到待处理列表（去重）
       const existing = new Set(state.pendingChanges)
       for (const p of paths) {
         if (!existing.has(p)) {
@@ -81,16 +77,55 @@ onMounted(async () => {
         }
       }
       state.refreshAvailable = true
-    })    // 监听渐进扫描进度
+    })
     await listen<{ dir: string; images: any[]; root: string }>('scan-dir-progress', (event) => {
       handleDirProgress(event.payload)
     })
     await listen('scan-all-complete', () => {
       handleScanComplete()
       setupFolderWatcher()
-    })  } catch { /* 兼容非Tauri环境 */ }
+    })
+  } catch { /* 兼容非Tauri环境 */ }
+
   // 初始化文件监听器
   await setupFolderWatcher()
+
+  // 再处理命令行参数（此时事件监听器已就绪，不会丢失扫描事件）
+  try {
+    const cliArgs = await invoke<string[]>('get_cli_args')
+    if (cliArgs.length === 1) {
+      const isDir = await invoke<boolean>('check_is_dir', { path: cliArgs[0] })
+      if (!isDir) {
+        // 单图：加载父文件夹，扫描完成后自动打开大图
+        const parentDir = cliArgs[0].replace(/\\/g, '/').replace(/\/[^/]+$/, '')
+        if (parentDir) {
+          // 规范化待打开路径（统一正斜杠，便于后续匹配）
+          pendingOpenImagePath.value = cliArgs[0].replace(/\\/g, '/')
+          await startProgressiveScan([parentDir])
+          // 等待扫描完成（loading=false）后自动打开大图
+          const tryOpenImage = () => {
+            if (!pendingOpenImagePath.value) return
+            const target = pendingOpenImagePath.value
+            const item = state.allImages.find(i =>
+              i.path.replace(/\\/g, '/') === target
+            )
+            if (item) viewImage(item)
+            pendingOpenImagePath.value = ''
+            stopWatch()
+          }
+          const stopWatch = watch(() => state.loading, (loading) => {
+            if (!loading) tryOpenImage()
+          })
+          // 防止扫描在 watch 创建前就已结束（极小文件夹等场景）
+          if (!state.loading) tryOpenImage()
+        }
+      } else {
+        await handleDroppedPaths(cliArgs)
+      }
+    } else if (cliArgs.length > 0) {
+      await handleDroppedPaths(cliArgs)
+    }
+  } catch { /* 忽略 */ }
 })
 
 onUnmounted(() => {
@@ -154,13 +189,14 @@ async function handleDroppedPaths(paths: string[]) {
 
 /** 删除文件夹根节点及其图片（保留其他根路径仍覆盖的图片） */
 function removeFolderRoot(path: string) {
-  // 如果正在扫描中，取消后台扫描线程
+  const norm = path.replace(/\\/g, '/').replace(/\/$/, '')
+  // 如果正在扫描中，取消后台扫描线程并标记忽略该根路径的后续事件
   if (state.loading) {
     invoke('cancel_scan')
+    state.cancelledRoots.add(norm)
   }
   const idx = state.loadedRootPaths.indexOf(path)
   if (idx >= 0) state.loadedRootPaths.splice(idx, 1)
-  const norm = path.replace(/\\/g, '/').replace(/\/$/, '')
   rootExclusions.delete(norm)
   const remainingRoots = state.loadedRootPaths.map(p => p.replace(/\\/g, '/'))
   state.allImages = state.allImages.filter(img => {
