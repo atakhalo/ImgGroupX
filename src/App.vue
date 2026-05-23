@@ -401,6 +401,36 @@ async function handleRefresh() {
     <div class="main-area">
       <div class="top-bar">
         <FilterSortBar @openSettings="openSettings">
+          <template #left-prepend>
+            <!-- 打开文件夹 -->
+            <button class="top-btn" :title="$t('control.open_folder')" @click="handleOpenFolder">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+              <span>{{ $t('control.open') }}</span>
+            </button>
+            <!-- 打开图片 -->
+            <button class="top-btn" :title="$t('control.open_images')" @click="handleOpenImages">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="M21 15l-5-5L5 21" />
+              </svg>
+              <span>{{ $t('control.images') }}</span>
+            </button>
+            <!-- 刷新 -->
+            <button class="top-btn refresh-btn" :class="{ 'has-update': state.refreshAvailable }" :title="$t('control.refresh')" @click="handleRefresh">
+              <span class="refresh-icon-wrap">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="refresh-icon">
+                  <path d="M23 4v6h-6" />
+                  <path d="M1 20v-6h6" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+                <span v-if="state.refreshAvailable" class="refresh-dot"></span>
+              </span>
+              <span>{{ $t('control.refresh') }}</span>
+            </button>
+          </template>
           <template #right-prepend>
             <LoadPanel @releaseAll="handleLoadPanelRelease" />
           </template>
@@ -445,8 +475,6 @@ async function handleRefresh() {
 
       <div class="bottom-bar" :class="{ hidden: !showControls }">
         <ControlBar
-          @openFolder="handleOpenFolder"
-          @openImages="handleOpenImages"
           @viewMode="switchToViewMode"
           @selectMode="switchToSelectMode"
           @toggleFolderGroup="toggleFolderGroup"
@@ -458,7 +486,6 @@ async function handleRefresh() {
           @createGroup="createVirtualGroup"
           @compare="handleCompare"
           @deleteSelection="handleDeleteSelection"
-          @refresh="handleRefresh"
         />
       </div>
     </div>
@@ -556,6 +583,31 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
   display: flex; align-items: center;
 }
 .vg-section-del:hover { color: #ff6b6b; background: rgba(255,60,60,0.1); }
+
+/* 顶部按钮 */
+.top-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.65);
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.top-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.9); }
+.refresh-icon-wrap { position: relative; display: flex; }
+.refresh-dot {
+  position: absolute; top: -2px; right: -2px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #646cff;
+}
+
 .bottom-bar {
   position: fixed;
   bottom: 16px;

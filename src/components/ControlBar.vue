@@ -2,8 +2,6 @@
 import { state } from '../stores/imageStore'
 
 const emit = defineEmits<{
-  openFolder: []
-  openImages: []
   toggleFolderGroup: []
   toggleGroupTitles: []
   collapseAll: []
@@ -15,43 +13,12 @@ const emit = defineEmits<{
   deleteSelection: []
   viewMode: []
   selectMode: []
-  refresh: []
 }>()
 </script>
 
 <template>
   <div class="control-bar">
     <div class="control-left">
-      <!-- 打开文件夹 -->
-      <button class="ctrl-btn" :title="$t('control.open_folder')" @click="emit('openFolder')">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-        <span>{{ $t('control.open') }}</span>
-      </button>
-      <!-- 打开图片 -->
-      <button class="ctrl-btn" :title="$t('control.open_images')" @click="emit('openImages')">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" />
-          <path d="M21 15l-5-5L5 21" />
-        </svg>
-        <span>{{ $t('control.images') }}</span>
-      </button>
-
-      <!-- 刷新 -->
-      <button class="ctrl-btn refresh-btn" :class="{ 'has-update': state.refreshAvailable }" :title="$t('control.refresh')" @click="emit('refresh')">
-        <span class="refresh-icon-wrap">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="refresh-icon">
-            <path d="M23 4v6h-6" />
-            <path d="M1 20v-6h6" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
-          <span v-if="state.refreshAvailable" class="refresh-dot"></span>
-        </span>
-        <span>{{ $t('control.refresh') }}</span>
-      </button>
-
       <!-- 目录分组切换 -->
       <button
         class="ctrl-btn"

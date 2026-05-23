@@ -54,6 +54,7 @@ function toggleInfo() {
           <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
         </svg>
       </button>
+      <span class="zoom-text">{{ Math.round(scale * 100) }}%</span>
       <button class="op-btn" :title="$t('image.zoom_out')" @click="emit('zoomOut')">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -65,11 +66,6 @@ function toggleInfo() {
           <path d="M12 2v20M2 12h20M5 5l14 14M19 5l-14 14"/>
         </svg>
       </button>
-    </div>
-
-    <!-- 中间：缩放百分比 -->
-    <div class="op-center">
-      <span class="zoom-text">{{ Math.round(scale * 100) }}%</span>
     </div>
 
     <!-- 右侧：全屏 / 信息显隐 / 打开菜单 / 关闭 -->
@@ -160,14 +156,11 @@ function toggleInfo() {
   gap: 4px;
 }
 
-.op-center {
-  padding: 0 8px;
-}
-
 .zoom-text {
   color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  padding: 0 4px;
 }
 
 .op-btn {

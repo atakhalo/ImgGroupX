@@ -63,6 +63,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
 
 <template>
   <div class="filter-sort-bar">
+    <slot name="left-prepend" />
     <!-- 排序 -->
     <div class="sort-group">
       <span class="sort-label">{{ $t('filter.sort') }}</span>

@@ -245,14 +245,6 @@ function handleDeleteImage() {
       <button v-if="currentIndex < images.length - 1" class="nav-btn next-btn" @click.stop="nextImage">
         <svg viewBox="0 0 24 24" width="28" height="28" fill="white"><path d="M9 18l6-6-6-6" stroke="white" stroke-width="2" fill="none"/></svg>
       </button>
-
-      <div v-if="state.showImageInfo" class="viewer-info">
-        <span>{{ currentItem?.name }}</span><span class="info-sep">|</span>
-        <span>{{ Math.round(scale * 100) }}%</span><span class="info-sep">|</span>
-        <span>{{ currentIndex + 1 }}/{{ images.length }}</span><span class="info-sep">|</span>
-        <span>{{ formatSize(currentItem?.size_bytes) }}</span><span class="info-sep">|</span>
-        <span>{{ currentItem?.width }}×{{ currentItem?.height }}</span>
-      </div>
     </div>
 
     <!-- 操作栏热区 -->
@@ -275,6 +267,15 @@ function handleDeleteImage() {
           @deleteImage="handleDeleteImage"
         />
       </div>
+    </div>
+
+    <!-- 图片信息（置于操作栏下方，确保不被遮挡） -->
+    <div v-if="state.showImageInfo" class="viewer-info">
+      <span>{{ currentItem?.name }}</span><span class="info-sep">|</span>
+      <span>{{ Math.round(scale * 100) }}%</span><span class="info-sep">|</span>
+      <span>{{ currentIndex + 1 }}/{{ images.length }}</span><span class="info-sep">|</span>
+      <span>{{ formatSize(currentItem?.size_bytes) }}</span><span class="info-sep">|</span>
+      <span>{{ currentItem?.width }}×{{ currentItem?.height }}</span>
     </div>
   </div>
 </template>
@@ -404,12 +405,14 @@ function handleDeleteImage() {
 
 .viewer-info {
   position: absolute;
-  bottom: 70px; left: 50%; transform: translateX(-50%);
-  color: rgba(255,255,255,0.7);
-  font-size: 13px;
-  background: rgba(0,0,0,0.5);
-  padding: 4px 12px; border-radius: 4px;
+  bottom: 4px; left: 50%; transform: translateX(-50%);
+  color: rgba(255,255,255,0.5);
+  font-size: 12px;
+  background: rgba(0,0,0,0.35);
+  padding: 2px 10px; border-radius: 4px;
   white-space: nowrap;
+  z-index: 20;
+  pointer-events: none;
 }
 .info-sep { margin: 0 8px; opacity: 0.4; }
 
