@@ -99,10 +99,8 @@ function onPanUp() {
 function fitToWindow() { scale.value = 1; offset.value = { x: 0, y: 0 } }
 
 function handleWheel(e: WheelEvent) {
-  if (e.ctrlKey || e.metaKey) {
-    e.preventDefault()
-    scale.value = Math.max(0.1, Math.min(10, scale.value + (e.deltaY > 0 ? -0.25 : 0.25)))
-  }
+  e.preventDefault()
+  scale.value = Math.max(0.1, Math.min(10, scale.value + (e.deltaY > 0 ? -0.25 : 0.25)))
 }
 </script>
 
