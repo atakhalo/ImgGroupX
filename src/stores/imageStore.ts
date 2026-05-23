@@ -309,6 +309,8 @@ const newInfos = await invoke<ImageInfo[]>('get_files_info', { paths: changedPat
 /** 刷新所有已加载文件夹 */
 export async function refreshFolders(): Promise<void> {
   if (state.loadedRootPaths.length === 0) return
+  // 取消正在进行的扫描
+  if (state.loading) { invoke('cancel_scan') }
   state.loading = true
   state.refreshAvailable = false
   // 记录旧路径，防止重复添加
@@ -609,6 +611,8 @@ export async function deleteImages(paths: string[]): Promise<void> {
 
 /** 清除所有图片 */
 export function clearAll() {
+  // 取消正在进行的扫描
+  if (state.loading) { invoke('cancel_scan') }
   state.allImages = []
   state.loadedRootPaths = []
   state.folderTree = []

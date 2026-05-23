@@ -378,6 +378,8 @@ async function handleRefresh() {
     await applyFileChanges(paths)
   } else {
     // 无变更提示时，全量刷新
+    // 先取消正在进行的扫描
+    if (state.loading) { invoke('cancel_scan') }
     await refreshFolders()
   }
 }
