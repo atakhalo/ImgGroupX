@@ -106,7 +106,7 @@ const emit = defineEmits<{
         {{ $t('control.selected') }} {{ state.selectedPaths.size }}
       </span>
       <button
-        v-if="state.selectedPaths.size > 0 && state.selectMode === 'select'"
+        v-if="(state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0) && state.selectMode === 'select'"
         class="ctrl-btn"
         :title="$t('hint.create_group')"
         @click="emit('createGroup')"
@@ -118,7 +118,7 @@ const emit = defineEmits<{
       </button>
 
       <button
-        v-if="state.selectedPaths.size === 2 && state.selectMode === 'select'"
+        v-if="state.selectedPaths.size === 2 && state.selectedFolderPaths.size === 0 && state.selectMode === 'select'"
         class="ctrl-btn"
         :title="$t('control.compare')"
         @click="emit('compare')"

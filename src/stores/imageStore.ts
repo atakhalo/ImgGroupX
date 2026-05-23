@@ -3,6 +3,23 @@ import type { ImageInfo, ImageItem, FolderNode, AppSettings, SortBy, SortOrder, 
 import { invoke } from '@tauri-apps/api/core'
 import { t } from '../i18n'
 
+/** 冒泡提示 */
+export const toastState = reactive({
+  text: '',
+  visible: false,
+  _timer: 0 as unknown as ReturnType<typeof setTimeout> | undefined,
+})
+
+export function showToast(text: string, duration = 3000) {
+  if (toastState._timer) clearTimeout(toastState._timer)
+  toastState.text = text
+  toastState.visible = true
+  toastState._timer = setTimeout(() => {
+    toastState.visible = false
+    toastState._timer = undefined
+  }, duration)
+}
+
 /** 默认设置 */
 const defaultSettings: AppSettings = {
   borderRadius: 4,
@@ -52,6 +69,8 @@ export const state = reactive({
   selectMode: 'view' as 'select' | 'view',
   /** 选中的图片路径集合 */
   selectedPaths: new Set<string>(),
+  /** 选中的文件夹节点路径集合 */
+  selectedFolderPaths: new Set<string>(),
   /** 设置 */
   settings: { ...defaultSettings },
   /** 加载状态 */
@@ -487,6 +506,19 @@ export function buildFullTree(): FolderNode[] {
   return [...state.virtualGroups, ...folderTree]
 }
 
+/** 从文件夹树中递归查找并提取指定路径的节点子树（深拷贝） */
+export function findSubTreeInTree(tree: FolderNode[], targetPath: string): FolderNode | null {
+  const norm = targetPath.replace(/\\/g, '/')
+  for (const node of tree) {
+    if (node.path === norm) {
+      return JSON.parse(JSON.stringify(node))
+    }
+    const found = findSubTreeInTree(node.children, norm)
+    if (found) return found
+  }
+  return null
+}
+
 /** 扫描单个文件并创建虚拟分组 */
 export async function scanFilesAsVirtualGroup(filePaths: string[], groupName?: string): Promise<void> {
   state.loading = true
@@ -513,12 +545,12 @@ export async function scanFilesAsVirtualGroup(filePaths: string[], groupName?: s
   }
 }
 
-/** 添加虚拟分组 */
-export function addVirtualGroup(name: string, images: ImageItem[]): FolderNode {
+/** 添加虚拟分组（支持子节点） */
+export function addVirtualGroup(name: string, images: ImageItem[], children?: FolderNode[]): FolderNode {
   const node: FolderNode = {
     path: `__virtual__${Date.now()}`,
     name,
-    children: [],
+    children: children ? children.map(c => ({ ...c })) : [],
     images: [...images],
     expanded: true,
     isVirtual: true,
@@ -619,6 +651,42 @@ export async function deleteImages(paths: string[]): Promise<void> {
 }
 
 /** 清除所有图片 */
+/** 将虚拟分组的图片按目录构建为树结构 */
+export function buildVirtualGroupTree(images: ImageItem[]): FolderNode {
+  // 按目录分组
+  const dirMap = new Map<string, ImageItem[]>()
+  for (const img of images) {
+    const dir = img.dir.replace(/\\/g, '/')
+    if (!dirMap.has(dir)) {
+      dirMap.set(dir, [])
+    }
+    dirMap.get(dir)!.push(img)
+  }
+
+  const root: FolderNode = {
+    path: `__virtual__${Date.now()}`,
+    name: '',
+    children: [],
+    images: [],
+    expanded: true,
+  }
+
+  for (const [dirPath, dirImages] of dirMap) {
+    const parts = dirPath.split('/')
+    const folderName = parts[parts.length - 1] || dirPath
+    const child: FolderNode = {
+      path: dirPath,
+      name: folderName,
+      children: [],
+      images: dirImages.map(img => ({ ...img, loading: false })),
+      expanded: true,
+    }
+    root.children.push(child)
+  }
+
+  return root
+}
+
 export function clearAll() {
   // 取消正在进行的扫描
   if (state.loading) { invoke('cancel_scan') }
@@ -626,6 +694,7 @@ export function clearAll() {
   state.loadedRootPaths = []
   state.folderTree = []
   state.selectedPaths.clear()
+  state.selectedFolderPaths.clear()
   state.virtualGroups = []
   rootExclusions.clear()
 }

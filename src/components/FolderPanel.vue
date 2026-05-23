@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { state, buildFolderTree, filterImages } from '../stores/imageStore'
+import { state, buildFolderTree, filterImages, findSubTreeInTree, showToast } from '../stores/imageStore'
 import FolderGroup from './FolderGroup.vue'
-import GridView from './GridView.vue'
 
 const props = defineProps<{
   images: ImageItem[]
@@ -16,6 +15,9 @@ const emit = defineEmits<{
   deleteVirtualGroup: [index: number]
   removeRoot: [path: string]
   excludeNode: [rootPath: string, subPath: string]
+  toggleSelectFolder: [path: string]
+  addToVirtualGroup: [vgIndex: number]
+  removeFromVirtualGroup: [vgIndex: number]
 }>()
 
 /** 展开状态存储：首次构造时确定，用户可切换，永不重算 */
@@ -183,8 +185,107 @@ function handleDeleteVg(index: number) {
   emit('deleteVirtualGroup', index)
 }
 
+/** 删除虚拟分组中的子节点 */
+function handleVirtualExcludeNode(rootPath: string, subPath: string) {
+  const vg = state.virtualGroups.find(v => v.path === rootPath)
+  if (!vg) return
+  vg.children = vg.children.filter(c => c.path !== subPath)
+  vg.images = vg.images.filter(img => !img.dir.startsWith(subPath))
+}
+
 function handleExcludeNode(rootPath: string, subPath: string) {
   emit('excludeNode', rootPath, subPath)
+}
+
+/** 递归将子树的相对路径转为绝对路径 */
+function makeNodePathsAbsolute(node: FolderNode) {
+  if (node.images.length > 0) {
+    const absDir = node.images[0].dir.replace(/\\/g, '/')
+    node.path = absDir
+  }
+  for (const child of node.children) {
+    makeNodePathsAbsolute(child)
+  }
+}
+
+/** 将选中项添加到指定虚拟分组 */
+function handleAddToVirtualGroup(vgIndex: number) {
+  const vg = state.virtualGroups[vgIndex]
+  if (!vg) return
+
+  // 收集分组中已有图片路径
+  const existingPaths = new Set<string>()
+  function collectImagePaths(n: FolderNode) {
+    for (const img of n.images) existingPaths.add(img.path)
+    for (const c of n.children) collectImagePaths(c)
+  }
+  collectImagePaths(vg)
+
+  // 添加不重复的选中图片
+  for (const fp of state.selectedPaths) {
+    if (!existingPaths.has(fp)) {
+      const img = state.allImages.find(i => i.path === fp)
+      if (img) vg.images.push({ ...img, loading: false })
+    }
+  }
+
+  // 收集分组中已有子节点路径
+  const existingChildPaths = new Set<string>()
+  function collectChildPaths(n: FolderNode) {
+    existingChildPaths.add(n.path)
+    for (const c of n.children) collectChildPaths(c)
+  }
+  collectChildPaths(vg)
+
+  // 添加不重复的选中文件夹子树
+  const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
+  for (const fp of state.selectedFolderPaths) {
+    if (existingChildPaths.has(fp)) continue
+    const found = findSubTreeInTree(fullTree, fp)
+    if (found) {
+      makeNodePathsAbsolute(found)
+      vg.children.push(found)
+    }
+  }
+
+  state.selectedPaths.clear()
+  state.selectedFolderPaths.clear()
+}
+
+/** 从指定虚拟分组中移除选中项（仅处理一级节点和一级图片，非一级提示） */
+function handleRemoveFromVirtualGroup(vgIndex: number) {
+  const vg = state.virtualGroups[vgIndex]
+  if (!vg) return
+
+  // 判断是否有非一级项被选中
+  const firstLevelImagePaths = new Set(vg.images.map(i => i.path))
+  const firstLevelChildPaths = new Set(vg.children.map(c => c.path))
+  let hasNonFirstLevel = false
+
+  for (const fp of state.selectedPaths) {
+    if (!firstLevelImagePaths.has(fp)) { hasNonFirstLevel = true; break }
+  }
+  if (!hasNonFirstLevel) {
+    for (const fp of state.selectedFolderPaths) {
+      if (!firstLevelChildPaths.has(fp)) { hasNonFirstLevel = true; break }
+    }
+  }
+
+  // 移除一级图片
+  vg.images = vg.images.filter(img => !state.selectedPaths.has(img.path))
+  // 移除一级子节点
+  state.selectedFolderPaths.forEach(fp => {
+    const idx = vg.children.findIndex(c => c.path === fp)
+    if (idx !== -1) vg.children.splice(idx, 1)
+  })
+
+  state.selectedPaths.clear()
+  state.selectedFolderPaths.clear()
+
+  // 有非一级项时提示
+  if (hasNonFirstLevel) {
+    showToast('移除只支持一级节点和一级图片')
+  }
 }
 
 defineExpose({ toggleAll, collapseLeaves })
@@ -194,45 +295,24 @@ defineExpose({ toggleAll, collapseLeaves })
   <div class="folder-panel">
     <!-- 虚拟分组节点 -->
     <template v-for="(node, i) in allRootNodes" :key="node.path || `vg-${i}`">
-      <!-- 虚拟分组节点 -->
-      <div v-if="(node as any).isVirtualGroup" class="virtual-group-root">
-        <div v-if="state.showGroupTitle" class="virtual-group-header" :style="{ backgroundColor: state.settings.rootTitleBgColor }" @click="toggleNode(node)">
-          <span class="vg-left">
-            <span class="vg-icon">📦</span>
-          </span>
-          <span class="vg-label">
-            <span class="folder-arrow">{{ isExpanded(node) ? '▼' : '▶' }}</span>
-            <span class="folder-name" :style="{ color: state.settings.rootTitleColor }">{{ node.name }}</span>
-            <span class="folder-count">({{ node.images.length }})</span>
-          </span>
-          <span class="vg-right">
-            <button
-              class="vg-delete-btn"
-              :title="`删除分组「${node.name}」`"
-              @click.stop="handleDeleteVg((node as any)._vgIndex)"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </span>
-        </div>
-        <div
-          v-if="isExpanded(node) && node.images.length"
-          class="folder-grid-wrapper"
-          :style="{
-            paddingLeft: '32px',
-            marginBottom: state.settings.nodeGridGap + 'px',
-          }"
-        >
-          <GridView
-            :images="node.images"
-            :bgColor="state.settings.bgColor"
-            @viewImage="(item: ImageItem, scope?: ImageItem[]) => handleViewImage(item, scope)"
-            @selectImage="handleSelectImage"
-          />
-        </div>
-      </div>
+      <FolderGroup
+        v-if="(node as any).isVirtualGroup"
+        :node="node"
+        :depth="0"
+        :rootPath="node.path"
+        :showTitle="state.showGroupTitle"
+        :getExpanded="isExpanded"
+        :isVirtualRoot="true"
+        :vgIndex="(node as any)._vgIndex"
+        @toggle="toggleNode"
+        @viewImage="handleViewImage"
+        @selectImage="handleSelectImage"
+        @removeRoot="() => handleDeleteVg((node as any)._vgIndex)"
+        @excludeNode="handleVirtualExcludeNode"
+        @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
+        @addToVirtualGroup="handleAddToVirtualGroup"
+        @removeFromVirtualGroup="handleRemoveFromVirtualGroup"
+      />
       <!-- 文件夹树节点 -->
       <FolderGroup
         v-else
@@ -246,6 +326,7 @@ defineExpose({ toggleAll, collapseLeaves })
         @selectImage="handleSelectImage"
         @removeRoot="(p:string) => emit('removeRoot', p)"
         @excludeNode="handleExcludeNode"
+        @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
       />
     </template>
     <div v-if="allRootNodes.length === 0" class="empty-hint">
@@ -260,74 +341,10 @@ defineExpose({ toggleAll, collapseLeaves })
   width: 100%;
 }
 
-.virtual-group-root {
-  margin-bottom: 4px;
-}
-
-.virtual-group-header {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  padding: 6px 12px;
-  cursor: pointer;
-  user-select: none;
-  border-radius: 4px;
-  transition: background 0.15s;
-  margin: 2px 0;
-}
-
-.virtual-group-header:hover {
-  background-image: linear-gradient(rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.09));
-}
-
 .folder-count {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.3);
   flex-shrink: 0;
-}
-
-.vg-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.vg-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.vg-right {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.vg-icon {
-  font-size: 14px;
-  opacity: 0.7;
-}
-
-.virtual-group-header:hover .folder-arrow {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.vg-delete-btn {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.25);
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-}
-
-.vg-delete-btn:hover {
-  color: #ff6b6b;
-  background: rgba(255, 60, 60, 0.1);
 }
 
 .empty-hint {

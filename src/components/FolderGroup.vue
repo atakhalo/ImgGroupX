@@ -14,6 +14,8 @@ const props = defineProps<{
   rootPath: string
   showTitle: boolean
   getExpanded: (node: FolderNode) => boolean
+  isVirtualRoot?: boolean
+  vgIndex?: number
 }>()
 
 const emit = defineEmits<{
@@ -22,10 +24,21 @@ const emit = defineEmits<{
   selectImage: [item: ImageItem, ctrl: boolean]
   removeRoot: [path: string]
   excludeNode: [rootPath: string, subPath: string]
+  toggleSelectFolder: [path: string]
+  addToVirtualGroup: [vgIndex: number]
+  removeFromVirtualGroup: [vgIndex: number]
 }>()
 
 function handleToggle() {
   emit('toggle', props.node)
+}
+
+function handleSelectClick(e: MouseEvent) {
+  e.stopPropagation()
+  // 虚拟根节点（depth=0 且 isVirtualRoot）不可选，子节点可选
+  if (!(props.isVirtualRoot && props.depth === 0) && state.selectMode === 'select') {
+    emit('toggleSelectFolder', props.node.path)
+  }
 }
 
 function parentPath(path: string): string {
@@ -48,6 +61,29 @@ function handleRemove() {
     emit('excludeNode', props.rootPath, props.node.path)
   }
 }
+
+const isSelected = () => state.selectedFolderPaths.has(props.node.path)
+
+/** 检查虚拟分组中是否有一级选中项（用于显示移除按钮） */
+const hasFirstLevelSelection = () => {
+  if (!props.isVirtualRoot || props.depth !== 0) return false
+  // 一级图片：直接挂在虚拟根节点上的图片
+  for (const img of props.node.images) {
+    if (state.selectedPaths.has(img.path)) return true
+  }
+  // 一级子节点：虚拟根的直接 children
+  for (const child of props.node.children) {
+    if (state.selectedFolderPaths.has(child.path)) return true
+  }
+  return false
+}
+
+/** 是否应该显示路径（虚拟根的一级子节点 或 普通根节点） */
+const shouldShowPath = () => {
+  if (props.isVirtualRoot) return props.depth === 1
+  return props.depth === 0
+}
+
 
 /** hex → rgba */
 function hexToRgba(hex: string, alpha: number): string {
@@ -95,20 +131,24 @@ function getNodeGridContainerBg(depth: number): string {
 <template>
   <div
     class="folder-group"
+    :class="{ 'folder-group-selected': isSelected() }"
     :style="{ 
       borderRadius: '20px',
       marginLeft: depth === 0 ? 0: 20 + 'px',
       backgroundColor: getNodeGroupBg(depth),
       marginTop: state.settings.nodeGridGap + 'px',
       marginBottom: state.settings.nodeGridGap + 'px',
-      boxShadow: 'inset 0 0 0px 2px rgba(255,255,255,0.08)',
+      boxShadow: isSelected() ? '0 0 0 2px rgba(100,108,255,0.6)' : 'inset 0 0 0px 2px rgba(255,255,255,0.08)',
 	  padding: '4px',
     }"
   >
     <div
       v-if="showTitle"
       class="folder-header"
-      :class="{ 'root-header': depth === 0, 'child-header': depth > 0 }"
+      :class="{ 
+        'root-header': depth === 0, 
+        'child-header': depth > 0,
+      }"
       :style="{
         borderRadius: '20px',
         backgroundColor: getNodeHeaderBg(depth),
@@ -117,9 +157,43 @@ function getNodeGridContainerBg(depth: number): string {
       @click="handleToggle"
     >
       <span class="folder-left">
-        <span v-if="depth === 0" class="folder-path">{{ parentPath(node.path) }}</span>
+        <span v-if="shouldShowPath()" class="folder-path">{{ parentPath(node.path) }}</span>
       </span>
       <span class="folder-label">
+        <!-- 选择勾选框（仅选择模式、非虚拟根节点时显示） -->
+        <span
+          v-if="state.selectMode === 'select' && !(isVirtualRoot && depth === 0)"
+          class="folder-select-box"
+          :class="{ checked: isSelected() }"
+          @click="handleSelectClick"
+        >
+          <svg v-if="isSelected()" viewBox="0 0 24 24" width="14" height="14" fill="white">
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+          </svg>
+        </span>
+        <!-- 虚拟分组根节点的添加/移除按钮（放在箭头前） -->
+        <template v-if="isVirtualRoot && depth === 0 && state.selectMode === 'select'">
+          <button
+            v-if="state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0"
+            class="vg-action-btn vg-add-btn"
+            :title="$t('folder.add_to_group')"
+            @click.stop="emit('addToVirtualGroup', vgIndex!)"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+          <button
+            v-if="hasFirstLevelSelection()"
+            class="vg-action-btn vg-remove-btn"
+            :title="$t('folder.remove_from_group')"
+            @click.stop="emit('removeFromVirtualGroup', vgIndex!)"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        </template>
         <span class="folder-arrow">{{ getExpanded(node) ? '▼' : '▶' }}</span>
         <span class="folder-name" :style="{ color: depth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ node.name }}</span>
         <span v-if="totalCount(node)" class="folder-count">({{ totalCount(node) }})</span>
@@ -147,11 +221,13 @@ function getNodeGridContainerBg(depth: number): string {
         :rootPath="rootPath"
         :showTitle="showTitle"
         :getExpanded="getExpanded"
+        :isVirtualRoot="isVirtualRoot"
         @toggle="(n: FolderNode) => emit('toggle', n)"
         @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
         @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
         @removeRoot="(p: string) => emit('removeRoot', p)"
         @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
+        @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
       />
       <!-- 当前文件夹图片网格 -->
       <div
@@ -194,6 +270,28 @@ function getNodeGridContainerBg(depth: number): string {
   background-image: linear-gradient(rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.09));
 }
 
+.folder-group-selected {
+  box-shadow: 0 0 0 2px rgba(100,108,255,0.6) !important;
+}
+
+.folder-select-box {
+  width: 18px; height: 18px;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s;
+  box-sizing: border-box;
+}
+.folder-select-box:hover {
+  border-color: rgba(255,255,255,0.5);
+}
+.folder-select-box.checked {
+  background: rgba(100,108,255,0.8);
+  border-color: rgba(100,108,255,0.8);
+}
+
 .folder-left {
   display: flex;
   align-items: center;
@@ -204,31 +302,53 @@ function getNodeGridContainerBg(depth: number): string {
   color: rgba(255, 255, 255, 0.4);
 }
 
+.vg-action-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.vg-add-btn:hover {
+  color: #4fc3f7;
+  background: rgba(79, 195, 247, 0.2);
+  border-color: rgba(79, 195, 247, 0.4);
+}
+.vg-remove-btn:hover {
+  color: #ff6b6b;
+  background: rgba(255, 60, 60, 0.2);
+  border-color: rgba(255, 60, 60, 0.4);
+}
+
 .folder-right {
   display: flex;
   justify-content: flex-end;
 }
 
 .folder-remove-btn {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 3px;
+  padding: 2px 5px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
+  transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s;
 }
-
 .folder-header:hover .folder-remove-btn {
   opacity: 1;
 }
-
 .folder-remove-btn:hover {
   color: #ff6b6b;
-  background: rgba(255, 60, 60, 0.15);
+  background: rgba(255, 60, 60, 0.2);
+  border-color: rgba(255, 60, 60, 0.4);
 }
 
 .folder-arrow {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState } from './stores/imageStore'
 import type { ImageItem } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -303,20 +303,42 @@ function switchToSelectMode() {
 
 // 新建分组
 function createVirtualGroup() {
-  if (state.selectedPaths.size === 0) return
+  if (state.selectedPaths.size === 0 && state.selectedFolderPaths.size === 0) return
   showGroupNameInput.value = true
   groupNameInput.value = ''
+}
+
+/** 递归将子树的相对路径转为绝对路径（利用图片的 dir 字段） */
+function makeNodePathsAbsolute(node: import('./types').FolderNode) {
+  if (node.images.length > 0) {
+    const absDir = node.images[0].dir.replace(/\\/g, '/')
+    node.path = absDir
+  }
+  for (const child of node.children) {
+    makeNodePathsAbsolute(child)
+  }
 }
 
 function confirmVirtualGroup() {
   const name = groupNameInput.value.trim() || `临时图片分组-${state.virtualGroups.length + 1}`
   const selectedImages = state.allImages.filter(img => state.selectedPaths.has(img.path))
-  if (selectedImages.length > 0) {
-    addVirtualGroup(name, selectedImages)
+  // 构建选中的文件夹节点子树
+  const childNodes: import('./types').FolderNode[] = []
+  const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
+  for (const fp of state.selectedFolderPaths) {
+    const found = findSubTreeInTree(fullTree, fp)
+    if (found) {
+      makeNodePathsAbsolute(found)
+      childNodes.push(found)
+    }
+  }
+  if (selectedImages.length > 0 || childNodes.length > 0) {
+    addVirtualGroup(name, selectedImages, childNodes)
   }
   groupNameInput.value = ''
   showGroupNameInput.value = false
   state.selectedPaths.clear()
+  state.selectedFolderPaths.clear()
 }
 
 function cancelVirtualGroup() {
@@ -325,6 +347,7 @@ function cancelVirtualGroup() {
 }
 
 function handleCompare() {
+  if (state.selectedFolderPaths.size > 0) return
   const paths = Array.from(state.selectedPaths)
   if (paths.length !== 2) return
   const left = state.allImages.find(img => img.path === paths[0])
@@ -332,6 +355,14 @@ function handleCompare() {
   if (left && right) {
     comparePair.value = { left, right }
     showCompare.value = true
+  }
+}
+
+function handleToggleSelectFolder(path: string) {
+  if (state.selectedFolderPaths.has(path)) {
+    state.selectedFolderPaths.delete(path)
+  } else {
+    state.selectedFolderPaths.add(path)
   }
 }
 
@@ -469,6 +500,7 @@ async function handleRefresh() {
             @deleteVirtualGroup="handleDeleteVirtualGroup"
             @removeRoot="removeFolderRoot"
             @excludeNode="handleExcludeNode"
+            @toggleSelectFolder="handleToggleSelectFolder"
           />
         </template>
       </div>
@@ -519,6 +551,9 @@ async function handleRefresh() {
 
     <!-- 对比查看器 -->
     <CompareViewer v-if="showCompare && comparePair" :left="comparePair.left" :right="comparePair.right" @close="closeCompare" />
+
+    <!-- 冒泡提示 -->
+    <div v-if="toastState.visible" class="toast-bubble">{{ toastState.text }}</div>
 
     <!-- 拖入提示 -->
     <div v-if="isDragOver" class="drop-overlay">
@@ -625,6 +660,28 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
   bottom: -20px;
   pointer-events: none;
 }
+.toast-bubble {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(40,40,80,0.95);
+  color: rgba(255,255,255,0.9);
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-size: 14px;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(8px);
+  animation: toast-in 0.25s ease-out;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 .drop-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(26,26,46,0.9); display: flex; align-items: center; justify-content: center; z-index: 500; pointer-events: none; }
 .drop-hint { text-align: center; color: rgba(255,255,255,0.5); }
 .drop-hint p { margin-top: 16px; font-size: 18px; }
