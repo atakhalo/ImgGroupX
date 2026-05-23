@@ -430,8 +430,10 @@ fn get_image_metadata(path: String) -> Result<Vec<Vec<String>>, String> {
 fn open_in_explorer(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        // explorer.exe 只认反斜杠路径，将正斜杠替换为反斜杠
+        let win_path = path.replace('/', "\\");
         std::process::Command::new("explorer")
-            .arg(&path)
+            .arg(&win_path)
             .spawn()
             .map_err(|e| e.to_string())?;
         return Ok(());
@@ -458,10 +460,99 @@ fn open_in_explorer(path: String) -> Result<(), String> {
     }
 }
 
+/// 遇到目标已存在时，返回自动添加 `-copy` 后缀的不冲突路径
+fn auto_rename_path(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+    let parent = path.parent().unwrap_or(Path::new("."));
+    let stem = path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file");
+    let ext = path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{}", e))
+        .unwrap_or_default();
+
+    // 尝试 "文件名-copy.ext", "文件名-copy (2).ext", ...
+    let candidate = format!("{}-copy{}", stem, ext);
+    let mut candidate_path = parent.join(&candidate);
+    if !candidate_path.exists() {
+        return candidate_path;
+    }
+    for i in 2.. {
+        let name = format!("{}-copy ({}){}", stem, i, ext);
+        candidate_path = parent.join(&name);
+        if !candidate_path.exists() {
+            return candidate_path;
+        }
+    }
+    // 理论上不会跑到这里
+    path.to_path_buf()
+}
+
+/// 复制文件列表到目标目录（保留相对路径结构，自动处理重名）
+#[tauri::command]
+fn copy_files(files: Vec<Vec<String>>, dest_dir: String) -> Result<(), String> {
+    for pair in &files {
+        if pair.len() < 2 { continue; }
+        let source = &pair[0];
+        let relative = &pair[1];
+        let dest_path = Path::new(&dest_dir).join(relative);
+        // 创建父目录
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
+        }
+        // 自动重命名避免覆盖
+        let final_path = auto_rename_path(&dest_path);
+        fs::copy(source, &final_path).map_err(|e| format!("复制文件失败 ({} -> {}): {}", source, final_path.display(), e))?;
+    }
+    Ok(())
+}
+
+/// 移动文件列表到目标目录（复制后删除源文件，自动处理重名，返回实际移动的源路径列表）
+#[tauri::command]
+fn move_files(files: Vec<Vec<String>>, dest_dir: String) -> Result<Vec<String>, String> {
+    let mut moved = Vec::new();
+    for pair in &files {
+        if pair.len() < 2 { continue; }
+        let source = &pair[0];
+        let relative = &pair[1];
+        let dest_path = Path::new(&dest_dir).join(relative);
+        // 创建父目录
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
+        }
+        // 先自动重命名（处理重名冲突），再用最终路径做同路径检查
+        let final_path = auto_rename_path(&dest_path);
+        if let (Ok(src_canon), Ok(dst_canon)) = (
+            Path::new(&source).canonicalize(),
+            final_path.canonicalize(),
+        ) {
+            if src_canon == dst_canon {
+                continue;
+            }
+        }
+        fs::copy(source, &final_path).map_err(|e| format!("移动-复制失败 ({} -> {}): {}", source, final_path.display(), e))?;
+        fs::remove_file(source).map_err(|e| format!("移动-删除源文件失败 ({}): {}", source, e))?;
+        moved.push(source.clone());
+    }
+    Ok(moved)
+}
+
 /// 删除文件（放入回收站）
 #[tauri::command]
 fn delete_file(path: String) -> Result<(), String> {
     trash::delete(&path).map_err(|e| e.to_string())
+}
+
+/// 批量删除路径到回收站（支持文件和文件夹）
+#[tauri::command]
+fn trash_paths(paths: Vec<String>) -> Result<(), String> {
+    for p in &paths {
+        trash::delete(p).map_err(|e| format!("删除失败 ({}): {}", p, e))?;
+    }
+    Ok(())
 }
 
 /// 检查路径是否为目录
@@ -760,6 +851,9 @@ pub fn run() {
             save_config,
             get_cli_args,
             delete_file,
+            trash_paths,
+            copy_files,
+            move_files,
             update_watcher,
             set_suppress_watcher,
             get_files_info,

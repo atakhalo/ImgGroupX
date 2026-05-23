@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents } from './stores/imageStore'
 import type { ImageItem } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -295,6 +295,7 @@ function collapseLeaves() { folderPanelRef.value?.collapseLeaves() }
 function switchToViewMode() {
   state.selectMode = 'view'
   state.selectedPaths.clear()
+  state.selectedFolderPaths.clear()
 }
 
 function switchToSelectMode() {
@@ -388,11 +389,18 @@ function handleExcludeNode(rootPath: string, subPath: string) {
 }
 
 async function handleDeleteSelection() {
-  const paths = Array.from(state.selectedPaths)
-  if (paths.length === 0) return
-  const ok = await ask(`确定要删除 ${paths.length} 张图片吗？此操作不可撤销。`, { title: '删除确认', kind: 'warning' })
+  const allPaths = collectAllSelectedPaths()
+  const folderCount = state.selectedFolderPaths.size
+  if (allPaths.length === 0 && folderCount === 0) return
+  let msg: string
+  if (folderCount > 0) {
+    msg = `确定要删除 ${folderCount} 个文件夹（含 ${allPaths.length} 张图片）吗？将放入回收站。`
+  } else {
+    msg = `确定要删除 ${allPaths.length} 张图片吗？将放入回收站。`
+  }
+  const ok = await ask(msg, { title: '删除确认', kind: 'warning' })
   if (!ok) return
-  await deleteImages(paths)
+  await deleteSelectedContents()
 }
 
 function handleContentWheel(e: WheelEvent) {
@@ -518,6 +526,8 @@ async function handleRefresh() {
           @createGroup="createVirtualGroup"
           @compare="handleCompare"
           @deleteSelection="handleDeleteSelection"
+          @moveSelection="moveSelectedImages"
+          @copySelection="copySelectedImages"
         />
       </div>
     </div>

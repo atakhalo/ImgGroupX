@@ -62,8 +62,13 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.view': '查看',
     'control.select': '选择',
     'control.selected': '已选',
+    'control.selected_folders': '已选文件夹',
     'control.new_group': '新分组',
     'control.compare': '对比',
+    'control.operation': '操作',
+    'control.move': '移动',
+    'control.copy': '复制',
+    'control.delete': '删除',
     'control.clear': '清空',
 
     // 筛选排序栏
@@ -87,6 +92,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.select_all': '全选',
     'folder.invert_selection': '反选',
     'folder.first_level': '一级图片',
+    'folder.open_in_explorer': '在资源管理器中打开',
+    'folder.save_to_folder': '保存到文件夹',
 
     // 空状态
     'empty.drop_hint': '拖入图片或文件夹到此处',
@@ -117,6 +124,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.drag_over': '拖入图片或文件夹',
     'hint.create_group': '创建虚拟分组',
     'hint.selected_count': '已选择 {n} 张图片',
+    'hint.large_selection_warning': '当前所选较多（共 {n} 张），注意确认',
     'hint.group_name': '输入分组名称（可选）',
     'hint.no_meta': '无元数据',
     'hint.copy_all': '复制全部',
@@ -218,8 +226,13 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.view': 'View',
     'control.select': 'Select',
     'control.selected': 'Selected',
+    'control.selected_folders': 'Folders Selected',
     'control.new_group': 'New Group',
     'control.compare': 'Compare',
+    'control.operation': '操作',
+    'control.move': '移动',
+    'control.copy': '复制',
+    'control.delete': '删除',
     'control.clear': 'Clear',
 
     'filter.sort': 'Sort',
@@ -241,6 +254,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.select_all': '全选',
     'folder.invert_selection': '反选',
     'folder.first_level': '一级图片',
+    'folder.open_in_explorer': 'Open in Explorer',
+    'folder.save_to_folder': 'Save to Folder',
 
     'empty.drop_hint': 'Drop images or folders here',
     'empty.format_hint': 'Supports JPG, PNG, WebP formats',
@@ -266,6 +281,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.drag_over': 'Drop images or folders',
     'hint.create_group': 'Create Virtual Group',
     'hint.selected_count': '{n} images selected',
+    'hint.large_selection_warning': 'Large selection ({n} images), please confirm',
     'hint.group_name': 'Enter group name (optional)',
     'hint.no_meta': 'No metadata',
     'hint.copy_all': 'Copy All',

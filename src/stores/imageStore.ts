@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import type { ImageInfo, ImageItem, FolderNode, AppSettings, SortBy, SortOrder, FilterTarget } from '../types'
 import { invoke } from '@tauri-apps/api/core'
+import { open, ask } from '@tauri-apps/plugin-dialog'
 import { t } from '../i18n'
 
 /** 冒泡提示 */
@@ -651,6 +652,311 @@ export async function deleteImages(paths: string[]): Promise<void> {
 }
 
 /** 清除所有图片 */
+/** 递归收集虚拟分组中所有图片及其相对路径（相对于分组名） */
+function collectVGCopyFiles(vg: FolderNode, basePath: string): [string, string][] {
+  const result: [string, string][] = []
+  // 直接图片：放在 basePath 下
+  for (const img of vg.images) {
+    const fileName = img.name
+    result.push([img.path, basePath ? `${basePath}/${fileName}` : fileName])
+  }
+  // 子节点：创建子目录
+  for (const child of vg.children) {
+    const childBase = basePath ? `${basePath}/${child.name}` : child.name
+    result.push(...collectVGCopyFiles(child, childBase))
+  }
+  return result
+}
+
+/** 保存虚拟分组到指定文件夹 */
+export async function saveVirtualGroup(vg: FolderNode): Promise<void> {
+  try {
+    const files = collectVGCopyFiles(vg, '')
+    if (files.length === 0) {
+      showToast('分组中没有图片')
+      return
+    }
+
+    // 大量图片时确认
+    if (files.length > 100) {
+      const ok = await ask(
+        `当前共 ${files.length} 张图片，数量较多，确定要保存到文件夹吗？`,
+        { title: '保存确认', kind: 'warning' }
+      )
+      if (!ok) return
+    }
+
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: '选择保存文件夹',
+    })
+    if (!selected) return
+
+    const destDir = String(selected).replace(/\\/g, '/')
+
+    await invoke('copy_files', { files, destDir })
+    showToast(`已保存 ${files.length} 张图片到 ${destDir}`)
+  } catch (e) {
+    console.error('保存虚拟分组失败:', e)
+    showToast(`保存失败: ${e}`)
+  }
+}
+
+/** 获取选中图片总数（含选中文件夹节点下的所有图片） */
+export function getTotalSelectedCount(): number {
+  let count = state.selectedPaths.size
+  if (state.selectedFolderPaths.size > 0) {
+    const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
+    for (const fp of state.selectedFolderPaths) {
+      const node = findSubTreeInTree(fullTree, fp)
+      if (node) {
+        count += countNodeImages(node)
+      }
+    }
+  }
+  return count
+}
+
+/** 递归统计节点及其子节点下的图片数 */
+function countNodeImages(node: FolderNode): number {
+  let n = node.images.length
+  for (const child of node.children) {
+    n += countNodeImages(child)
+  }
+  return n
+}
+
+/** 解析选中的文件夹节点为绝对路径列表（用于删除文件夹本身） */
+export function collectSelectedFolderAbsolutePaths(): string[] {
+  if (state.selectedFolderPaths.size === 0) return []
+  const result: string[] = []
+  const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
+  const roots = state.loadedRootPaths.map(r => r.replace(/\\/g, '/').replace(/\/$/, ''))
+  for (const fp of state.selectedFolderPaths) {
+    const node = findSubTreeInTree(fullTree, fp)
+    if (!node) continue
+    // 根节点：path 即为绝对路径
+    if (roots.includes(node.path)) {
+      result.push(node.path)
+    } else {
+      // 子节点：通过第一个图片的 dir 回溯到所属根，拼接相对路径
+      const firstImg = node.images[0]
+      if (firstImg) {
+        const imgDir = firstImg.dir.replace(/\\/g, '/')
+        const root = roots.find(r => imgDir === r || imgDir.startsWith(r + '/'))
+        if (root) {
+          result.push(root + '/' + node.path)
+        }
+      }
+    }
+  }
+  return result
+}
+
+/** 递归收集节点下所有图片路径 */
+function collectNodeImagePathsList(node: FolderNode): string[] {
+  const result: string[] = node.images.map(img => img.path)
+  for (const child of node.children) {
+    result.push(...collectNodeImagePathsList(child))
+  }
+  return result
+}
+
+/** 删除选中内容（图片 + 文件夹），返回移除的图片路径列表 */
+export async function deleteSelectedContents(): Promise<string[]> {
+  const allRemoved: string[] = []
+
+  // 1. 删除选中文件夹（整个目录到回收站）
+  const folderPaths = collectSelectedFolderAbsolutePaths()
+  if (folderPaths.length > 0) {
+    await invoke('trash_paths', { paths: folderPaths })
+    // 收集被删文件夹下的图片路径，用于清理 state
+    const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
+    for (const fp of state.selectedFolderPaths) {
+      const node = findSubTreeInTree(fullTree, fp)
+      if (node) {
+        allRemoved.push(...collectNodeImagePathsList(node))
+      }
+    }
+  }
+
+  // 2. 删除直接选中的图片（排除已在文件夹内的）
+  if (state.selectedPaths.size > 0) {
+    const folderImageSet = new Set(allRemoved)
+    const standalonePaths = Array.from(state.selectedPaths).filter(p => !folderImageSet.has(p))
+    if (standalonePaths.length > 0) {
+      await setSuppressWatcher(true)
+      try {
+        for (const p of standalonePaths) {
+          try { await invoke('delete_file', { path: p }) } catch { /* */ }
+        }
+      } finally {
+        await setSuppressWatcher(false)
+      }
+      allRemoved.push(...standalonePaths)
+    }
+  }
+
+  // 3. 清理 state
+  const removedSet = new Set(allRemoved)
+  state.allImages = state.allImages.filter(img => !removedSet.has(img.path))
+  for (const p of removedSet) state.selectedPaths.delete(p)
+  for (const vg of state.virtualGroups) {
+    vg.images = vg.images.filter(img => !removedSet.has(img.path))
+  }
+  state.selectedFolderPaths.clear()
+  // 清理空根路径
+  state.loadedRootPaths = state.loadedRootPaths.filter(r => {
+    const norm = r.replace(/\\/g, '/')
+    return state.allImages.some(img => img.dir.replace(/\\/g, '/').startsWith(norm))
+  })
+
+  return allRemoved
+}
+
+/** 收集选中图片 + 选中文件夹下所有图片的路径集合（用于删除） */
+export function collectAllSelectedPaths(): string[] {
+  const paths = new Set(state.selectedPaths)
+  if (state.selectedFolderPaths.size > 0) {
+    const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
+    for (const fp of state.selectedFolderPaths) {
+      const node = findSubTreeInTree(fullTree, fp)
+      if (node) {
+        collectNodeImagePathsInto(node, paths)
+      }
+    }
+  }
+  return Array.from(paths)
+}
+
+/** 递归收集节点下所有图片路径到 Set */
+function collectNodeImagePathsInto(node: FolderNode, set: Set<string>) {
+  for (const img of node.images) {
+    set.add(img.path)
+  }
+  for (const child of node.children) {
+    collectNodeImagePathsInto(child, set)
+  }
+}
+
+/** 收集选中图片 + 选中文件夹下所有图片的 [sourcePath, relativePath] 列表（保留目录结构） */
+function collectSelectedFiles(): [string, string][] {
+  const result: [string, string][] = []
+  const added = new Set<string>()
+  const roots = state.loadedRootPaths.map(r => r.replace(/\\/g, '/').replace(/\/$/, ''))
+
+  // 1. 选中的文件夹节点下的图片（保留子目录结构）
+  if (state.selectedFolderPaths.size > 0) {
+    const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
+    for (const fp of state.selectedFolderPaths) {
+      const node = findSubTreeInTree(fullTree, fp)
+      if (node) {
+        // 判断是否为根节点
+        const isRoot = roots.includes(node.path)
+        // 根节点作为base → 文件直接放在目标根；子节点以自身名称作为子目录
+        const basePath = isRoot ? '' : node.name
+        const files = collectVGCopyFiles(node, basePath)
+        for (const [src, rel] of files) {
+          if (added.has(src)) continue
+          added.add(src)
+          result.push([src, rel])
+        }
+      }
+    }
+  }
+
+  // 2. 直接选中的图片（保留相对于所属根的目录结构）
+  for (const path of state.selectedPaths) {
+    if (added.has(path)) continue
+    added.add(path)
+    const img = state.allImages.find(i => i.path === path)
+    if (img) {
+      const imgDir = img.dir.replace(/\\/g, '/')
+      let relative = img.name
+      for (const root of roots) {
+        if (imgDir === root || imgDir.startsWith(root + '/')) {
+          const relDir = imgDir === root ? '' : imgDir.substring(root.length + 1)
+          relative = relDir ? `${relDir}/${img.name}` : img.name
+          break
+        }
+      }
+      result.push([path, relative])
+    } else {
+      result.push([path, path.split('/').pop() || path.split('\\').pop() || path])
+    }
+  }
+
+  return result
+}
+
+/** 复制选中图片到目标文件夹 */
+export async function copySelectedImages(): Promise<void> {
+  const files = collectSelectedFiles()
+  if (files.length === 0) return
+
+  // 大量图片时确认
+  const srcInfo = state.selectedFolderPaths.size > 0
+    ? `（其中 ${state.selectedPaths.size} 张直接选中，${files.length - state.selectedPaths.size} 张来自选中的文件夹）`
+    : ''
+  if (files.length > 100) {
+    const ok = await ask(
+      `当前共 ${files.length} 张图片，数量较多，确定要复制吗？${srcInfo}`,
+      { title: '复制确认', kind: 'warning' }
+    )
+    if (!ok) return
+  }
+
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    title: '选择目标文件夹',
+  })
+  if (!selected) return
+
+  const destDir = String(selected).replace(/\\/g, '/')
+  await invoke('copy_files', { files, destDir })
+  showToast(`已复制 ${files.length} 张图片到 ${destDir}`)
+}
+
+/** 移动选中图片到目标文件夹 */
+export async function moveSelectedImages(): Promise<void> {
+  const files = collectSelectedFiles()
+  if (files.length === 0) return
+
+  // 大量图片时确认
+  const srcInfo = state.selectedFolderPaths.size > 0
+    ? `（其中 ${state.selectedPaths.size} 张直接选中，${files.length - state.selectedPaths.size} 张来自选中的文件夹）`
+    : ''
+  if (files.length > 100) {
+    const ok = await ask(
+      `当前共 ${files.length} 张图片，数量较多，确定要移动吗？移动后原位置文件将被删除。${srcInfo}`,
+      { title: '移动确认', kind: 'warning' }
+    )
+    if (!ok) return
+  }
+
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    title: '选择目标文件夹',
+  })
+  if (!selected) return
+
+  const destDir = String(selected).replace(/\\/g, '/')
+  const movedPaths: string[] = await invoke('move_files', { files, destDir })
+
+  // 从 state 中移除实际已移动的图片（后端会跳过同路径文件）
+  const movedSet = new Set(movedPaths)
+  state.allImages = state.allImages.filter(img => !movedSet.has(img.path))
+  for (const p of movedSet) state.selectedPaths.delete(p)
+  for (const vg of state.virtualGroups) {
+    vg.images = vg.images.filter(img => !movedSet.has(img.path))
+  }
+
+  showToast(`已移动 ${movedPaths.length} 张图片到 ${destDir}`)
+}
+
 /** 将虚拟分组的图片按目录构建为树结构 */
 export function buildVirtualGroupTree(images: ImageItem[]): FolderNode {
   // 按目录分组

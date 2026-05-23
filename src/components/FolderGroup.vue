@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { state } from '../stores/imageStore'
+import { state, openInExplorer, saveVirtualGroup } from '../stores/imageStore'
 import GridView from './GridView.vue'
 import FolderGroup from './FolderGroup.vue'
 
@@ -53,6 +53,14 @@ function totalCount(node: FolderNode): number {
     n += totalCount(child)
   }
   return n
+}
+
+/** 获取节点的绝对路径（子节点 node.path 是相对路径，需拼接 rootPath） */
+function getNodeAbsolutePath(): string {
+  const root = props.rootPath.replace(/\\/g, '/').replace(/\/$/, '')
+  if (props.depth === 0) return root
+  const rel = props.node.path.replace(/\\/g, '/')
+  return root + '/' + rel
 }
 
 function handleRemove() {
@@ -196,6 +204,28 @@ function getNodeGridContainerBg(depth: number): string {
       @click="handleToggle"
     >
       <span class="folder-left">
+        <button
+          v-if="!(isVirtualRoot && depth === 0)"
+          class="folder-open-btn"
+          :title="$t('folder.open_in_explorer')"
+          @click.stop="openInExplorer(getNodeAbsolutePath())"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+        <button
+          v-if="isVirtualRoot && depth === 0"
+          class="folder-save-btn"
+          :title="$t('folder.save_to_folder')"
+          @click.stop="saveVirtualGroup(node)"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+          </svg>
+        </button>
         <span v-if="shouldShowPath()" class="folder-path">{{ parentPath(node.path) }}</span>
       </span>
       <span class="folder-label">
@@ -358,6 +388,50 @@ function getNodeGridContainerBg(depth: number): string {
   overflow: hidden;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.4);
+}
+
+.folder-open-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s;
+}
+.folder-header:hover .folder-open-btn {
+  opacity: 1;
+}
+.folder-open-btn:hover {
+  color: #4fc3f7;
+  background: rgba(79, 195, 247, 0.2);
+  border-color: rgba(79, 195, 247, 0.4);
+}
+
+.folder-save-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s;
+}
+.folder-header:hover .folder-save-btn {
+  opacity: 1;
+}
+.folder-save-btn:hover {
+  color: #66d9a0;
+  background: rgba(102, 217, 160, 0.2);
+  border-color: rgba(102, 217, 160, 0.4);
 }
 
 .vg-action-btn {

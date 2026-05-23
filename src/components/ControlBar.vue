@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { state } from '../stores/imageStore'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { state, getTotalSelectedCount } from '../stores/imageStore'
 
 const emit = defineEmits<{
   toggleFolderGroup: []
@@ -13,7 +14,52 @@ const emit = defineEmits<{
   deleteSelection: []
   viewMode: []
   selectMode: []
+  moveSelection: []
+  copySelection: []
 }>()
+
+const showOpMenu = ref(false)
+
+const totalSelectedCount = computed(() => getTotalSelectedCount())
+
+function toggleOpMenu() {
+  showOpMenu.value = !showOpMenu.value
+}
+
+function handleMove() {
+  showOpMenu.value = false
+  emit('moveSelection')
+}
+
+function handleCopy() {
+  showOpMenu.value = false
+  emit('copySelection')
+}
+
+function handleDelete() {
+  showOpMenu.value = false
+  emit('deleteSelection')
+}
+
+function closeOpMenu() {
+  showOpMenu.value = false
+}
+
+function onDocumentClick(e: MouseEvent) {
+  if (!showOpMenu.value) return
+  const target = e.target as HTMLElement
+  if (!target.closest('.op-menu-container')) {
+    showOpMenu.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick, true)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick, true)
+})
 </script>
 
 <template>
@@ -102,8 +148,8 @@ const emit = defineEmits<{
     </div>
 
     <div class="control-right">
-      <span v-if="state.selectedPaths.size > 0" class="select-count">
-        {{ $t('control.selected') }} {{ state.selectedPaths.size }}
+      <span v-if="state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0" class="select-count">
+        {{ $t('control.selected') }} {{ totalSelectedCount }}
       </span>
       <button
         v-if="(state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0) && state.selectMode === 'select'"
@@ -132,18 +178,53 @@ const emit = defineEmits<{
         <span>{{ $t('control.compare') }}</span>
       </button>
 
-      <button
-        v-if="state.selectedPaths.size > 0 && state.selectMode === 'select'"
-        class="ctrl-btn delete-btn"
-        title="删除所选图片"
-        @click="emit('deleteSelection')"
+      <div
+        v-if="(state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0) && state.selectMode === 'select'"
+        class="op-menu-container"
+        @click.stop
       >
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="3 6 5 6 21 6" />
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-        </svg>
-        <span>删除</span>
-      </button>
+        <button
+          class="ctrl-btn op-trigger-btn"
+          :class="{ active: showOpMenu }"
+          title="操作所选图片"
+          @click="toggleOpMenu"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="5" r="1.5" />
+            <circle cx="12" cy="12" r="1.5" />
+            <circle cx="12" cy="19" r="1.5" />
+          </svg>
+          <span>{{ $t('control.operation') }}</span>
+        </button>
+        <div v-if="showOpMenu" class="op-menu-backdrop" @click="closeOpMenu"></div>
+        <div v-if="showOpMenu" class="op-menu" @click.stop>
+          <!-- 大量图片警告 -->
+          <div v-if="totalSelectedCount > 100" class="op-menu-warning">
+            ⚠ {{ $t('hint.large_selection_warning', { n: totalSelectedCount }) }}
+          </div>
+          <button class="op-menu-item" @click="handleMove">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+            <span>{{ $t('control.move') }}</span>
+          </button>
+          <button class="op-menu-item" @click="handleCopy">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+            <span>{{ $t('control.copy') }}</span>
+          </button>
+          <div class="op-menu-divider"></div>
+          <button class="op-menu-item op-menu-delete" @click="handleDelete">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+            <span>{{ $t('control.delete') }}</span>
+          </button>
+        </div>
+      </div>
 
       <button class="ctrl-btn" :title="$t('control.clear')" @click="emit('clearAll')">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -271,5 +352,81 @@ const emit = defineEmits<{
   font-size: 12px;
   padding: 0 8px;
   white-space: nowrap;
+}
+
+/* 操作弹出菜单 */
+.op-menu-container {
+  position: relative;
+}
+
+.op-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.op-trigger-btn.active {
+  background: rgba(100, 108, 255, 0.25);
+  color: #aab0ff;
+}
+
+.op-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  background: rgba(35, 35, 60, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 6px;
+  min-width: 180px;
+  z-index: 1000;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(16px);
+}
+
+.op-menu-warning {
+  padding: 10px 12px;
+  margin: 2px 4px 6px;
+  background: rgba(255, 180, 0, 0.15);
+  border: 1px solid rgba(255, 180, 0, 0.3);
+  border-radius: 8px;
+  color: #ffd700;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.op-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.75);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.12s, color 0.12s;
+}
+.op-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+.op-menu-item svg {
+  flex-shrink: 0;
+}
+
+.op-menu-delete:hover {
+  background: rgba(255, 60, 60, 0.2) !important;
+  color: #ff6b6b !important;
+}
+
+.op-menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 8px;
 }
 </style>
