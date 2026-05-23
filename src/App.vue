@@ -44,8 +44,16 @@ const displayImages = computed(() => {
 })
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && viewingIndex.value === -1 && !showCompare.value) {
-    closeApp()
+  if (e.key === 'Escape') {
+    if (showSettingsPanel.value) {
+      closeSettings()
+    } else if (viewingIndex.value >= 0) {
+      closeViewer()
+    } else if (showCompare.value) {
+      closeCompare()
+    } else {
+      closeApp()
+    }
   }
 }
 
