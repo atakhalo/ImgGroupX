@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
@@ -10,7 +11,11 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
 
-const SUPPORTED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "bmp", "gif"];
+const SUPPORTED_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "png", "webp", "bmp", "gif",
+    "pcx", "tif", "tiff", "jxl", "avif", "svg",
+    "ico",
+];
 
 #[derive(Debug, Serialize, Clone)]
 pub struct ImageInfo {
@@ -222,6 +227,15 @@ fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>) -> Result
     Ok(())
 }
 
+/// 将图片编码为 PNG base64 data URI
+fn encode_to_png_base64(img: &image::DynamicImage) -> Result<String, String> {
+    let mut png_data = Vec::new();
+    img.write_to(&mut Cursor::new(&mut png_data), image::ImageFormat::Png)
+        .map_err(|e| format!("PNG 编码失败: {}", e))?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&png_data);
+    Ok(format!("data:image/png;base64,{}", b64))
+}
+
 /// 获取图片文件的基础64编码数据（按需加载）
 #[tauri::command]
 fn load_image_base64(path: String) -> Result<String, String> {
@@ -229,22 +243,90 @@ fn load_image_base64(path: String) -> Result<String, String> {
     if !path.exists() {
         return Err("文件不存在".into());
     }
-    let data = fs::read(path).map_err(|e| e.to_string())?;
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("png")
         .to_lowercase();
-    let mime = match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        "webp" => "image/webp",
-        "bmp" => "image/bmp",
-        "gif" => "image/gif",
-        _ => "image/png",
-    };
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
-    Ok(format!("data:{};base64,{}", mime, b64))
+
+    let data = fs::read(path).map_err(|e| e.to_string())?;
+
+    match ext.as_str() {
+        // ===== 浏览器直接支持的格式：原始 data URI =====
+        "jpg" | "jpeg" => Ok(make_data_uri(&data, "image/jpeg")),
+        "png" => Ok(make_data_uri(&data, "image/png")),
+        "webp" => Ok(make_data_uri(&data, "image/webp")),
+        "bmp" => Ok(make_data_uri(&data, "image/bmp")),
+        "gif" => Ok(make_data_uri(&data, "image/gif")),
+        "avif" => Ok(make_data_uri(&data, "image/avif")),
+        "svg" => Ok(make_data_uri(&data, "image/svg+xml")),
+        "ico" => Ok(make_data_uri(&data, "image/x-icon")),
+
+        // ===== 需 Rust 端解码的格式：解码后编码为 PNG =====
+        "pcx" => {
+            let mut reader = pcx::Reader::from_mem(&data)
+                .map_err(|e| format!("PCX 读取失败: {}", e))?;
+            let w = reader.width() as u32;
+            let h = reader.height() as u32;
+            let mut rgb = vec![0u8; (w * h * 3) as usize];
+            reader.read_rgb_pixels(&mut rgb)
+                .map_err(|e| format!("PCX 解码失败: {}", e))?;
+            // RGB → RGBA
+            let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+            for chunk in rgb.chunks(3) {
+                rgba.push(chunk[0]);
+                rgba.push(chunk[1]);
+                rgba.push(chunk[2]);
+                rgba.push(255);
+            }
+            let img = image::RgbaImage::from_raw(w, h, rgba)
+                .ok_or("PCX: 无法创建图像".to_string())?;
+            encode_to_png_base64(&image::DynamicImage::from(img))
+        }
+        "tif" | "tiff" => {
+            let img = image::load_from_memory_with_format(&data, image::ImageFormat::Tiff)
+                .map_err(|e| format!("TIFF 解码失败: {}", e))?;
+            encode_to_png_base64(&img)
+        }
+        "jxl" => {
+            let image = jxl_oxide::JxlImage::builder()
+                .read(Cursor::new(&data))
+                .map_err(|e| format!("JXL 读取失败: {}", e))?;
+            let rendered = image.render_frame(0)
+                .map_err(|e| format!("JXL 渲染失败: {}", e))?;
+            let mut stream = rendered.stream();
+            let w = stream.width();
+            let h = stream.height();
+            let ch = stream.channels();
+            let mut raw = vec![0u8; (w * h * ch) as usize];
+            stream.write_to_buffer(&mut raw);
+            // 转为 RGBA（如有 alpha 通道则保留，否则补 255）
+            let rgba = if ch >= 4 {
+                raw
+            } else {
+                let mut pixels = Vec::with_capacity((w * h * 4) as usize);
+                for i in 0..(w * h) as usize {
+                    let src = i * ch as usize;
+                    pixels.push(if ch > 0 { raw[src] } else { 0 });
+                    pixels.push(if ch > 1 { raw[src + 1] } else { 0 });
+                    pixels.push(if ch > 2 { raw[src + 2] } else { 0 });
+                    pixels.push(255);
+                }
+                pixels
+            };
+            let img = image::RgbaImage::from_raw(w, h, rgba)
+                .ok_or("JXL: 无法创建图像".to_string())?;
+            encode_to_png_base64(&image::DynamicImage::from(img))
+        }
+
+        _ => Err(format!("不支持的图片格式: {}", ext)),
+    }
+}
+
+/// 创建 data URI
+fn make_data_uri(data: &[u8], mime: &str) -> String {
+    let b64 = base64::engine::general_purpose::STANDARD.encode(data);
+    format!("data:{};base64,{}", mime, b64)
 }
 
 /// 解码 Undefined 类型值（如 UserComment），参考 piexif 的处理方式
@@ -518,11 +600,105 @@ fn save_config(settings: serde_json::Value) -> Result<(), String> {
 }
 
 /// 获取图片尺寸
+/// 获取图片尺寸，SVG/PCX 特殊处理（imagesize 可能不支持某些变体）
 fn get_image_dimensions(path: &Path) -> (u32, u32) {
-    match imagesize::size(path) {
-        Ok(dim) => (dim.width as u32, dim.height as u32),
-        Err(_) => (0, 0),
+    // 先尝试 imagesize（支持绝大多数光栅格式）
+    if let Ok(dim) = imagesize::size(path) {
+        return (dim.width as u32, dim.height as u32);
     }
+    // 读取文件头做回退解析
+    if let Ok(data) = fs::read(path) {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if ext == "svg" {
+            if let Ok(text) = std::str::from_utf8(&data) {
+                if let Some(dim) = parse_svg_dimensions(text) {
+                    return dim;
+                }
+            }
+        }
+        if ext == "pcx" {
+            if let Some(dim) = parse_pcx_dimensions(&data) {
+                return dim;
+            }
+        }
+    }
+    (0, 0)
+}
+
+/// 从 PCX 文件头解析尺寸
+fn parse_pcx_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    if data.len() < 12 { return None; }
+    if data[0] != 0x0A { return None; }
+    let xmin = u16::from_le_bytes([data[4], data[5]]) as i32;
+    let ymin = u16::from_le_bytes([data[6], data[7]]) as i32;
+    let xmax = u16::from_le_bytes([data[8], data[9]]) as i32;
+    let ymax = u16::from_le_bytes([data[10], data[11]]) as i32;
+    let w = (xmax - xmin + 1) as u32;
+    let h = (ymax - ymin + 1) as u32;
+    if w > 0 && h > 0 && w < 65536 && h < 65536 {
+        Some((w, h))
+    } else {
+        None
+    }
+}
+
+/// 从 SVG XML 中提取宽高（支持 viewBox、width/height 属性）
+fn parse_svg_dimensions(svg: &str) -> Option<(u32, u32)> {
+    // 跳过 BOM 和空白，找到 <svg 标签
+    let svg_start = svg.find("<svg")?;
+    let svg_tag_end = svg[svg_start..].find('>')?;
+    let tag = &svg[svg_start..svg_start + svg_tag_end];
+
+    // 提取属性的辅助函数：attr="value" 或 attr='value'
+    fn get_attr<'a>(tag: &'a str, attr: &str) -> Option<&'a str> {
+        for quote in ['"', '\''] {
+            let pattern = format!("{}={}", attr, quote);
+            if let Some(start) = tag.find(&pattern) {
+                let val_start = start + pattern.len();
+                if let Some(val_end) = tag[val_start..].find(quote) {
+                    return Some(&tag[val_start..val_start + val_end]);
+                }
+            }
+        }
+        None
+    }
+
+    // 从字符串中提取第一个数值（去掉 px/pt/em 等单位）
+    fn parse_num(s: &str) -> Option<u32> {
+        let num_str: String = s.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+        if num_str.is_empty() { return None; }
+        num_str.parse::<f64>().ok().map(|v| v.ceil() as u32)
+    }
+
+    // 优先 width/height 属性
+    if let (Some(w_str), Some(h_str)) = (get_attr(tag, "width"), get_attr(tag, "height")) {
+        if let (Some(w), Some(h)) = (parse_num(w_str), parse_num(h_str)) {
+            if w > 0 && h > 0 {
+                return Some((w, h));
+            }
+        }
+    }
+
+    // 退回到 viewBox="minX minY width height"
+    if let Some(vb) = get_attr(tag, "viewBox") {
+        let parts: Vec<f64> = vb
+            .split_whitespace()
+            .filter_map(|s| s.parse::<f64>().ok())
+            .collect();
+        if parts.len() >= 4 {
+            let w = (parts[2] - parts[0]).ceil() as u32;
+            let h = (parts[3] - parts[1]).ceil() as u32;
+            if w > 0 && h > 0 {
+                return Some((w, h));
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

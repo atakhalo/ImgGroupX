@@ -190,7 +190,7 @@ async function handleOpenImages() {
     const selected = await open({
       multiple: true,
       title: '选择图片',
-      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'] }],
+      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff', 'jxl', 'avif', 'svg', 'pcx', 'ico'] }],
     })
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected]

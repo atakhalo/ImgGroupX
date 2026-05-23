@@ -27,6 +27,9 @@ serde_yaml = "0.9"
 walkdir = "2"
 base64 = "0.22"
 imagesize = "0.12"
+image = { version = "0.25", default-features = false, features = ["png", "tiff"] }
+pcx = "0.2"
+jxl-oxide = { version = "0.12", features = ["image"] }
 exif = { package = "kamadak-exif", version = "0.5" }
 chrono = "0.4"
 trash = "5"
