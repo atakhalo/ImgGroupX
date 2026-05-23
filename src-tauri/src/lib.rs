@@ -342,6 +342,27 @@ fn load_image_base64(path: String) -> Result<String, String> {
     }
 }
 
+/// 读取文件文本内容（限制 1MB，二进制检测用 null byte）
+#[tauri::command]
+fn read_file_text(path: String) -> Result<String, String> {
+    let path = Path::new(&path);
+    if !path.exists() {
+        return Err("文件不存在".into());
+    }
+    let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
+    if metadata.len() > 1024 * 1024 {
+        return Err("文件超过 1MB 限制".into());
+    }
+    let data = fs::read(path).map_err(|e| e.to_string())?;
+    // 二进制检测：前 4KB 中是否有 null byte
+    let check_len = data.len().min(4096);
+    if data[..check_len].contains(&0u8) {
+        return Err("二进制文件，无法以文本显示".into());
+    }
+    // 尝试 UTF-8 解码
+    String::from_utf8(data).map_err(|_| "文件编码不是有效的 UTF-8".to_string())
+}
+
 /// 创建 data URI
 fn make_data_uri(data: &[u8], mime: &str) -> String {
     let b64 = base64::engine::general_purpose::STANDARD.encode(data);
@@ -744,6 +765,7 @@ pub fn run() {
             get_files_info,
             scan_folders_progressive,
             cancel_scan,
+            read_file_text,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

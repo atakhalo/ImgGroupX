@@ -25,6 +25,8 @@ const emit = defineEmits<{
 const currentIndex = ref(props.initialIndex)
 const isImage = computed(() => IMAGE_EXTENSIONS.has(currentItem.value?.ext || ''))
 const imgSrc = ref('')
+const textContent = ref<string | undefined>(undefined)
+const textError = ref<string | undefined>(undefined)
 const isLoaded = ref(false)
 const scale = ref(1)
 const isFullscreen = ref(false)
@@ -56,10 +58,19 @@ function formatSize(bytes?: number): string {
 async function loadCurrentImage() {
   const item = currentItem.value
   if (!item) return
-  // 非图片文件不加载
+  // 非图片文件：尝试以文本方式读取
   if (!isImage.value) {
     imgSrc.value = ''
-    isLoaded.value = true
+    textContent.value = undefined
+    textError.value = undefined
+    isLoaded.value = false
+    try {
+      textContent.value = await invoke<string>('read_file_text', { path: item.path })
+      isLoaded.value = true
+    } catch (e: any) {
+      textError.value = String(e)
+      isLoaded.value = true
+    }
     return
   }
   isLoaded.value = false
@@ -183,14 +194,25 @@ function handleDeleteImage() {
         @mouseup="onMouseUp"
         @mouseleave="onMouseUp"
       >
-        <!-- 非图片文件：仅显示文件信息 -->
-        <div v-if="currentItem && !isImage" class="viewer-file-info">
-          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-          </svg>
-          <span class="viewer-file-name">{{ currentItem.name }}</span>
-          <span class="viewer-file-size">{{ formatSize(currentItem.size_bytes) }}</span>
+        <!-- 非图片文件：尝试文本展示 -->
+        <div v-if="currentItem && !isImage" class="viewer-text-wrap"
+          :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }">
+          <template v-if="textContent !== undefined">
+            <pre class="viewer-text"><code>{{ textContent }}</code></pre>
+          </template>
+          <template v-else-if="textError">
+            <div class="viewer-text-placeholder">
+              <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              <span class="viewer-text-name">{{ currentItem.name }}</span>
+              <span class="viewer-text-hint">{{ textError }}</span>
+            </div>
+          </template>
+          <div v-else class="viewer-loading">
+            <span class="loading-spinner"></span>
+          </div>
         </div>
         <!-- 图片文件 -->
         <img
@@ -301,25 +323,51 @@ function handleDeleteImage() {
 
 .viewer-loading { padding: 40px; }
 
-.viewer-file-info {
+.viewer-text-wrap {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.viewer-text {
+  width: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 20px 30px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255,255,255,0.8);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-y: auto;
+  background: transparent;
+  border: none;
+}
+
+.viewer-text-placeholder {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 40px;
+  padding: 60px 40px;
 }
 
-.viewer-file-name {
+.viewer-text-name {
   font-size: 16px;
-  color: rgba(255,255,255,0.6);
+  color: rgba(255,255,255,0.5);
   text-align: center;
   word-break: break-all;
 }
 
-.viewer-file-size {
+.viewer-text-hint {
   font-size: 13px;
-  color: rgba(255,255,255,0.3);
+  color: rgba(255,255,255,0.25);
+  text-align: center;
 }
 
 .loading-spinner {
@@ -376,125 +424,5 @@ function handleDeleteImage() {
 }
 .op-bar-container.visible {
   opacity: 1;
-}
-</style>
-
-<style scoped>
-.image-viewer {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.image-viewer.fullscreen {
-  z-index: 1001;
-}
-
-.viewer-backdrop {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
-}
-
-.viewer-content {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  padding: 20px 50px;
-}
-
-.image-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  position: relative;
-}
-
-.viewer-image {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  user-select: none;
-  -webkit-user-drag: none;
-  flex-shrink: 0;
-}
-
-.viewer-loading {
-  padding: 40px;
-}
-
-.loading-spinner {
-  display: block;
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #646cff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.nav-btn {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 50%;
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.2s;
-  z-index: 2;
-}
-
-.nav-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.prev-btn { left: 10px; }
-.next-btn { right: 10px; }
-
-.viewer-info {
-  position: absolute;
-  bottom: 70px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
-  background: rgba(0, 0, 0, 0.5);
-  padding: 4px 12px;
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
-.info-sep {
-  margin: 0 8px;
-  opacity: 0.4;
 }
 </style>
