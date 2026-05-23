@@ -2,7 +2,8 @@ use std::env;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 use base64::Engine;
 use chrono::{DateTime, Local};
@@ -126,8 +127,19 @@ struct DirProgress {
 /// 渐进式扫描：边遍历边发送事件，前端实时构建树
 #[tauri::command]
 fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    // 创建可取消标志
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    if let Some(state) = app_handle.try_state::<Mutex<Option<Arc<AtomicBool>>>>() {
+        if let Ok(mut guard) = state.lock() {
+            *guard = Some(cancel_flag.clone());
+        }
+    }
+
     std::thread::spawn(move || {
         for root_path in &paths {
+            // 检查是否被取消
+            if cancel_flag.load(Ordering::Relaxed) { break; }
+
             let root_dir = Path::new(root_path);
             if !root_dir.exists() {
                 continue;
@@ -154,6 +166,9 @@ fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>) -> Result
                 .into_iter()
                 .filter_map(|e| e.ok())
             {
+                // 每处理一个文件检查一次取消标志（Atomic 开销极低）
+                if cancel_flag.load(Ordering::Relaxed) { break; }
+
                 let entry_path = entry.path();
                 if !entry_path.is_file() {
                     continue;
@@ -217,13 +232,34 @@ fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>) -> Result
                 });
             }
 
+            if cancel_flag.load(Ordering::Relaxed) { break; }
+
             // 发送最后一个目录
             if let Some(ref dir) = current_dir {
                 flush(dir, &mut current_images);
             }
         }
+        // 清理取消标志
+        if let Some(state) = app_handle.try_state::<Mutex<Option<Arc<AtomicBool>>>>() {
+            if let Ok(mut guard) = state.lock() {
+                *guard = None;
+            }
+        }
         let _ = app_handle.emit("scan-all-complete", ());
     });
+    Ok(())
+}
+
+/// 取消正在进行的渐进式扫描
+#[tauri::command]
+fn cancel_scan(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(state) = app_handle.try_state::<Mutex<Option<Arc<AtomicBool>>>>() {
+        if let Ok(guard) = state.lock() {
+            if let Some(flag) = guard.as_ref() {
+                flag.store(true, Ordering::Relaxed);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -708,6 +744,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(None::<RecommendedWatcher>))
         .manage(Mutex::new(false))
+        .manage(Mutex::new(None::<Arc<AtomicBool>>)) // 扫描取消标志
         .invoke_handler(tauri::generate_handler![
             scan_folder,
             scan_folders,
@@ -724,6 +761,7 @@ pub fn run() {
             set_suppress_watcher,
             get_files_info,
             scan_folders_progressive,
+            cancel_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

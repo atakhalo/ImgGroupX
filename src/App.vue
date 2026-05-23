@@ -154,6 +154,10 @@ async function handleDroppedPaths(paths: string[]) {
 
 /** 删除文件夹根节点及其图片（保留其他根路径仍覆盖的图片） */
 function removeFolderRoot(path: string) {
+  // 如果正在扫描中，取消后台扫描线程
+  if (state.loading) {
+    invoke('cancel_scan')
+  }
   const idx = state.loadedRootPaths.indexOf(path)
   if (idx >= 0) state.loadedRootPaths.splice(idx, 1)
   const norm = path.replace(/\\/g, '/').replace(/\/$/, '')
