@@ -668,13 +668,13 @@ function collectVGCopyFiles(vg: FolderNode, basePath: string): [string, string][
   return result
 }
 
-/** 保存虚拟分组到指定文件夹 */
-export async function saveVirtualGroup(vg: FolderNode): Promise<void> {
+/** 保存虚拟分组到指定文件夹，返回是否加载并替换分组 */
+export async function saveVirtualGroup(vg: FolderNode, vgIndex?: number): Promise<boolean> {
   try {
     const files = collectVGCopyFiles(vg, '')
     if (files.length === 0) {
       showToast('分组中没有图片')
-      return
+      return false
     }
 
     // 大量图片时确认
@@ -683,7 +683,7 @@ export async function saveVirtualGroup(vg: FolderNode): Promise<void> {
         `当前共 ${files.length} 张图片，数量较多，确定要保存到文件夹吗？`,
         { title: '保存确认', kind: 'warning' }
       )
-      if (!ok) return
+      if (!ok) return false
     }
 
     const selected = await open({
@@ -691,15 +691,31 @@ export async function saveVirtualGroup(vg: FolderNode): Promise<void> {
       multiple: false,
       title: '选择保存文件夹',
     })
-    if (!selected) return
+    if (!selected) return false
 
     const destDir = String(selected).replace(/\\/g, '/')
 
     await invoke('copy_files', { files, destDir })
     showToast(`已保存 ${files.length} 张图片到 ${destDir}`)
+
+    // 询问是否加载该文件夹并替换分组
+    const loadIt = await ask(
+      `图片已保存到 ${destDir}，是否加载此文件夹并替换当前虚拟分组？`,
+      { title: '加载文件夹', kind: 'info' }
+    )
+    if (loadIt) {
+      // 先扫描加载该文件夹，成功后再移除原分组
+      await startProgressiveScan([destDir])
+      const idx = vgIndex !== undefined ? vgIndex : state.virtualGroups.indexOf(vg)
+      if (idx !== -1 && idx < state.virtualGroups.length) {
+        state.virtualGroups.splice(idx, 1)
+      }
+    }
+    return true
   } catch (e) {
     console.error('保存虚拟分组失败:', e)
     showToast(`保存失败: ${e}`)
+    return false
   }
 }
 
