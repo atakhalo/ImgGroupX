@@ -743,31 +743,31 @@ function countNodeImages(node: FolderNode): number {
   return n
 }
 
-/** 解析选中的文件夹节点为绝对路径列表（用于删除文件夹本身） */
+/** 解析选中的文件夹节点为绝对路径列表（用于删除文件夹本身），自动排除子路径 */
 export function collectSelectedFolderAbsolutePaths(): string[] {
   if (state.selectedFolderPaths.size === 0) return []
-  const result: string[] = []
+  const raw: string[] = []
   const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
   const roots = state.loadedRootPaths.map(r => r.replace(/\\/g, '/').replace(/\/$/, ''))
   for (const fp of state.selectedFolderPaths) {
     const node = findSubTreeInTree(fullTree, fp)
     if (!node) continue
-    // 根节点：path 即为绝对路径
     if (roots.includes(node.path)) {
-      result.push(node.path)
+      raw.push(node.path)
     } else {
-      // 子节点：通过第一个图片的 dir 回溯到所属根，拼接相对路径
       const firstImg = node.images[0]
       if (firstImg) {
         const imgDir = firstImg.dir.replace(/\\/g, '/')
         const root = roots.find(r => imgDir === r || imgDir.startsWith(r + '/'))
         if (root) {
-          result.push(root + '/' + node.path)
+          raw.push(root + '/' + node.path)
         }
       }
     }
   }
-  return result
+  // 去重：如果父路径已在列表中，移除其子路径
+  const sorted = [...raw].sort((a, b) => a.length - b.length)
+  return sorted.filter((p, i) => !sorted.some((q, j) => j < i && p.startsWith(q + '/')))
 }
 
 /** 递归收集节点下所有图片路径 */
@@ -787,9 +787,11 @@ export async function deleteSelectedContents(): Promise<string[]> {
   const folderPaths = collectSelectedFolderAbsolutePaths()
   if (folderPaths.length > 0) {
     await invoke('trash_paths', { paths: folderPaths })
-    // 收集被删文件夹下的图片路径，用于清理 state
+    // 收集被删文件夹下的图片路径（去重：从 selectedFolderPaths 中移除子路径）
+    const sortedFp = Array.from(state.selectedFolderPaths).sort((a, b) => a.length - b.length)
+    const dedupFp = sortedFp.filter((p, i) => !sortedFp.some((q, j) => j < i && p.startsWith(q + '/')))
     const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
-    for (const fp of state.selectedFolderPaths) {
+    for (const fp of dedupFp) {
       const node = findSubTreeInTree(fullTree, fp)
       if (node) {
         allRemoved.push(...collectNodeImagePathsList(node))
@@ -822,11 +824,18 @@ export async function deleteSelectedContents(): Promise<string[]> {
     vg.images = vg.images.filter(img => !removedSet.has(img.path))
   }
   state.selectedFolderPaths.clear()
-  // 清理空根路径
-  state.loadedRootPaths = state.loadedRootPaths.filter(r => {
+  // 清理空根路径及对应的排除记录
+  const removedRoots = state.loadedRootPaths.filter(r => {
     const norm = r.replace(/\\/g, '/')
-    return state.allImages.some(img => img.dir.replace(/\\/g, '/').startsWith(norm))
+    return !state.allImages.some(img => img.dir.replace(/\\/g, '/').startsWith(norm))
   })
+  const removedRootSet = new Set(removedRoots)
+  state.loadedRootPaths = state.loadedRootPaths.filter(r => !removedRootSet.has(r))
+  for (const root of removedRoots) {
+    rootExclusions.delete(root)
+  }
+  // 更新文件监听器
+  setupFolderWatcher()
 
   return allRemoved
 }
