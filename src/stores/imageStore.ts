@@ -68,8 +68,8 @@ export const state = reactive({
 
 /** 按路径去重后添加到allImages */
 function addImagesUnique(newItems: ImageItem[]) {
-  const existingPaths = new Set(state.allImages.map(i => i.path))
-  const toAdd = newItems.filter(i => !existingPaths.has(i.path))
+  const existingPaths = new Set(state.allImages.map(i => normPath(i.path)))
+  const toAdd = newItems.filter(i => !existingPaths.has(normPath(i.path)))
   state.allImages.push(...toAdd)
 }
 
@@ -184,11 +184,18 @@ export async function scanFolders(paths: string[]): Promise<void> {
 export async function startProgressiveScan(paths: string[]): Promise<void> {
   state.loading = true
   // 预登记根路径，避免用户在扫描完成前移除后事件重新添加
+  let hasNew = false
   for (const p of paths) {
     const norm = p.replace(/\\/g, '/').replace(/\/$/, '')
     if (!state.loadedRootPaths.includes(norm)) {
       state.loadedRootPaths.push(norm)
+      hasNew = true
     }
+  }
+  // 所有路径都已存在（重复加载），不发起新扫描
+  if (!hasNew) {
+    state.loading = false
+    return
   }
   try {
     await invoke('scan_folders_progressive', { paths, scanAllFiles: state.settings.scanAllFiles })
