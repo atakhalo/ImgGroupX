@@ -227,46 +227,49 @@ function getNodeGridContainerBg(depth: number): string {
           </svg>
         </button>
         <span v-if="shouldShowPath()" class="folder-path">{{ parentPath(node.path) }}</span>
-      </span>
-      <span class="folder-label">
-        <!-- 选择勾选框（仅选择模式、非虚拟根节点时显示） -->
-        <span
-          v-if="state.selectMode === 'select' && !(isVirtualRoot && depth === 0)"
-          class="folder-select-box"
-          :class="{ checked: isSelected() }"
-          @click="handleSelectClick"
-        >
-          <svg v-if="isSelected()" viewBox="0 0 24 24" width="14" height="14" fill="white">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-          </svg>
-        </span>
-        <!-- 虚拟分组根节点的添加/移除按钮（放在箭头前） -->
-        <template v-if="isVirtualRoot && depth === 0 && state.selectMode === 'select'">
-          <button
-            v-if="state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0"
-            class="vg-action-btn vg-add-btn"
-            :title="$t('folder.add_to_group')"
-            @click.stop="emit('addToVirtualGroup', vgIndex!)"
+        <span class="folder-left-actions">
+          <!-- 选择勾选框 -->
+          <span
+            v-if="state.selectMode === 'select' && !(isVirtualRoot && depth === 0)"
+            class="folder-select-box"
+            :class="{ checked: isSelected() }"
+            @click="handleSelectClick"
           >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <svg v-if="isSelected()" viewBox="0 0 24 24" width="14" height="14" fill="white">
+              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+            </svg>
+          </span>
+          <!-- 虚拟分组 +/- 按钮 -->
+          <template v-if="isVirtualRoot && depth === 0 && state.selectMode === 'select'">
+            <button
+              v-if="state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0"
+              class="vg-action-btn vg-add-btn"
+              :title="$t('folder.add_to_group')"
+              @click.stop="emit('addToVirtualGroup', vgIndex!)"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-          </button>
-          <button
-            v-if="hasFirstLevelSelection()"
-            class="vg-action-btn vg-remove-btn"
-            :title="$t('folder.remove_from_group')"
-            @click.stop="emit('removeFromVirtualGroup', vgIndex!)"
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            </button>
+            <button
+              v-if="hasFirstLevelSelection()"
+              class="vg-action-btn vg-remove-btn"
+              :title="$t('folder.remove_from_group')"
+              @click.stop="emit('removeFromVirtualGroup', vgIndex!)"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-          </button>
-        </template>
+            </button>
+          </template>
+        </span>
+      </span>
+      <span class="folder-label">
         <span class="folder-arrow">{{ getExpanded(node) ? '▼' : '▶' }}</span>
         <span class="folder-name" :style="{ color: depth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ node.name }}</span>
         <span v-if="totalCount(node)" class="folder-count">({{ totalCount(node) }})</span>
-        <!-- 选择操作按钮：全选、反选、一级图片 -->
+      </span>
+      <span class="folder-right">
         <span v-if="state.selectMode === 'select' && !(isVirtualRoot && depth === 0)" class="folder-select-actions">
           <button
             class="folder-select-action-btn"
@@ -285,8 +288,6 @@ function getNodeGridContainerBg(depth: number): string {
             @click.stop="selectDirectImages"
           >{{ $t('folder.first_level') }}</button>
         </span>
-      </span>
-      <span class="folder-right">
         <button
           class="folder-remove-btn"
           :title="$t('folder.remove')"
@@ -390,6 +391,18 @@ function getNodeGridContainerBg(depth: number): string {
   color: rgba(255, 255, 255, 0.4);
 }
 
+.folder-left-actions {
+  margin-left: auto;
+  margin-right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.folder-left-actions .folder-select-box {
+  margin-right: 2px;
+}
+
 .folder-open-btn {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -459,14 +472,15 @@ function getNodeGridContainerBg(depth: number): string {
 
 .folder-right {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
 }
 
 .folder-select-actions {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-left: 4px;
+  margin-left: 8px;
 }
 
 .folder-select-action-btn {
@@ -501,6 +515,7 @@ function getNodeGridContainerBg(depth: number): string {
   display: flex;
   align-items: center;
   opacity: 0;
+  margin-left: auto;
   transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s;
 }
 .folder-header:hover .folder-remove-btn {
