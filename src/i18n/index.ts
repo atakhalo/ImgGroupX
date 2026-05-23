@@ -84,6 +84,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.remove_group': '删除分组「{name}」',
     'folder.add_to_group': '添加选中项到此分组',
     'folder.remove_from_group': '从此分组移除选中项',
+    'folder.select_all': '全选',
+    'folder.invert_selection': '反选',
+    'folder.first_level': '一级图片',
 
     // 空状态
     'empty.drop_hint': '拖入图片或文件夹到此处',
@@ -235,6 +238,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.remove_group': 'Remove group "{name}"',
     'folder.add_to_group': 'Add selected items to this group',
     'folder.remove_from_group': 'Remove selected items from this group',
+    'folder.select_all': '全选',
+    'folder.invert_selection': '反选',
+    'folder.first_level': '一级图片',
 
     'empty.drop_hint': 'Drop images or folders here',
     'empty.format_hint': 'Supports JPG, PNG, WebP formats',

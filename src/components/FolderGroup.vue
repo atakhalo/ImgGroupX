@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
 import { state } from '../stores/imageStore'
 import GridView from './GridView.vue'
@@ -63,6 +64,44 @@ function handleRemove() {
 }
 
 const isSelected = () => state.selectedFolderPaths.has(props.node.path)
+
+/** 递归收集节点下所有图片路径 */
+function collectAllImagePaths(node: FolderNode): string[] {
+  const paths: string[] = node.images.map(img => img.path)
+  for (const child of node.children) {
+    paths.push(...collectAllImagePaths(child))
+  }
+  return paths
+}
+
+/** 全选：选中节点下所有图片（含子节点） */
+function selectAll() {
+  const paths = collectAllImagePaths(props.node)
+  for (const p of paths) {
+    state.selectedPaths.add(p)
+  }
+}
+
+/** 反选：反转节点下所有图片的选中状态 */
+function invertSelection() {
+  const paths = collectAllImagePaths(props.node)
+  for (const p of paths) {
+    if (state.selectedPaths.has(p)) state.selectedPaths.delete(p)
+    else state.selectedPaths.add(p)
+  }
+}
+
+/** 一级图片：仅选中节点直接下的图片 */
+function selectDirectImages() {
+  for (const img of props.node.images) {
+    state.selectedPaths.add(img.path)
+  }
+}
+
+/** 节点是否既有子节点又有图片（用于控制"一级图片"按钮显示） */
+const hasBothChildrenAndImages = computed(() =>
+  props.node.children.length > 0 && props.node.images.length > 0
+)
 
 /** 检查虚拟分组中是否有一级选中项（用于显示移除按钮） */
 const hasFirstLevelSelection = () => {
@@ -197,6 +236,25 @@ function getNodeGridContainerBg(depth: number): string {
         <span class="folder-arrow">{{ getExpanded(node) ? '▼' : '▶' }}</span>
         <span class="folder-name" :style="{ color: depth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ node.name }}</span>
         <span v-if="totalCount(node)" class="folder-count">({{ totalCount(node) }})</span>
+        <!-- 选择操作按钮：全选、反选、一级图片 -->
+        <span v-if="state.selectMode === 'select' && !(isVirtualRoot && depth === 0)" class="folder-select-actions">
+          <button
+            class="folder-select-action-btn"
+            :title="$t('folder.select_all')"
+            @click.stop="selectAll"
+          >{{ $t('folder.select_all') }}</button>
+          <button
+            class="folder-select-action-btn"
+            :title="$t('folder.invert_selection')"
+            @click.stop="invertSelection"
+          >{{ $t('folder.invert_selection') }}</button>
+          <button
+            v-if="hasBothChildrenAndImages"
+            class="folder-select-action-btn"
+            :title="$t('folder.first_level')"
+            @click.stop="selectDirectImages"
+          >{{ $t('folder.first_level') }}</button>
+        </span>
       </span>
       <span class="folder-right">
         <button
@@ -328,6 +386,35 @@ function getNodeGridContainerBg(depth: number): string {
 .folder-right {
   display: flex;
   justify-content: flex-end;
+}
+
+.folder-select-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.folder-select-action-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.folder-header:hover .folder-select-action-btn {
+  opacity: 1;
+}
+.folder-select-action-btn:hover {
+  color: #7eb8ff;
+  background: rgba(100, 150, 255, 0.2);
+  border-color: rgba(100, 150, 255, 0.4);
 }
 
 .folder-remove-btn {
