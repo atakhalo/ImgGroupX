@@ -54,6 +54,8 @@ function reset() {
     viewerBgMode: 'overlay',
     viewerBgColor: '#202020',
     scanAllFiles: false,
+    autoPan: true,
+    autoCenter: true,
   }
 }
 </script>
@@ -192,6 +194,22 @@ function reset() {
               <input type="color" v-model="localSettings.viewerBgColor" class="color-input" />
               <span class="setting-value">{{ localSettings.viewerBgColor }}</span>
             </div>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.autoPan" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.auto_pan') }}
+              </label>
+            </div>
+            <div class="setting-hint">{{ $t('settings.auto_pan_hint') }}</div>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.autoCenter" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.auto_center') }}
+              </label>
+            </div>
+            <div class="setting-hint">{{ $t('settings.auto_center_hint') }}</div>
           </div>
 
           <!-- 扫描设置 -->

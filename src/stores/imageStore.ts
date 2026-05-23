@@ -28,6 +28,8 @@ const defaultSettings: AppSettings = {
   viewerBgMode: 'overlay',
   viewerBgColor: '#202020',
   scanAllFiles: false,
+  autoPan: true,
+  autoCenter: true,
 }
 
 /** 全局状态 */

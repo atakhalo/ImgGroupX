@@ -74,7 +74,11 @@ async function loadCurrentImage() {
     return
   }
   isLoaded.value = false
-  // 同尺寸图片切换时保持缩放比和平移偏移
+  // 自动居中（设置启用时切换图片始终重置偏移）
+  if (state.settings.autoCenter) {
+    offset.value = { x: 0, y: 0 }
+  }
+  // 不同尺寸图片切换时重置缩放和平移
   if (item.width !== prevImageSize.value.width || item.height !== prevImageSize.value.height) {
     scale.value = 1
     offset.value = { x: 0, y: 0 }
@@ -89,6 +93,11 @@ async function loadCurrentImage() {
 }
 
 watch(currentIndex, () => { loadCurrentImage() })
+
+// 缩放超过 100% 时自动开启平移（设置启用时）
+watch([scale, () => state.settings.autoPan], ([s, auto]) => {
+  if (auto && s > 1) panMode.value = true
+})
 
 onMounted(() => {
   loadCurrentImage()

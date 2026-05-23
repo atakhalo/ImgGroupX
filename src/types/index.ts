@@ -108,4 +108,8 @@ export interface AppSettings {
   viewerBgColor: string
   /** 扫描文件夹时是否包含所有文件（非图片仅显示文件名） */
   scanAllFiles: boolean
+  /** 图片放大超过 100% 时自动开启平移模式 */
+  autoPan: boolean
+  /** 切换图片时自动居中 */
+  autoCenter: boolean
 }
