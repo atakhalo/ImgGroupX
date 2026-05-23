@@ -180,6 +180,13 @@ export async function scanFolders(paths: string[]): Promise<void> {
 /** 渐进式扫描：启动后台扫描线程，结果通过事件流式返回 */
 export async function startProgressiveScan(paths: string[]): Promise<void> {
   state.loading = true
+  // 预登记根路径，避免用户在扫描完成前移除后事件重新添加
+  for (const p of paths) {
+    const norm = p.replace(/\\/g, '/').replace(/\/$/, '')
+    if (!state.loadedRootPaths.includes(norm)) {
+      state.loadedRootPaths.push(norm)
+    }
+  }
   try {
     await invoke('scan_folders_progressive', { paths })
   } catch (e) {
@@ -191,9 +198,8 @@ export async function startProgressiveScan(paths: string[]): Promise<void> {
 /** 处理单目录扫描结果（由 scan-dir-progress 事件触发） */
 export function handleDirProgress(payload: { dir: string; images: ImageInfo[]; root: string }): void {
   const norm = payload.root.replace(/\\/g, '/').replace(/\/$/, '')
-  if (!state.loadedRootPaths.includes(norm)) {
-    state.loadedRootPaths.push(norm)
-  }
+  // 根路径已被用户移除（点击了 x），忽略后续事件
+  if (!state.loadedRootPaths.includes(norm)) return
   const items: ImageItem[] = payload.images.map(img => ({
     ...img,
     loading: false,
