@@ -6,6 +6,12 @@ import { invoke } from '@tauri-apps/api/core'
 import OperationBar from './OperationBar.vue'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 
+/** 可渲染为图片的支持格式 */
+const IMAGE_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif',
+  'tif', 'tiff', 'jxl', 'avif', 'svg', 'pcx', 'ico',
+])
+
 const props = defineProps<{
   images: ImageItem[]
   initialIndex: number
@@ -17,6 +23,7 @@ const emit = defineEmits<{
 }>()
 
 const currentIndex = ref(props.initialIndex)
+const isImage = computed(() => IMAGE_EXTENSIONS.has(currentItem.value?.ext || ''))
 const imgSrc = ref('')
 const isLoaded = ref(false)
 const scale = ref(1)
@@ -49,6 +56,12 @@ function formatSize(bytes?: number): string {
 async function loadCurrentImage() {
   const item = currentItem.value
   if (!item) return
+  // 非图片文件不加载
+  if (!isImage.value) {
+    imgSrc.value = ''
+    isLoaded.value = true
+    return
+  }
   isLoaded.value = false
   // 同尺寸图片切换时保持缩放比和平移偏移
   if (item.width !== prevImageSize.value.width || item.height !== prevImageSize.value.height) {
@@ -170,8 +183,18 @@ function handleDeleteImage() {
         @mouseup="onMouseUp"
         @mouseleave="onMouseUp"
       >
+        <!-- 非图片文件：仅显示文件信息 -->
+        <div v-if="currentItem && !isImage" class="viewer-file-info">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          <span class="viewer-file-name">{{ currentItem.name }}</span>
+          <span class="viewer-file-size">{{ formatSize(currentItem.size_bytes) }}</span>
+        </div>
+        <!-- 图片文件 -->
         <img
-          v-if="imgSrc"
+          v-if="imgSrc && isImage"
           ref="imgRef"
           :src="imgSrc"
           :alt="currentItem?.name"
@@ -180,7 +203,7 @@ function handleDeleteImage() {
           @load="isLoaded = true"
           :draggable="!panMode"
         />
-        <div v-if="!isLoaded" class="viewer-loading">
+        <div v-if="isImage && !isLoaded" class="viewer-loading">
           <span class="loading-spinner"></span>
         </div>
       </div>
@@ -277,6 +300,28 @@ function handleDeleteImage() {
 }
 
 .viewer-loading { padding: 40px; }
+
+.viewer-file-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px;
+}
+
+.viewer-file-name {
+  font-size: 16px;
+  color: rgba(255,255,255,0.6);
+  text-align: center;
+  word-break: break-all;
+}
+
+.viewer-file-size {
+  font-size: 13px;
+  color: rgba(255,255,255,0.3);
+}
+
 .loading-spinner {
   display: block;
   width: 40px; height: 40px;

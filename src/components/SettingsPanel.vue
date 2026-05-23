@@ -53,6 +53,7 @@ function reset() {
     language: 'zh',
     viewerBgMode: 'overlay',
     viewerBgColor: '#202020',
+    scanAllFiles: false,
   }
 }
 </script>
@@ -191,6 +192,19 @@ function reset() {
               <input type="color" v-model="localSettings.viewerBgColor" class="color-input" />
               <span class="setting-value">{{ localSettings.viewerBgColor }}</span>
             </div>
+          </div>
+
+          <!-- 扫描设置 -->
+          <div class="setting-section">
+            <h4>{{ $t('settings.scan_all_files') }}</h4>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.scanAllFiles" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.scan_all_files') }}
+              </label>
+            </div>
+            <div class="setting-hint">{{ $t('settings.scan_all_files_hint') }}</div>
           </div>
 
           <!-- 筛选预设 -->

@@ -45,6 +45,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.viewer_bg_overlay': '蒙灰',
     'settings.viewer_bg_color': '纯色背景',
     'settings.viewer_bg_color_pick': '背景颜色',
+    'settings.scan_all_files': '扫描全部文件',
+    'settings.scan_all_files_hint': '勾选后加载文件夹时包含非图片文件（仅显示文件名）',
 
     // 控制栏
     'control.open': '打开',
@@ -178,6 +180,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.add_program': '+ Add Program',
     'settings.select_program': 'Select Program',
     'settings.exe_filter': 'Executables',
+    'settings.scan_all_files': 'Scan All Files',
+    'settings.scan_all_files_hint': 'When checked, loading folders includes non-image files (filename only)',
     'settings.language': 'Language',
     'settings.node_grid': 'Node Grid',
     'settings.node_grid_gap': 'Grid Gap',

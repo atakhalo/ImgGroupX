@@ -38,7 +38,7 @@ pub struct ScanResult {
 
 /// 扫描文件夹，递归获取所有图片文件信息
 #[tauri::command]
-fn scan_folder(path: String) -> Result<ScanResult, String> {
+fn scan_folder(path: String, scan_all_files: bool) -> Result<ScanResult, String> {
     let mut images = Vec::new();
     let path = Path::new(&path);
 
@@ -58,7 +58,7 @@ fn scan_folder(path: String) -> Result<ScanResult, String> {
             .map(|e| e.to_lowercase())
             .unwrap_or_default();
 
-        if !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+        if !scan_all_files && !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
             continue;
         }
 
@@ -108,10 +108,10 @@ fn scan_folder(path: String) -> Result<ScanResult, String> {
 
 /// 扫描多个文件夹
 #[tauri::command]
-fn scan_folders(paths: Vec<String>) -> Result<Vec<ScanResult>, String> {
+fn scan_folders(paths: Vec<String>, scan_all_files: bool) -> Result<Vec<ScanResult>, String> {
     let mut results = Vec::new();
     for path in paths {
-        let result = scan_folder(path.clone())?;
+        let result = scan_folder(path.clone(), scan_all_files)?;
         results.push(result);
     }
     Ok(results)
@@ -129,7 +129,7 @@ static SCAN_CANCELLED: AtomicBool = AtomicBool::new(false);
 
 /// 渐进式扫描：边遍历边发送事件，前端实时构建树
 #[tauri::command]
-fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>) -> Result<(), String> {
+fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>, scan_all_files: bool) -> Result<(), String> {
     SCAN_CANCELLED.store(false, Ordering::Relaxed);
 
     std::thread::spawn(move || {
@@ -173,7 +173,7 @@ fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>) -> Result
                     .and_then(|e| e.to_str())
                     .map(|e| e.to_lowercase())
                     .unwrap_or_default();
-                if !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+                if !scan_all_files && !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
                     continue;
                 }
                 let metadata = match fs::metadata(entry_path) {
@@ -554,7 +554,7 @@ fn update_watcher(app_handle: AppHandle, paths: Vec<String>) -> Result<(), Strin
 
 /// 获取多个文件的信息（用于细粒度刷新）
 #[tauri::command]
-fn get_files_info(paths: Vec<String>) -> Result<Vec<ImageInfo>, String> {
+fn get_files_info(paths: Vec<String>, scan_all_files: bool) -> Result<Vec<ImageInfo>, String> {
     let mut result = Vec::new();
     for p in &paths {
         let entry_path = Path::new(p);
@@ -566,7 +566,7 @@ fn get_files_info(paths: Vec<String>) -> Result<Vec<ImageInfo>, String> {
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase())
             .unwrap_or_default();
-        if !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+        if !scan_all_files && !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
             continue;
         }
         let metadata = fs::metadata(entry_path).map_err(|e| e.to_string())?;

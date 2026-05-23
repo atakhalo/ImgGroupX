@@ -27,6 +27,7 @@ const defaultSettings: AppSettings = {
   language: 'zh',
   viewerBgMode: 'overlay',
   viewerBgColor: '#202020',
+  scanAllFiles: false,
 }
 
 /** 全局状态 */
@@ -132,7 +133,7 @@ export function getProcessedImages(images: ImageItem[]): ImageItem[] {
 export async function scanFolder(path: string): Promise<void> {
   state.loading = true
   try {
-    const result = await invoke<{ images: ImageInfo[]; total: number }>('scan_folder', { path })
+    const result = await invoke<{ images: ImageInfo[]; total: number }>('scan_folder', { path, scanAllFiles: state.settings.scanAllFiles })
     const items: ImageItem[] = result.images.map(img => ({
       ...img,
       loading: false,
@@ -155,7 +156,7 @@ export async function scanFolder(path: string): Promise<void> {
 export async function scanFolders(paths: string[]): Promise<void> {
   state.loading = true
   try {
-    const results = await invoke<{ images: ImageInfo[]; total: number }[]>('scan_folders', { paths })
+    const results = await invoke<{ images: ImageInfo[]; total: number }[]>('scan_folders', { paths, scanAllFiles: state.settings.scanAllFiles })
     for (let i = 0; i < results.length; i++) {
       const result = results[i]
       const items: ImageItem[] = result.images.map(img => ({
@@ -190,7 +191,7 @@ export async function startProgressiveScan(paths: string[]): Promise<void> {
     }
   }
   try {
-    await invoke('scan_folders_progressive', { paths })
+    await invoke('scan_folders_progressive', { paths, scanAllFiles: state.settings.scanAllFiles })
   } catch (e) {
     console.error('启动渐进扫描失败:', e)
     state.loading = false
@@ -238,7 +239,7 @@ export async function setSuppressWatcher(suppress: boolean): Promise<void> {
 /** 获取单文件信息 */
 export async function getFileInfo(path: string): Promise<ImageInfo | null> {
   try {
-    const infos = await invoke<ImageInfo[]>('get_files_info', { paths: [path] })
+    const infos = await invoke<ImageInfo[]>('get_files_info', { paths: [path], scanAllFiles: state.settings.scanAllFiles })
     return infos[0] || null
   } catch { return null }
 }
@@ -270,7 +271,7 @@ export async function applyFileChanges(changedPaths: string[]): Promise<boolean>
   }
 
   if (toCheck.length > 0) {
-    const existingInfos = await invoke<ImageInfo[]>('get_files_info', { paths: toCheck })
+    const existingInfos = await invoke<ImageInfo[]>('get_files_info', { paths: toCheck, scanAllFiles: state.settings.scanAllFiles })
     const existingSet = new Set(existingInfos.map(i => normPath(i.path)))
     for (const p of toCheck) {
       if (!existingSet.has(normPath(p))) {
@@ -289,7 +290,7 @@ export async function applyFileChanges(changedPaths: string[]): Promise<boolean>
   }
 
   // 2. 处理新增/修改：获取文件信息并更新
-  const newInfos = await invoke<ImageInfo[]>('get_files_info', { paths: changedPaths })
+const newInfos = await invoke<ImageInfo[]>('get_files_info', { paths: changedPaths, scanAllFiles: state.settings.scanAllFiles })
 
   for (const info of newInfos) {
     const n = normPath(info.path)
@@ -479,7 +480,7 @@ export function buildFullTree(): FolderNode[] {
 export async function scanFilesAsVirtualGroup(filePaths: string[], groupName?: string): Promise<void> {
   state.loading = true
   try {
-    const results = await invoke<{ images: ImageInfo[]; total: number }[]>('scan_folders', { paths: filePaths })
+    const results = await invoke<{ images: ImageInfo[]; total: number }[]>('scan_folders', { paths: filePaths, scanAllFiles: state.settings.scanAllFiles })
     const allItems: ImageItem[] = []
     for (const result of results) {
       const items = result.images.map(img => ({

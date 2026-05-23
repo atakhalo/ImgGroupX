@@ -3,6 +3,12 @@ import type { ImageItem } from '../types'
 import { state, loadImageBase64 } from '../stores/imageStore'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 
+/** 可渲染为图片的支持格式 */
+const IMAGE_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif',
+  'tif', 'tiff', 'jxl', 'avif', 'svg', 'pcx', 'ico',
+])
+
 const props = defineProps<{
   item: ImageItem
   gridSize: number
@@ -14,6 +20,8 @@ const emit = defineEmits<{
   click: [item: ImageItem]
   select: [item: ImageItem, ctrl: boolean]
 }>()
+
+const isImage = computed(() => IMAGE_EXTENSIONS.has(props.item.ext))
 
 const elRef = ref<HTMLElement | null>(null)
 const imgSrc = ref('')
@@ -35,6 +43,7 @@ let visObserver: IntersectionObserver | null = null
 let hasTriggered = false
 
 async function doLoad() {
+  if (!isImage.value) return // 非图片不加载
   if (hasError.value) return
   if (props.item.base64) {
     imgSrc.value = props.item.base64
@@ -119,32 +128,45 @@ function handleClick(e: MouseEvent) {
     @dblclick="state.selectMode === 'select' && emit('click', item)"
   >
     <div class="item-inner" :style="{ borderRadius: borderRadius + 'px' }">
-      <!-- 加载中 / 等待进入视口 -->
-      <div v-if="!isLoaded && !hasError" class="item-placeholder">
-        <span v-if="item.loading" class="loading-spinner"></span>
-      </div>
-      <!-- 加载失败 -->
-      <div v-if="hasError" class="item-placeholder item-error">
-        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" />
-          <path d="M21 15l-5-5L5 21" />
-        </svg>
-      </div>
-      <img
-        v-if="imgSrc && !hasError"
-        :src="imgSrc"
-        :alt="item.name"
-        class="item-img"
-        :style="{
-          borderRadius: borderRadius + 'px',
-        }"
-        @load="isLoaded = true"
-        @error="hasError = true; isLoaded = false"
-      />
-      <div v-if="isLoaded" class="item-overlay">
-        <span class="item-name">{{ item.name }}</span>
-      </div>
+      <!-- 非图片文件：仅显示文件名 -->
+      <template v-if="!isImage">
+        <div class="file-placeholder">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.35">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          <span class="file-name">{{ item.name }}</span>
+        </div>
+      </template>
+      <!-- 图片文件 -->
+      <template v-else>
+        <!-- 加载中 / 等待进入视口 -->
+        <div v-if="!isLoaded && !hasError" class="item-placeholder">
+          <span v-if="item.loading" class="loading-spinner"></span>
+        </div>
+        <!-- 加载失败 -->
+        <div v-if="hasError" class="item-placeholder item-error">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="M21 15l-5-5L5 21" />
+          </svg>
+        </div>
+        <img
+          v-if="imgSrc && !hasError"
+          :src="imgSrc"
+          :alt="item.name"
+          class="item-img"
+          :style="{
+            borderRadius: borderRadius + 'px',
+          }"
+          @load="isLoaded = true"
+          @error="hasError = true; isLoaded = false"
+        />
+        <div v-if="isLoaded" class="item-overlay">
+          <span class="item-name">{{ item.name }}</span>
+        </div>
+      </template>
       <div v-if="isSelected" class="select-check">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="white">
           <circle cx="12" cy="12" r="10" fill="rgba(0,120,255,0.8)" />
@@ -188,6 +210,31 @@ function handleClick(e: MouseEvent) {
   align-items: center;
   justify-content: center;
   background: #2a2a3e;
+}
+
+.file-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  background: #2a2a3e;
+  overflow: hidden;
+}
+
+.file-name {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  text-align: center;
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.3;
 }
 
 .item-error {

@@ -106,4 +106,6 @@ export interface AppSettings {
   viewerBgMode: ViewerBgMode
   /** 大图查看器背景颜色（color 模式时使用） */
   viewerBgColor: string
+  /** 扫描文件夹时是否包含所有文件（非图片仅显示文件名） */
+  scanAllFiles: boolean
 }

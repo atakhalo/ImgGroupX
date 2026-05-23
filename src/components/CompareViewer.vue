@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { ImageItem } from '../types'
 import { loadImageBase64 } from '../stores/imageStore'
 
@@ -24,10 +24,22 @@ const offset = ref({ x: 0, y: 0 })
 const panStart = ref({ x: 0, y: 0 })
 const isPanDragging = ref(false)
 
+/** 可渲染为图片的支持格式 */
+const IMAGE_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif',
+  'tif', 'tiff', 'jxl', 'avif', 'svg', 'pcx', 'ico',
+])
+const isLeftImage = computed(() => IMAGE_EXTENSIONS.has(props.left.ext))
+const isRightImage = computed(() => IMAGE_EXTENSIONS.has(props.right.ext))
+
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
-  try { leftSrc.value = await loadImageBase64(props.left) } catch { /* */ }
-  try { rightSrc.value = await loadImageBase64(props.right) } catch { /* */ }
+  if (isLeftImage.value) {
+    try { leftSrc.value = await loadImageBase64(props.left) } catch { /* */ }
+  }
+  if (isRightImage.value) {
+    try { rightSrc.value = await loadImageBase64(props.right) } catch { /* */ }
+  }
 })
 
 onUnmounted(() => {
@@ -101,12 +113,26 @@ function handleWheel(e: WheelEvent) {
     <!-- 底层图（右侧可见） -->
     <div class="compare-layer compare-bottom">
       <img v-if="rightSrc" :src="rightSrc" class="compare-img" :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }" />
+      <div v-else-if="!isRightImage" class="compare-file-info">
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+        </svg>
+        <span class="compare-file-name">{{ right.name }}</span>
+      </div>
       <div v-else class="compare-loading"><span class="loading-spinner"></span></div>
     </div>
 
     <!-- 顶层图（左侧可见，clip裁剪） -->
     <div class="compare-layer compare-top" :style="{ clipPath: `inset(0 ${(1 - splitRatio) * 100}% 0 0)` }">
       <img v-if="leftSrc" :src="leftSrc" class="compare-img" :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }" />
+      <div v-else-if="!isLeftImage" class="compare-file-info">
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+        </svg>
+        <span class="compare-file-name">{{ left.name }}</span>
+      </div>
       <div v-else class="compare-loading"><span class="loading-spinner"></span></div>
     </div>
 
@@ -199,6 +225,22 @@ function handleWheel(e: WheelEvent) {
 }
 
 .compare-loading { padding: 40px; }
+
+.compare-file-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px;
+}
+
+.compare-file-name {
+  font-size: 14px;
+  color: rgba(255,255,255,0.4);
+  text-align: center;
+  word-break: break-all;
+}
 
 .loading-spinner {
   display: block;
