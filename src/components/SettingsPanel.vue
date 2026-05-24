@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { t } from '../i18n'
 import { state } from '../stores/imageStore'
 import { open } from '@tauri-apps/plugin-dialog'
 
@@ -20,8 +21,8 @@ async function browseProgram(index: number) {
   try {
     const selected = await open({
       multiple: false,
-      title: '选择程序',
-      filters: [{ name: '可执行文件', extensions: ['exe', 'bat', 'cmd'] }],
+      title: t('settings.select_program_title'),
+      filters: [{ name: t('settings.exe_filter_title'), extensions: ['exe', 'bat', 'cmd'] }],
     })
     if (selected) {
       localSettings.value.openWithPrograms[index] = selected as string

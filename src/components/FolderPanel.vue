@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
+import { t } from '../i18n'
 import { state, buildFolderTree, filterImages, findSubTreeInTree, showToast } from '../stores/imageStore'
 import FolderGroup from './FolderGroup.vue'
 
@@ -284,7 +285,7 @@ function handleRemoveFromVirtualGroup(vgIndex: number) {
 
   // 有非一级项时提示
   if (hasNonFirstLevel) {
-    showToast('移除只支持一级节点和一级图片')
+    showToast(t('hint.remove_first_level_only'))
   }
 }
 

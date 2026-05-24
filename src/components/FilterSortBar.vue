@@ -76,7 +76,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
       >
         {{ opt.label }}
       </button>
-      <button class="sort-order-btn" @click="toggleOrder" :title="state.settings.sortOrder === 'asc' ? '升序' : '降序'">
+      <button class="sort-order-btn" @click="toggleOrder" :title="state.settings.sortOrder === 'asc' ? $t('filter.asc_title') : $t('filter.desc_title')">
         <svg v-if="state.settings.sortOrder === 'asc'" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M12 5v14M8 9l4-4 4 4" />
         </svg>
@@ -91,7 +91,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
       <!-- 筛选模式切换 -->
       <button
         class="filter-mode-btn"
-        :title="state.settings.filterTarget === 'name' ? '按文件名筛选' : '按文件夹名筛选'"
+        :title="state.settings.filterTarget === 'name' ? $t('filter.file_title') : state.settings.filterTarget === 'group' ? $t('filter.group_title') : $t('filter.path')"
         @click="toggleFilterTarget"
       >
         <span>{{ state.settings.filterTarget === 'name' ? $t('filter.file') : state.settings.filterTarget === 'group' ? $t('filter.group') : $t('filter.path') }}</span>
@@ -114,7 +114,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
         </button>
         <!-- 预设快速切换 -->
         <div v-if="hasPresets" ref="presetsRef" class="presets-dropdown">
-          <button class="presets-trigger" title="筛选预设" @click="showPresets = !showPresets">
+          <button class="presets-trigger" :title="$t('filter.presets_title')" @click="showPresets = !showPresets">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 5v14M5 12h14" />
             </svg>
@@ -132,7 +132,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
         </div>
       </div>
 
-      <button class="settings-btn" title="设置" @click="emit('openSettings')">
+      <button class="settings-btn" :title="$t('settings.title')" @click="emit('openSettings')">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3" />
           <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />

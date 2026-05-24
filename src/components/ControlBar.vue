@@ -186,7 +186,7 @@ onUnmounted(() => {
         <button
           class="ctrl-btn op-trigger-btn"
           :class="{ active: showOpMenu }"
-          title="操作所选图片"
+          :title="$t('control.operation_title')"
           @click="toggleOpMenu"
         >
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">

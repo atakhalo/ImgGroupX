@@ -124,7 +124,7 @@ watch(() => props.images, () => {
         class="load-sentinel"
       >
         <span class="load-more-hint">
-          已显示 {{ displayLimit }} / {{ processedImages.length }}
+          {{ $t('hint.display_limit', { shown: displayLimit, total: processedImages.length }) }}
         </span>
       </div>
     </div>

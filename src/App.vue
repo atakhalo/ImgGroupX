@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { t } from './i18n'
 import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents } from './stores/imageStore'
 import type { ImageItem } from './types'
 import GridView from './components/GridView.vue'
@@ -222,7 +223,7 @@ async function handleOpenFolder() {
     const selected = await open({
       directory: true,
       multiple: true,
-      title: '选择文件夹',
+      title: t('dialog.select_folder'),
     })
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected]
@@ -237,8 +238,8 @@ async function handleOpenImages() {
   try {
     const selected = await open({
       multiple: true,
-      title: '选择图片',
-      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff', 'jxl', 'avif', 'svg', 'pcx', 'ico'] }],
+      title: t('dialog.select_images'),
+      filters: [{ name: t('dialog.image_filter'), extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff', 'jxl', 'avif', 'svg', 'pcx', 'ico'] }],
     })
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected]
@@ -321,7 +322,7 @@ function makeNodePathsAbsolute(node: import('./types').FolderNode) {
 }
 
 function confirmVirtualGroup() {
-  const name = groupNameInput.value.trim() || `临时图片分组-${state.virtualGroups.length + 1}`
+  const name = groupNameInput.value.trim() || `${t('virtual_group_default')}-${state.virtualGroups.length + 1}`
   const selectedImages = state.allImages.filter(img => state.selectedPaths.has(img.path))
   // 构建选中的文件夹节点子树
   const childNodes: import('./types').FolderNode[] = []
@@ -394,11 +395,11 @@ async function handleDeleteSelection() {
   if (allPaths.length === 0 && folderCount === 0) return
   let msg: string
   if (folderCount > 0) {
-    msg = `确定要删除 ${folderCount} 个文件夹（含 ${allPaths.length} 张图片）吗？将放入回收站。`
+    msg = t('dialog.delete_folder_confirm', { n: folderCount, m: allPaths.length })
   } else {
-    msg = `确定要删除 ${allPaths.length} 张图片吗？将放入回收站。`
+    msg = t('dialog.delete_image_confirm', { n: allPaths.length })
   }
-  const ok = await ask(msg, { title: '删除确认', kind: 'warning' })
+  const ok = await ask(msg, { title: t('dialog.delete_confirm'), kind: 'warning' })
   if (!ok) return
   await deleteSelectedContents()
 }

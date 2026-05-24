@@ -673,15 +673,15 @@ export async function saveVirtualGroup(vg: FolderNode, vgIndex?: number): Promis
   try {
     const files = collectVGCopyFiles(vg, '')
     if (files.length === 0) {
-      showToast('分组中没有图片')
+      showToast(t('hint.group_empty'))
       return false
     }
 
     // 大量图片时确认
     if (files.length > 100) {
       const ok = await ask(
-        `当前共 ${files.length} 张图片，数量较多，确定要保存到文件夹吗？`,
-        { title: '保存确认', kind: 'warning' }
+        t('dialog.save_large_confirm', { n: files.length }),
+        { title: t('dialog.save_confirm'), kind: 'warning' }
       )
       if (!ok) return false
     }
@@ -689,19 +689,19 @@ export async function saveVirtualGroup(vg: FolderNode, vgIndex?: number): Promis
     const selected = await open({
       directory: true,
       multiple: false,
-      title: '选择保存文件夹',
+      title: t('dialog.select_save_folder'),
     })
     if (!selected) return false
 
     const destDir = String(selected).replace(/\\/g, '/')
 
     await invoke('copy_files', { files, destDir })
-    showToast(`已保存 ${files.length} 张图片到 ${destDir}`)
+    showToast(t('hint.saved_to_folder', { n: files.length, path: destDir }))
 
     // 询问是否加载该文件夹并替换分组
     const loadIt = await ask(
-      `图片已保存到 ${destDir}，是否加载此文件夹并替换当前虚拟分组？`,
-      { title: '加载文件夹', kind: 'info' }
+      t('dialog.load_folder_replace', { path: destDir }),
+      { title: t('dialog.load_folder'), kind: 'info' }
     )
     if (loadIt) {
       // 先扫描加载该文件夹，成功后再移除原分组
@@ -714,7 +714,7 @@ export async function saveVirtualGroup(vg: FolderNode, vgIndex?: number): Promis
     return true
   } catch (e) {
     console.error('保存虚拟分组失败:', e)
-    showToast(`保存失败: ${e}`)
+    showToast(t('hint.save_failed', { msg: String(e) }))
     return false
   }
 }
@@ -922,12 +922,12 @@ export async function copySelectedImages(): Promise<void> {
 
   // 大量图片时确认
   const srcInfo = state.selectedFolderPaths.size > 0
-    ? `（其中 ${state.selectedPaths.size} 张直接选中，${files.length - state.selectedPaths.size} 张来自选中的文件夹）`
+    ? t('dialog.src_info', { direct: state.selectedPaths.size, fromFolder: files.length - state.selectedPaths.size })
     : ''
   if (files.length > 100) {
     const ok = await ask(
-      `当前共 ${files.length} 张图片，数量较多，确定要复制吗？${srcInfo}`,
-      { title: '复制确认', kind: 'warning' }
+      t('dialog.copy_large_confirm', { n: files.length, info: srcInfo }),
+      { title: t('dialog.copy_confirm'), kind: 'warning' }
     )
     if (!ok) return
   }
@@ -935,13 +935,13 @@ export async function copySelectedImages(): Promise<void> {
   const selected = await open({
     directory: true,
     multiple: false,
-    title: '选择目标文件夹',
+    title: t('dialog.select_target_folder'),
   })
   if (!selected) return
 
   const destDir = String(selected).replace(/\\/g, '/')
   await invoke('copy_files', { files, destDir })
-  showToast(`已复制 ${files.length} 张图片到 ${destDir}`)
+  showToast(t('hint.copied_to_folder', { n: files.length, path: destDir }))
 }
 
 /** 移动选中图片到目标文件夹 */
@@ -951,12 +951,12 @@ export async function moveSelectedImages(): Promise<void> {
 
   // 大量图片时确认
   const srcInfo = state.selectedFolderPaths.size > 0
-    ? `（其中 ${state.selectedPaths.size} 张直接选中，${files.length - state.selectedPaths.size} 张来自选中的文件夹）`
+    ? t('dialog.src_info', { direct: state.selectedPaths.size, fromFolder: files.length - state.selectedPaths.size })
     : ''
   if (files.length > 100) {
     const ok = await ask(
-      `当前共 ${files.length} 张图片，数量较多，确定要移动吗？移动后原位置文件将被删除。${srcInfo}`,
-      { title: '移动确认', kind: 'warning' }
+      t('dialog.move_large_confirm', { n: files.length, info: srcInfo }),
+      { title: t('dialog.move_confirm'), kind: 'warning' }
     )
     if (!ok) return
   }
@@ -964,7 +964,7 @@ export async function moveSelectedImages(): Promise<void> {
   const selected = await open({
     directory: true,
     multiple: false,
-    title: '选择目标文件夹',
+    title: t('dialog.select_target_folder'),
   })
   if (!selected) return
 
@@ -979,7 +979,7 @@ export async function moveSelectedImages(): Promise<void> {
     vg.images = vg.images.filter(img => !movedSet.has(img.path))
   }
 
-  showToast(`已移动 ${movedPaths.length} 张图片到 ${destDir}`)
+  showToast(t('hint.moved_to_folder', { n: movedPaths.length, path: destDir }))
 }
 
 /** 将虚拟分组的图片按目录构建为树结构 */
