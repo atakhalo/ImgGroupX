@@ -119,4 +119,8 @@ export interface AppSettings {
   autoCenter: boolean
   /** 标记颜色（5级标记对应5种颜色） */
   markColors: string[]
+  /** 是否显示标记边框与角标 */
+  showMarks: boolean
+  /** 是否显示标记角标 */
+  showMarkBadge: boolean
 }

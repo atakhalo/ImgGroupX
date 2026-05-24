@@ -49,6 +49,8 @@ const defaultSettings: AppSettings = {
   autoPan: true,
   autoCenter: true,
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
+  showMarks: true,
+  showMarkBadge: true,
 }
 
 /** 全局状态 */

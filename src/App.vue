@@ -6,6 +6,7 @@ import type { ImageItem } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
 import ControlBar from './components/ControlBar.vue'
+import SelectionBar from './components/SelectionBar.vue'
 import FolderPanel from './components/FolderPanel.vue'
 import FilterSortBar from './components/FilterSortBar.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
@@ -515,6 +516,15 @@ async function handleRefresh() {
       </div>
 
       <div class="bottom-bar" :class="{ hidden: !showControls }">
+        <div class="sub-bar-row">
+          <SelectionBar
+            @createGroup="createVirtualGroup"
+            @compare="handleCompare"
+            @deleteSelection="handleDeleteSelection"
+            @moveSelection="moveSelectedImages"
+            @copySelection="copySelectedImages"
+          />
+        </div>
         <ControlBar
           @viewMode="switchToViewMode"
           @selectMode="switchToSelectMode"
@@ -524,11 +534,6 @@ async function handleRefresh() {
           @expandAll="expandAll"
           @collapseLeaves="collapseLeaves"
           @clearAll="clearAll"
-          @createGroup="createVirtualGroup"
-          @compare="handleCompare"
-          @deleteSelection="handleDeleteSelection"
-          @moveSelection="moveSelectedImages"
-          @copySelection="copySelectedImages"
         />
       </div>
     </div>
@@ -659,17 +664,23 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 8px 16px;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   transition: opacity 0.3s, transform 0.3s, bottom 0.3s;
   z-index: 100;
   pointer-events: auto;
 }
 .bottom-bar.hidden {
   opacity: 0;
-  bottom: -20px;
+  bottom: -40px;
   pointer-events: none;
+}
+
+.sub-bar-row {
+  display: flex;
+  justify-content: center;
 }
 .toast-bubble {
   position: fixed;

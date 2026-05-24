@@ -58,6 +58,8 @@ function reset() {
     autoPan: true,
     autoCenter: true,
     markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
+    showMarks: true,
+    showMarkBadge: true,
   }
 }
 </script>
@@ -159,6 +161,13 @@ function reset() {
           <!-- 标记颜色 -->
           <div class="setting-section">
             <h4>{{ $t('settings.mark_colors') }}</h4>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.showMarkBadge" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.show_mark_badge') }}
+              </label>
+            </div>
             <div
               v-for="(_c, i) in localSettings.markColors"
               :key="i"

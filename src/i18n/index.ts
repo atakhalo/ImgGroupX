@@ -55,6 +55,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.scan_all_files_hint': '勾选后加载文件夹时包含非图片文件（仅显示文件名）',
     'settings.mark_colors': '标记颜色',
     'settings.mark_color': '标记',
+    'settings.show_mark_badge': '显示标记角标',
 
     // 控制栏
     'control.open': '打开',
@@ -205,6 +206,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.toggle_titles': '显示/隐藏分组标题',
     'control.rainbow': '彩虹',
     'control.toggle_rainbow': '彩虹层级着色',
+    'control.marks': '标记',
+    'control.toggle_marks': '显示/隐藏标记',
     'control.collapse_leaves': '折叠叶子',
             'virtual_group_default': '临时图片分组',
   },
@@ -241,6 +244,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.scan_all_files_hint': 'When checked, loading folders includes non-image files (filename only)',
     'settings.mark_colors': 'Mark Colors',
     'settings.mark_color': 'Mark',
+    'settings.show_mark_badge': 'Show Mark Badge',
     'settings.auto_pan': 'Auto Pan',
     'settings.auto_pan_hint': 'Automatically enable pan mode when zoomed in beyond 100%',
     'settings.auto_center': 'Auto Center on Switch',
@@ -394,6 +398,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.toggle_titles': 'Show/Hide Group Titles',
     'control.rainbow': 'Rainbow',
     'control.toggle_rainbow': 'Rainbow Hierarchy',
+    'control.marks': 'Marks',
+    'control.toggle_marks': 'Show/Hide Marks',
     'control.collapse_leaves': 'Collapse Leaves',
             'virtual_group_default': 'Temp Group',
   }

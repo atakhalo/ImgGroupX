@@ -132,8 +132,8 @@ function handleClick(e: MouseEvent) {
       height: gridSize + 'px',
       width: itemWidth + 'px',
       borderRadius: borderRadius + 'px',
-      outline: markLevel && markColor ? `2px solid ${markColor}` : '',
-      outlineOffset: markLevel ? '2px' : '',
+      outline: markLevel && markColor && state.settings.showMarks ? `2px solid ${markColor}` : '',
+      outlineOffset: markLevel && state.settings.showMarks ? '2px' : '',
     }"
     @click="handleClick"
     @dblclick="state.selectMode === 'select' && emit('click', item)"
@@ -185,7 +185,7 @@ function handleClick(e: MouseEvent) {
         </svg>
       </div>
       <!-- 标记等级徽标 -->
-      <div v-if="markLevel && markColor" class="mark-badge" :style="{ backgroundColor: markColor, width: markBadgeSize + 'px', height: markBadgeSize + 'px' }">
+      <div v-if="markLevel && markColor && state.settings.showMarks && state.settings.showMarkBadge" class="mark-badge" :style="{ backgroundColor: markColor, width: markBadgeSize + 'px', height: markBadgeSize + 'px' }">
         <span class="mark-badge-text" :style="{ fontSize: markBadgeFontSize + 'px' }">{{ markLevel }}</span>
       </div>
     </div>
