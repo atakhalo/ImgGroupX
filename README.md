@@ -4,7 +4,7 @@
 
 > 基于 **Tauri v2 + Vue 3 + Rust** 的高性能桌面端图片管理工具，轻松管理、浏览、筛选和对比大量图片。
 
-[📺 B站视频演示](https://www.bilibili.com/video/BV1hHLi6ZE8P/)
+[📺 B站视频演示](https://www.bilibili.com/video/BV1hHLi6ZE8P/)[📺 YouTube](https://youtu.be/FW07Nv0fMWU)
 
 ---
 

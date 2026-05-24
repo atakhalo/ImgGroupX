@@ -4,7 +4,7 @@
 
 > A high-performance desktop image management tool built with **Tauri v2 + Vue 3 + Rust**. Easily manage, browse, filter, and compare large collections of images.
 
-[📺 bilibili Video Demo](https://www.bilibili.com/video/BV1hHLi6ZE8P/)
+[📺 YouTube Video Demo](https://youtu.be/FW07Nv0fMWU)[📺 bilibili Video Demo](https://www.bilibili.com/video/BV1hHLi6ZE8P/)
 
 ---
 
