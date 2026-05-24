@@ -2,6 +2,7 @@
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import type { ImageItem, MarkLevel } from '../types'
 import { state, loadImageBase64, setImageMark } from '../stores/imageStore'
+import { matchShortcut } from '../utils/shortcuts'
 import { invoke } from '@tauri-apps/api/core'
 import OperationBar from './OperationBar.vue'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
@@ -116,20 +117,20 @@ onUnmounted(() => {
 })
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
+  if (matchShortcut(e, 'close')) {
     if (isFullscreen.value) exitFullscreen()
     else emit('close')
-  } else if (e.key === 'ArrowLeft') prevImage()
-  else if (e.key === 'ArrowRight') nextImage()
-  else if (e.key === '+' || e.key === '=') zoomIn()
-  else if (e.key === '-') zoomOut()
-  else if (e.key === 'Delete') handleDeleteImage()
-  else if (e.key === '`' || e.key === '0') handleSetMark(0)
-  else if (e.key === '1') handleSetMark(1)
-  else if (e.key === '2') handleSetMark(2)
-  else if (e.key === '3') handleSetMark(3)
-  else if (e.key === '4') handleSetMark(4)
-  else if (e.key === '5') handleSetMark(5)
+  } else if (matchShortcut(e, 'viewer.prev')) prevImage()
+  else if (matchShortcut(e, 'viewer.next')) nextImage()
+  else if (matchShortcut(e, 'viewer.zoomIn')) zoomIn()
+  else if (matchShortcut(e, 'viewer.zoomOut')) zoomOut()
+  else if (matchShortcut(e, 'viewer.delete')) handleDeleteImage()
+  else if (matchShortcut(e, 'viewer.mark0')) handleSetMark(0)
+  else if (matchShortcut(e, 'viewer.mark1')) handleSetMark(1)
+  else if (matchShortcut(e, 'viewer.mark2')) handleSetMark(2)
+  else if (matchShortcut(e, 'viewer.mark3')) handleSetMark(3)
+  else if (matchShortcut(e, 'viewer.mark4')) handleSetMark(4)
+  else if (matchShortcut(e, 'viewer.mark5')) handleSetMark(5)
 }
 
 function handleSetMark(level: MarkLevel) {

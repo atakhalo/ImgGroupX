@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { ImageItem } from '../types'
 import { loadImageBase64 } from '../stores/imageStore'
+import { matchShortcut } from '../utils/shortcuts'
 
 const props = defineProps<{
   left: ImageItem
@@ -51,9 +52,9 @@ onUnmounted(() => {
 })
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('close')
-  else if (e.key === '+' || e.key === '=') zoomIn()
-  else if (e.key === '-') zoomOut()
+  if (matchShortcut(e, 'close')) emit('close')
+  else if (matchShortcut(e, 'compare.zoomIn')) zoomIn()
+  else if (matchShortcut(e, 'compare.zoomOut')) zoomOut()
 }
 
 function zoomIn() { scale.value = Math.min(5, scale.value + 0.25) }

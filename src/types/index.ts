@@ -123,4 +123,8 @@ export interface AppSettings {
   showMarks: boolean
   /** 是否显示标记角标 */
   showMarkBadge: boolean
+  /** 自定义快捷键映射 */
+  keyBindings: Record<string, string>
+  /** 自定义替代键映射 */
+  keyAltBindings: Record<string, string>
 }

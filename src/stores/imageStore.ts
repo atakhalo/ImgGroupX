@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import type { ImageInfo, ImageItem, FolderNode, AppSettings, SortBy, SortOrder, FilterTarget } from '../types'
+import { getDefaultBindings } from '../utils/shortcuts'
 import { invoke } from '@tauri-apps/api/core'
 import { open, ask } from '@tauri-apps/plugin-dialog'
 import { t } from '../i18n'
@@ -51,6 +52,8 @@ const defaultSettings: AppSettings = {
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   showMarks: true,
   showMarkBadge: true,
+  keyBindings: getDefaultBindings(),
+  keyAltBindings: getDefaultBindings(true),
 }
 
 /** 全局状态 */
