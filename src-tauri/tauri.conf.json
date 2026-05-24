@@ -5,7 +5,7 @@
   "identifier": "com.xunxin.imggroup",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1422",
+    "devUrl": "http://localhost:5172",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
