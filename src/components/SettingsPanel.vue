@@ -57,6 +57,7 @@ function reset() {
     scanAllFiles: false,
     autoPan: true,
     autoCenter: true,
+    markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   }
 }
 </script>
@@ -153,6 +154,23 @@ function reset() {
             <button class="preset-add" @click="localSettings.rainbowColors.push('#cccccc')">
               {{ $t('settings.add_color') }}
             </button>
+          </div>
+
+          <!-- 标记颜色 -->
+          <div class="setting-section">
+            <h4>{{ $t('settings.mark_colors') }}</h4>
+            <div
+              v-for="(_c, i) in localSettings.markColors"
+              :key="i"
+              class="setting-row"
+            >
+              <label>{{ $t('settings.mark_color') }} {{ i + 1 }}</label>
+              <input type="color" v-model="localSettings.markColors[i]" class="color-input" />
+              <div
+                class="rainbow-swatch"
+                :style="{ backgroundColor: localSettings.markColors[i] }"
+              ></div>
+            </div>
           </div>
 
           <!-- 标题颜色 -->

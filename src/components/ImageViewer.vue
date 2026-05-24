@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
-import type { ImageItem } from '../types'
-import { state, loadImageBase64 } from '../stores/imageStore'
+import type { ImageItem, MarkLevel } from '../types'
+import { state, loadImageBase64, setImageMark } from '../stores/imageStore'
 import { invoke } from '@tauri-apps/api/core'
 import OperationBar from './OperationBar.vue'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
@@ -46,6 +46,13 @@ const backdropStyle = computed(() => {
   }
   // overlay 模式保持原有蒙灰效果
   return { background: 'rgba(0, 0, 0, 0.85)' }
+})
+
+const currentMarkLevel = computed(() => currentItem.value?.markLevel || 0)
+const currentMarkColor = computed(() => {
+  const lv = currentMarkLevel.value
+  if (lv < 1 || lv > 5) return ''
+  return state.settings.markColors[lv - 1] || ''
 })
 
 function formatSize(bytes?: number): string {
@@ -117,6 +124,19 @@ function handleKeydown(e: KeyboardEvent) {
   else if (e.key === '+' || e.key === '=') zoomIn()
   else if (e.key === '-') zoomOut()
   else if (e.key === 'Delete') handleDeleteImage()
+  else if (e.key === '`' || e.key === '0') handleSetMark(0)
+  else if (e.key === '1') handleSetMark(1)
+  else if (e.key === '2') handleSetMark(2)
+  else if (e.key === '3') handleSetMark(3)
+  else if (e.key === '4') handleSetMark(4)
+  else if (e.key === '5') handleSetMark(5)
+}
+
+function handleSetMark(level: MarkLevel) {
+  const item = currentItem.value
+  if (item) {
+    setImageMark(item.path, level)
+  }
 }
 
 function prevImage() { if (currentIndex.value > 0) currentIndex.value-- }
@@ -276,6 +296,8 @@ function handleDeleteImage() {
       <span>{{ currentIndex + 1 }}/{{ images.length }}</span><span class="info-sep">|</span>
       <span>{{ formatSize(currentItem?.size_bytes) }}</span><span class="info-sep">|</span>
       <span>{{ currentItem?.width }}×{{ currentItem?.height }}</span>
+      <span v-if="currentMarkLevel && currentMarkColor" class="info-sep">|</span>
+      <span v-if="currentMarkLevel && currentMarkColor" class="mark-info-badge" :style="{ backgroundColor: currentMarkColor }">{{ currentMarkLevel }}</span>
     </div>
   </div>
 </template>
@@ -415,6 +437,22 @@ function handleDeleteImage() {
   pointer-events: none;
 }
 .info-sep { margin: 0 8px; opacity: 0.4; }
+
+.mark-info-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: middle;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
 
 /* 操作栏热区 */
 .op-bar-hotarea {

@@ -48,6 +48,7 @@ const defaultSettings: AppSettings = {
   scanAllFiles: false,
   autoPan: true,
   autoCenter: true,
+  markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
 }
 
 /** 全局状态 */
@@ -563,6 +564,69 @@ export function addVirtualGroup(name: string, images: ImageItem[], children?: Fo
 /** 删除虚拟分组 */
 export function removeVirtualGroup(index: number) {
   state.virtualGroups.splice(index, 1)
+}
+
+/** 设置指定图片的标记等级 */
+export function setImageMark(path: string, level: import('../types').MarkLevel) {
+  const img = state.allImages.find(i => i.path === path)
+  if (img) {
+    if (level === 0) {
+      delete img.markLevel
+    } else {
+      img.markLevel = level
+    }
+  }
+  // 同时更新虚拟分组中的图片
+  for (const vg of state.virtualGroups) {
+    const vgImg = vg.images.find(i => i.path === path)
+    if (vgImg) {
+      if (level === 0) {
+        delete vgImg.markLevel
+      } else {
+        vgImg.markLevel = level
+      }
+    }
+  }
+}
+
+/** 为所有选中图片（含文件夹节点内图片）设置标记 */
+export function setSelectedImagesMark(level: import('../types').MarkLevel) {
+  const allPaths = collectAllSelectedPaths()
+  for (const p of allPaths) {
+    setImageMark(p, level)
+  }
+}
+
+/** 选中指定标记等级的所有图片（0=未标记） */
+export function selectImagesByMark(level: import('../types').MarkLevel) {
+  for (const img of state.allImages) {
+    if (level === 0 ? !img.markLevel : img.markLevel === level) {
+      state.selectedPaths.add(img.path)
+    }
+  }
+  for (const vg of state.virtualGroups) {
+    for (const img of vg.images) {
+      if (level === 0 ? !img.markLevel : img.markLevel === level) {
+        state.selectedPaths.add(img.path)
+      }
+    }
+  }
+}
+
+/** 取消选中指定标记等级的所有图片（0=未标记） */
+export function deselectImagesByMark(level: import('../types').MarkLevel) {
+  for (const img of state.allImages) {
+    if (level === 0 ? !img.markLevel : img.markLevel === level) {
+      state.selectedPaths.delete(img.path)
+    }
+  }
+  for (const vg of state.virtualGroups) {
+    for (const img of vg.images) {
+      if (level === 0 ? !img.markLevel : img.markLevel === level) {
+        state.selectedPaths.delete(img.path)
+      }
+    }
+  }
 }
 
 /** 加载图片base64（按需加载） */

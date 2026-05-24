@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { ImageItem } from '../types'
-import { state } from '../stores/imageStore'
-import { ref, onMounted, onUnmounted } from 'vue'
+import type { ImageItem, MarkLevel } from '../types'
+import { state, setImageMark } from '../stores/imageStore'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   item?: ImageItem
   scale: number
   isFullscreen: boolean
@@ -25,10 +25,17 @@ const emit = defineEmits<{
 
 const showOpenMenu = ref(false)
 const openMenuRef = ref<HTMLElement | null>(null)
+const showMarkMenu = ref(false)
+const markMenuRef = ref<HTMLElement | null>(null)
+
+const currentMarkLevel = computed(() => props.item?.markLevel || 0)
 
 function onClickOutside(e: MouseEvent) {
   if (showOpenMenu.value && openMenuRef.value && !openMenuRef.value.contains(e.target as Node)) {
     showOpenMenu.value = false
+  }
+  if (showMarkMenu.value && markMenuRef.value && !markMenuRef.value.contains(e.target as Node)) {
+    showMarkMenu.value = false
   }
 }
 onMounted(() => document.addEventListener('click', onClickOutside))
@@ -36,6 +43,13 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
 
 function toggleInfo() {
   state.showImageInfo = !state.showImageInfo
+}
+
+function handleSetMark(level: MarkLevel) {
+  if (props.item) {
+    setImageMark(props.item.path, level)
+  }
+  showMarkMenu.value = false
 }
 </script>
 
@@ -83,6 +97,35 @@ function toggleInfo() {
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
         </svg>
       </button>
+
+      <!-- 标记按钮 -->
+      <div class="open-btn-group" ref="markMenuRef">
+        <button class="op-btn" :class="{ active: showMarkMenu }" :title="$t('viewer.mark')" @click="showMarkMenu = !showMarkMenu">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
+        </button>
+        <div v-if="showMarkMenu" class="open-dropdown mark-dropdown">
+          <button
+            v-for="lv in 5" :key="lv"
+            class="mark-menu-item"
+            :class="{ active: currentMarkLevel === lv }"
+            @click="handleSetMark(lv as MarkLevel)"
+          >
+            <span class="mark-dot" :style="{ backgroundColor: state.settings.markColors[lv - 1] || '#888' }">{{ lv }}</span>
+            <span>{{ $t('viewer.mark_level', { n: lv }) }}</span>
+          </button>
+          <div class="open-separator"></div>
+          <button
+            class="mark-menu-item"
+            :class="{ active: currentMarkLevel === 0 }"
+            @click="handleSetMark(0)"
+          >
+            <span class="mark-dot mark-dot-none">✕</span>
+            <span>{{ $t('viewer.mark_clear') }}</span>
+          </button>
+        </div>
+      </div>
 
       <!-- 打开菜单 -->
       <div class="open-btn-group" ref="openMenuRef">
@@ -238,5 +281,56 @@ function toggleInfo() {
   height: 1px;
   background: rgba(255,255,255,0.08);
   margin: 4px 8px;
+}
+
+/* 标记菜单 */
+.mark-dropdown {
+  min-width: 160px;
+}
+
+.mark-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 14px;
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+
+.mark-menu-item:hover {
+  background: rgba(255,255,255,0.08);
+  color: white;
+}
+
+.mark-menu-item.active {
+  background: rgba(100,108,255,0.2);
+  color: #aab0ff;
+}
+
+.mark-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+
+.mark-dot-none {
+  background: rgba(255,255,255,0.15);
+  font-size: 12px;
+  text-shadow: none;
 }
 </style>

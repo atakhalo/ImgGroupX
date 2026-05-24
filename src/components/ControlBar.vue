@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { state, getTotalSelectedCount } from '../stores/imageStore'
+import type { MarkLevel } from '../types'
+import { state, getTotalSelectedCount, setSelectedImagesMark, selectImagesByMark, deselectImagesByMark } from '../stores/imageStore'
 
 const emit = defineEmits<{
   toggleFolderGroup: []
@@ -16,14 +17,37 @@ const emit = defineEmits<{
   selectMode: []
   moveSelection: []
   copySelection: []
+  markSelection: [level: MarkLevel]
 }>()
 
 const showOpMenu = ref(false)
+const showMarkMenu = ref(false)
 
 const totalSelectedCount = computed(() => getTotalSelectedCount())
 
 function toggleOpMenu() {
   showOpMenu.value = !showOpMenu.value
+  showMarkMenu.value = false
+}
+
+function toggleMarkMenu() {
+  showMarkMenu.value = !showMarkMenu.value
+  showOpMenu.value = false
+}
+
+function handleMarkSelected(level: MarkLevel) {
+  setSelectedImagesMark(level)
+  showMarkMenu.value = false
+}
+
+function handleSelectByMark(level: MarkLevel) {
+  selectImagesByMark(level)
+  showMarkMenu.value = false
+}
+
+function handleDeselectByMark(level: MarkLevel) {
+  deselectImagesByMark(level)
+  showMarkMenu.value = false
 }
 
 function handleMove() {
@@ -46,10 +70,12 @@ function closeOpMenu() {
 }
 
 function onDocumentClick(e: MouseEvent) {
-  if (!showOpMenu.value) return
   const target = e.target as HTMLElement
-  if (!target.closest('.op-menu-container')) {
+  if (showOpMenu.value && !target.closest('.op-menu-container')) {
     showOpMenu.value = false
+  }
+  if (showMarkMenu.value && !target.closest('.op-menu-container')) {
+    showMarkMenu.value = false
   }
 }
 
@@ -177,6 +203,65 @@ onUnmounted(() => {
         </svg>
         <span>{{ $t('control.compare') }}</span>
       </button>
+
+      <!-- 标记菜单（始终显示） -->
+      <div
+        v-if="state.selectMode === 'select'"
+        class="op-menu-container"
+        @click.stop
+      >
+        <button
+          class="ctrl-btn op-trigger-btn"
+          :class="{ active: showMarkMenu }"
+          :title="$t('control.mark')"
+          @click="toggleMarkMenu"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
+          <span>{{ $t('control.mark') }}</span>
+        </button>
+        <div v-if="showMarkMenu" class="op-menu-backdrop" @click="showMarkMenu = false"></div>
+        <div v-if="showMarkMenu" class="op-menu mark-menu-wide" @click.stop>
+          <div v-for="lv in 5" :key="lv" class="mark-menu-row">
+            <button
+              class="mark-dot-btn"
+              :style="{ backgroundColor: state.settings.markColors[lv - 1] || '#888' }"
+              @click="handleMarkSelected(lv as MarkLevel)"
+            >{{ lv }}</button>
+            <button class="mark-action-btn" @click="handleSelectByMark(lv as MarkLevel)">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              {{ $t('control.mark_select_all') }}
+            </button>
+            <button class="mark-action-btn" @click="handleDeselectByMark(lv as MarkLevel)">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+              {{ $t('control.mark_deselect') }}
+            </button>
+          </div>
+          <div class="op-menu-divider"></div>
+          <div class="mark-menu-row">
+            <button class="mark-dot-btn mark-dot-none" @click="handleMarkSelected(0)">
+              <span class="mark-dot-none-inner">✕</span>
+            </button>
+            <button class="mark-action-btn" @click="handleSelectByMark(0)">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              {{ $t('control.mark_select_all') }}
+            </button>
+            <button class="mark-action-btn" @click="handleDeselectByMark(0)">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+              {{ $t('control.mark_deselect') }}
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div
         v-if="(state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0) && state.selectMode === 'select'"
@@ -428,5 +513,77 @@ onUnmounted(() => {
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
   margin: 4px 8px;
+}
+
+/* 标记菜单 */
+.mark-menu-wide {
+  min-width: 280px;
+  padding: 8px;
+}
+
+.mark-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px;
+  border-radius: 6px;
+  transition: background 0.12s;
+}
+
+.mark-menu-row:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+.mark-dot-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+  cursor: pointer;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+
+.mark-dot-btn:hover {
+  transform: scale(1.15);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.mark-dot-none {
+  background: rgba(255,255,255,0.12);
+}
+
+.mark-dot-none-inner {
+  font-size: 13px;
+  color: rgba(255,255,255,0.6);
+  text-shadow: none;
+}
+
+.mark-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.65);
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.mark-action-btn:hover {
+  background: rgba(255,255,255,0.1);
+  color: white;
+  border-color: rgba(255,255,255,0.15);
 }
 </style>

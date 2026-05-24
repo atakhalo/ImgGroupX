@@ -53,6 +53,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.auto_center_hint': '切换到下/上一张图片时自动居中显示',
     'settings.scan_all_files': '扫描全部文件',
     'settings.scan_all_files_hint': '勾选后加载文件夹时包含非图片文件（仅显示文件名）',
+    'settings.mark_colors': '标记颜色',
+    'settings.mark_color': '标记',
 
     // 控制栏
     'control.open': '打开',
@@ -74,6 +76,10 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.delete': '删除',
     'control.delete_title': '删除 (Del)',
     'control.clear': '清空',
+    'control.mark': '标记',
+    'control.mark_select_all': '全选',
+    'control.mark_deselect': '取消选择',
+    'control.mark_clear': '取消标记',
 
     // 筛选排序栏
     'filter.sort': '排序',
@@ -118,6 +124,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'viewer.explorer': '资源管理器',
     'viewer.default': '默认方式',
     'viewer.close': '关闭',
+    'viewer.mark': '标记',
+    'viewer.mark_level': '标记 {n}',
+    'viewer.mark_clear': '取消标记',
 
     // 对比视图
     'compare.drag_hint': '拖动中间分隔条对比',
@@ -230,6 +239,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.language': 'Language',
     'settings.scan_all_files': 'Scan All Files',
     'settings.scan_all_files_hint': 'When checked, loading folders includes non-image files (filename only)',
+    'settings.mark_colors': 'Mark Colors',
+    'settings.mark_color': 'Mark',
     'settings.auto_pan': 'Auto Pan',
     'settings.auto_pan_hint': 'Automatically enable pan mode when zoomed in beyond 100%',
     'settings.auto_center': 'Auto Center on Switch',
@@ -266,6 +277,10 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.delete': 'Delete',
     'control.delete_title': 'Delete (Del)',
     'control.clear': 'Clear',
+    'control.mark': 'Mark',
+    'control.mark_select_all': 'Select All',
+    'control.mark_deselect': 'Deselect',
+    'control.mark_clear': 'Clear Mark',
 
     'filter.sort': 'Sort',
     'filter.sort_name': 'Name',
@@ -305,6 +320,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'viewer.explorer': 'Explorer',
     'viewer.default': 'Default',
     'viewer.close': 'Close',
+    'viewer.mark': 'Mark',
+    'viewer.mark_level': 'Mark {n}',
+    'viewer.mark_clear': 'Clear Mark',
 
     'compare.drag_hint': 'Drag the divider to compare',
 

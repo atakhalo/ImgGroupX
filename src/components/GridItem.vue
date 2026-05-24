@@ -23,6 +23,15 @@ const emit = defineEmits<{
 
 const isImage = computed(() => IMAGE_EXTENSIONS.has(props.item.ext))
 
+const markLevel = computed(() => props.item.markLevel || 0)
+const markColor = computed(() => {
+  const lv = markLevel.value
+  if (lv < 1 || lv > 5) return ''
+  return state.settings.markColors[lv - 1] || ''
+})
+const markBadgeSize = computed(() => Math.max(12, Math.round(props.gridSize / 10)))
+const markBadgeFontSize = computed(() => Math.max(7, Math.round(props.gridSize / 16)))
+
 const elRef = ref<HTMLElement | null>(null)
 const imgSrc = ref('')
 const isLoaded = ref(false)
@@ -123,6 +132,8 @@ function handleClick(e: MouseEvent) {
       height: gridSize + 'px',
       width: itemWidth + 'px',
       borderRadius: borderRadius + 'px',
+      outline: markLevel && markColor ? `2px solid ${markColor}` : '',
+      outlineOffset: markLevel ? '2px' : '',
     }"
     @click="handleClick"
     @dblclick="state.selectMode === 'select' && emit('click', item)"
@@ -173,6 +184,10 @@ function handleClick(e: MouseEvent) {
           <path d="M9 12l2 2 4-4" stroke="white" stroke-width="2" fill="none" />
         </svg>
       </div>
+      <!-- 标记等级徽标 -->
+      <div v-if="markLevel && markColor" class="mark-badge" :style="{ backgroundColor: markColor, width: markBadgeSize + 'px', height: markBadgeSize + 'px' }">
+        <span class="mark-badge-text" :style="{ fontSize: markBadgeFontSize + 'px' }">{{ markLevel }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -191,8 +206,7 @@ function handleClick(e: MouseEvent) {
 }
 
 .grid-item.selected {
-  outline: 3px solid #0078ff;
-  outline-offset: -3px;
+  box-shadow: 0 0 0 3px #0078ff;
 }
 
 .item-inner {
@@ -289,5 +303,24 @@ function handleClick(e: MouseEvent) {
   position: absolute;
   top: 6px;
   right: 6px;
+}
+
+.mark-badge {
+  position: absolute;
+  bottom: 0px;
+  right: 0px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  opacity: 0.75;
+}
+
+.mark-badge-text {
+  color: white;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
 }
 </style>

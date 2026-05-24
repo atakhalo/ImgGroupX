@@ -16,6 +16,9 @@ export interface ScanResult {
   total: number
 }
 
+/** 标记等级：0 无标记，1-5 为标记等级 */
+export type MarkLevel = 0 | 1 | 2 | 3 | 4 | 5
+
 /** 带缓存base64的图片项（前端使用） */
 export interface ImageItem extends ImageInfo {
   /** base64缓存，按需加载 */
@@ -24,6 +27,8 @@ export interface ImageItem extends ImageInfo {
   loading: boolean
   /** 加载失败 */
   error?: string
+  /** 标记等级（1-5），0或无此字段表示未标记 */
+  markLevel?: MarkLevel
 }
 
 /** 目录分组节点 */
@@ -112,4 +117,6 @@ export interface AppSettings {
   autoPan: boolean
   /** 切换图片时自动居中 */
   autoCenter: boolean
+  /** 标记颜色（5级标记对应5种颜色） */
+  markColors: string[]
 }
