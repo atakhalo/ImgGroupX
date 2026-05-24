@@ -41,6 +41,9 @@ const offset = ref({ x: 0, y: 0 })
 const prevImageSize = ref({ width: 0, height: 0 })
 const currentItem = computed(() => props.images[currentIndex.value])
 
+/** 递增的加载序号，用于防止异步竞态 */
+let loadingSeq = 0
+
 const backdropStyle = computed(() => {
   if (state.settings.viewerBgMode === 'color') {
     return { background: state.settings.viewerBgColor }
@@ -81,7 +84,11 @@ async function loadCurrentImage() {
     }
     return
   }
+
+  // 递增加载序号并捕获当前值，用于后续判断是否被新请求覆盖
+  const seq = ++loadingSeq
   isLoaded.value = false
+
   // 自动居中（设置启用时切换图片始终重置偏移）
   if (state.settings.autoCenter) {
     offset.value = { x: 0, y: 0 }
@@ -89,14 +96,19 @@ async function loadCurrentImage() {
   // 不同尺寸图片切换时重置缩放和平移
   if (item.width !== prevImageSize.value.width || item.height !== prevImageSize.value.height) {
     scale.value = 1
-    offset.value = { x: 0, y: 0 }
+    // offset.value = { x: 0, y: 0 }
   }
   prevImageSize.value = { width: item.width, height: item.height }
   try {
     const b64 = await loadImageBase64(item)
-    imgSrc.value = b64
+    // 只有当前序号未被更新的请求覆盖才应用结果
+    if (seq === loadingSeq) {
+      imgSrc.value = b64
+    }
   } catch {
-    imgSrc.value = ''
+    if (seq === loadingSeq) {
+      imgSrc.value = ''
+    }
   }
 }
 
@@ -244,18 +256,21 @@ function handleDeleteImage() {
             <span class="loading-spinner"></span>
           </div>
         </div>
-        <!-- 图片文件 -->
+        <!-- 图片文件：始终保留在 DOM 中，仅切换 src，避免重建元素导致闪烁 -->
         <img
-          v-if="imgSrc && isImage"
+          v-if="isImage"
           ref="imgRef"
-          :src="imgSrc"
+          :src="imgSrc || undefined"
           :alt="currentItem?.name"
           class="viewer-image"
+          :class="{ loaded: isLoaded }"
           :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }"
           @load="isLoaded = true"
+          @error="isLoaded = true"
           :draggable="!panMode"
         />
-        <div v-if="isImage && !isLoaded" class="viewer-loading">
+        <!-- 加载指示器使用 absolute 覆盖，避免撑开 flex 布局造成位移 -->
+        <div v-if="isImage && !isLoaded" class="viewer-loading-overlay">
           <span class="loading-spinner"></span>
         </div>
       </div>
@@ -352,6 +367,11 @@ function handleDeleteImage() {
   user-select: none;
   -webkit-user-drag: none;
   flex-shrink: 0;
+  /* 用 opacity 过渡实现淡入淡出，避免硬切闪烁 */
+  transition: opacity 0.12s ease;
+}
+.viewer-image.loaded {
+  opacity: 1;
 }
 
 .viewer-loading { padding: 40px; }
@@ -475,5 +495,20 @@ function handleDeleteImage() {
 }
 .op-bar-container.visible {
   opacity: 1;
+}
+
+/* 加载指示器覆盖层：absolute 铺满容器，不撑开 flex 布局
+   半透明背景遮住旧图片，避免残影感 */
+.viewer-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  pointer-events: none;
 }
 </style>
