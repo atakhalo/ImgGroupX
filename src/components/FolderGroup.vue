@@ -270,7 +270,7 @@ function getNodeGridContainerBg(depth: number): string {
         <span v-if="totalCount(node)" class="folder-count">({{ totalCount(node) }})</span>
       </span>
       <span class="folder-right">
-        <span v-if="state.selectMode === 'select' && !(isVirtualRoot && depth === 0)" class="folder-select-actions">
+        <span v-if="state.selectMode === 'select'" class="folder-select-actions">
           <button
             class="folder-select-action-btn"
             :title="$t('folder.select_all')"
