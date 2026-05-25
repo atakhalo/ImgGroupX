@@ -103,14 +103,19 @@ function handleWheel(e: WheelEvent) {
   e.preventDefault()
   scale.value = Math.max(0.1, Math.min(10, scale.value + (e.deltaY > 0 ? -0.25 : 0.25)))
 }
+
+/** 点击背景遮罩或图片周围空白区域时关闭查看器 */
+function handleClose() {
+  emit('close')
+}
 </script>
 
 <template>
   <div class="compare-viewer" ref="containerRef" :class="{ 'pan-active': panMode }" @mousedown="onPanDown" @wheel="handleWheel">
-    <div class="compare-backdrop"></div>
+    <div class="compare-backdrop" @click="handleClose"></div>
 
     <!-- 底层图（右侧可见） -->
-    <div class="compare-layer compare-bottom">
+    <div class="compare-layer compare-bottom" @click.self="handleClose">
       <img v-if="rightSrc" :src="rightSrc" class="compare-img" :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }" />
       <div v-else-if="!isRightImage" class="compare-file-info">
         <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
@@ -123,7 +128,7 @@ function handleWheel(e: WheelEvent) {
     </div>
 
     <!-- 顶层图（左侧可见，clip裁剪） -->
-    <div class="compare-layer compare-top" :style="{ clipPath: `inset(0 ${(1 - splitRatio) * 100}% 0 0)` }">
+    <div class="compare-layer compare-top" :style="{ clipPath: `inset(0 ${(1 - splitRatio) * 100}% 0 0)` }" @click.self="handleClose">
       <img v-if="leftSrc" :src="leftSrc" class="compare-img" :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }" />
       <div v-else-if="!isLeftImage" class="compare-file-info">
         <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
