@@ -215,6 +215,12 @@ function handleDeleteImage() {
   const item = currentItem.value
   if (item) emit('deleteImage', item.path, currentIndex.value)
 }
+
+/** 点击背景遮罩或图片周围空白区域时关闭查看器 */
+function handleClose() {
+  if (isFullscreen.value) exitFullscreen()
+  else emit('close')
+}
 </script>
 
 <template>
@@ -224,13 +230,14 @@ function handleDeleteImage() {
     :class="{ fullscreen: isFullscreen }"
     @wheel="handleWheel"
   >
-    <div class="viewer-backdrop" :style="backdropStyle"></div>
+    <div class="viewer-backdrop" :style="backdropStyle" @click="handleClose"></div>
 
-    <div class="viewer-content">
+    <div class="viewer-content" @click.self="handleClose">
       <div
         class="image-wrapper"
         :class="{ 'pan-active': panMode }"
         :style="{ cursor: panMode ? (isDragging ? 'grabbing' : 'grab') : 'default' }"
+        @click.self="handleClose"
         @mousedown="onMouseDown"
         @mousemove="onMouseMove"
         @mouseup="onMouseUp"
