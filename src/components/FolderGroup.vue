@@ -108,6 +108,28 @@ function selectDirectImages() {
   }
 }
 
+/** 节点内（含子节点）被勾选的图片数 */
+function countSelectedInNode(node: FolderNode): number {
+  let n = 0
+  for (const img of node.images) {
+    if (state.selectedPaths.has(img.path)) n++
+  }
+  for (const child of node.children) {
+    n += countSelectedInNode(child)
+  }
+  return n
+}
+
+/** 节点内图片选中状态：'none' | 'partial' | 'all' */
+const nodeSelectionState = computed<'none' | 'partial' | 'all'>(() => {
+  const total = totalCount(props.node)
+  if (total === 0) return 'none'
+  const selected = countSelectedInNode(props.node)
+  if (selected === 0) return 'none'
+  if (selected === total) return 'all'
+  return 'partial'
+})
+
 /** 节点是否既有子节点又有图片（用于控制"一级图片"按钮显示） */
 const hasBothChildrenAndImages = computed(() =>
   props.node.children.length > 0 && props.node.images.length > 0
@@ -314,7 +336,14 @@ function getNodeGridContainerBg(depth: number): string {
       <span class="folder-label">
         <span class="folder-arrow">{{ getExpanded(node) ? '▼' : '▶' }}</span>
         <span class="folder-name" :style="{ color: depth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ node.name }}</span>
-        <span v-if="totalCount(node)" class="folder-count">({{ totalCount(node) }})</span>
+        <span v-if="totalCount(node)" class="folder-count" :class="{ 'all-selected': state.selectMode === 'select' && nodeSelectionState === 'all' }">
+          <template v-if="state.selectMode === 'select' && nodeSelectionState !== 'none'">
+            {{ countSelectedInNode(props.node) }}<span class="sep" :class="{ 'sep-partial': nodeSelectionState === 'partial' }">/</span>{{ totalCount(node) }}
+          </template>
+          <template v-else>
+            {{ totalCount(node) }}
+          </template>
+        </span>
       </span>
       <span class="folder-right">
         <span v-if="state.selectMode === 'select'" class="folder-select-actions">
@@ -613,6 +642,13 @@ function getNodeGridContainerBg(depth: number): string {
 
 .folder-header:hover .folder-arrow {
   color: rgba(255, 255, 255, 0.7);
+}
+
+.folder-count.all-selected {
+  color: rgba(100, 180, 255, 1);
+}
+.folder-count .sep-partial {
+  color: rgba(100, 180, 255, 1);
 }
 
 .folder-path {
