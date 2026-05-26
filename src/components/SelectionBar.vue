@@ -123,13 +123,13 @@ onUnmounted(() => {
       <button
         class="ctrl-btn op-trigger-btn"
         :class="{ active: showMarkMenu }"
-        :title="$t('control.mark')"
+        :title="$t('control.mark_select')"
         @click="toggleMarkMenu"
       >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
         </svg>
-        <span>{{ $t('control.mark') }}</span>
+        <span>{{ $t('control.mark_select') }}</span>
       </button>
       <div v-if="showMarkMenu" class="op-menu-backdrop" @click="showMarkMenu = false"></div>
       <div v-if="showMarkMenu" class="op-menu mark-menu-wide" @click.stop>
