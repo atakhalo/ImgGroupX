@@ -492,8 +492,10 @@ fn auto_rename_path(path: &Path) -> PathBuf {
 }
 
 /// 复制文件列表到目标目录（保留相对路径结构，自动处理重名）
+/// 返回实际创建的文件路径列表（因 auto_rename 可能与请求路径不同）
 #[tauri::command]
-fn copy_files(files: Vec<Vec<String>>, dest_dir: String) -> Result<(), String> {
+fn copy_files(files: Vec<Vec<String>>, dest_dir: String) -> Result<Vec<Vec<String>>, String> {
+    let mut created = Vec::new();
     for pair in &files {
         if pair.len() < 2 { continue; }
         let source = &pair[0];
@@ -506,8 +508,9 @@ fn copy_files(files: Vec<Vec<String>>, dest_dir: String) -> Result<(), String> {
         // 自动重命名避免覆盖
         let final_path = auto_rename_path(&dest_path);
         fs::copy(source, &final_path).map_err(|e| format!("复制文件失败 ({} -> {}): {}", source, final_path.display(), e))?;
+        created.push(vec![source.clone(), final_path.to_string_lossy().to_string()]);
     }
-    Ok(())
+    Ok(created)
 }
 
 /// 移动文件列表到目标目录（优先重命名，跨卷时回退到复制+删除，自动处理重名）

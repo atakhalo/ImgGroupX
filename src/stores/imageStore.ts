@@ -764,7 +764,9 @@ export async function saveVirtualGroup(vg: FolderNode, vgIndex?: number): Promis
 
     const destDir = String(selected).replace(/\\/g, '/')
 
-    await invoke('copy_files', { files, destDir })
+    const created = await invoke<[string, string][]>('copy_files', { files, destDir })
+    const createdPaths = created.map(([_, dest]) => dest)
+    applyFileChanges(createdPaths).catch(() => {})
     showToast(t('hint.saved_to_folder', { n: files.length, path: destDir }))
 
     // 询问是否加载该文件夹并替换分组
@@ -1059,7 +1061,12 @@ export async function copySelectedImages(): Promise<void> {
   if (!selected) return
 
   const destDir = String(selected).replace(/\\/g, '/')
-  await invoke('copy_files', { files, destDir })
+  await setSuppressWatcher(true)
+  const created = await invoke<[string, string][]>('copy_files', { files, destDir })
+  await setSuppressWatcher(false)
+  // 自动刷新：用实际创建的文件路径更新视图
+  const createdPaths = created.map(([_, dest]) => dest)
+  applyFileChanges(createdPaths).catch(() => {})
   showToast(t('hint.copied_to_folder', { n: files.length, path: destDir }))
 }
 
@@ -1090,7 +1097,9 @@ export async function moveSelectedImages(): Promise<void> {
   const destDir = String(selected).replace(/\\/g, '/')
   // 计算选中的文件夹节点的绝对路径，用于移动后清理空目录
   const cleanupDirs = computeSelectedFolderAbsolutePaths()
+  await setSuppressWatcher(true)
   const movedPaths: string[] = await invoke('move_files', { files, destDir, cleanupDirs })
+  await setSuppressWatcher(false)
 
   // 从 state 中移除实际已移动的图片（后端会跳过同路径文件）
   const movedSet = new Set(movedPaths)
@@ -1103,6 +1112,10 @@ export async function moveSelectedImages(): Promise<void> {
   state.selectedFolderPaths.clear()
   // 不需要退出选择模式
 //   state.selectMode = 'view'
+
+  // 自动刷新：扫描目标路径，将新增文件加入视图
+  const destPaths = files.map(([_, rel]) => destDir + '/' + rel)
+  applyFileChanges(destPaths).catch(() => {})
 
   showToast(t('hint.moved_to_folder', { n: movedPaths.length, path: destDir }))
 }
@@ -1123,7 +1136,12 @@ export async function copyImagesToFolder(destDir: string): Promise<void> {
     if (!ok) return
   }
 
-  await invoke('copy_files', { files, destDir })
+  await setSuppressWatcher(true)
+  const created = await invoke<[string, string][]>('copy_files', { files, destDir })
+  await setSuppressWatcher(false)
+  // 自动刷新：用实际创建的文件路径更新视图
+  const createdPaths = created.map(([_, dest]) => dest)
+  applyFileChanges(createdPaths).catch(() => {})
   showToast(t('hint.copied_to_folder', { n: files.length, path: destDir }))
 }
 
@@ -1144,7 +1162,9 @@ export async function moveImagesToFolder(destDir: string): Promise<void> {
   }
 
   const cleanupDirs = computeSelectedFolderAbsolutePaths()
+  await setSuppressWatcher(true)
   const movedPaths: string[] = await invoke('move_files', { files, destDir, cleanupDirs })
+  await setSuppressWatcher(false)
 
   const movedSet = new Set(movedPaths)
   state.allImages = state.allImages.filter(img => !movedSet.has(img.path))
@@ -1156,6 +1176,10 @@ export async function moveImagesToFolder(destDir: string): Promise<void> {
   state.selectedFolderPaths.clear()
   // 不需要退出选择模式
 	//   state.selectMode = 'view'
+
+  // 自动刷新：扫描目标路径，将新增文件加入视图
+  const destPaths = files.map(([_, rel]) => destDir + '/' + rel)
+  applyFileChanges(destPaths).catch(() => {})
 
   showToast(t('hint.moved_to_folder', { n: movedPaths.length, path: destDir }))
 }
