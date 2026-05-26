@@ -934,21 +934,92 @@ function collectNodeImagePathsInto(node: FolderNode, set: Set<string>) {
   }
 }
 
-/** 收集选中图片 + 选中文件夹下所有图片的 [sourcePath, relativePath] 列表（保留目录结构） */
-function collectSelectedFiles(): [string, string][] {
+/** 计算选中的文件夹节点的绝对路径列表（用于移动后清理空目录） */
+function computeSelectedFolderAbsolutePaths(): string[] {
+  if (state.selectedFolderPaths.size === 0) return []
+  const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
+  const roots = state.loadedRootPaths.map(r => r.replace(/\\/g, '/').replace(/\/$/, ''))
+  const result: string[] = []
+
+  for (const fp of state.selectedFolderPaths) {
+    const norm = fp.replace(/\\/g, '/').replace(/\/$/, '')
+    // 路径已在根列表中 → 直接使用
+    if (roots.includes(norm)) {
+      result.push(norm)
+      continue
+    }
+    // 相对路径 → 在树中找到所属根节点，拼接出绝对路径
+    for (const rootNode of fullTree) {
+      const absPath = resolveRelativePathInTree(rootNode, norm, rootNode.path)
+      if (absPath) {
+        result.push(absPath)
+        break
+      }
+    }
+  }
+  return result
+}
+
+/** 在树中递归查找相对路径对应的绝对路径 */
+function resolveRelativePathInTree(node: FolderNode, targetRelPath: string, rootAbsPath: string): string | null {
+  for (const child of node.children) {
+    if (child.path === targetRelPath) {
+      return rootAbsPath + '/' + child.path
+    }
+    const found = resolveRelativePathInTree(child, targetRelPath, rootAbsPath)
+    if (found) return found
+  }
+  return null
+}
+
+/** 收集选中图片 + 选中文件夹下所有图片的 [sourcePath, relativePath] 列表
+ * @param mode - 'copy': 不过滤重复，同一文件可出现在多个选中项下
+ *               'move': 深优先+去重，深层选中项优先处理，浅层跳过已处理文件
+ */
+function collectSelectedFiles(mode: 'copy' | 'move'): [string, string][] {
   const result: [string, string][] = []
   const added = new Set<string>()
   const roots = state.loadedRootPaths.map(r => r.replace(/\\/g, '/').replace(/\/$/, ''))
 
-  // 1. 选中的文件夹节点下的图片（保留子目录结构）
+  // 1. 处理直接选中的图片（作为一级图片，不保留子目录结构）
+  for (const path of state.selectedPaths) {
+    if (mode === 'move' && added.has(path)) continue
+    added.add(path)
+    const img = state.allImages.find(i => i.path === path)
+    const fileName = img?.name || path.split('/').pop() || path.split('\\').pop() || path
+    result.push([path, fileName])
+  }
+
+  // 2. 处理选中的文件夹节点下的图片（保留子目录结构）
   if (state.selectedFolderPaths.size > 0) {
     const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
-    for (const fp of state.selectedFolderPaths) {
-      const node = findSubTreeInTree(fullTree, fp)
-      if (node) {
-        // 判断是否为根节点
+
+    if (mode === 'copy') {
+      // 复制模式：不过滤重复，所有选中文件夹各自独立贡献
+      for (const fp of state.selectedFolderPaths) {
+        const node = findSubTreeInTree(fullTree, fp)
+        if (!node) continue
         const isRoot = roots.includes(node.path)
-        // 根节点作为base → 文件直接放在目标根；子节点以自身名称作为子目录
+        const basePath = isRoot ? '' : node.name
+        const files = collectVGCopyFiles(node, basePath)
+        for (const [src, rel] of files) {
+          // 复制模式不跳过去重，同一文件可多次出现
+          result.push([src, rel])
+        }
+      }
+    } else {
+      // 移动模式：深优先 + 去重
+      // 按路径深度降序排列（更深的路径优先处理）
+      const sorted = Array.from(state.selectedFolderPaths).sort((a, b) => {
+        const depthA = a.split('/').length
+        const depthB = b.split('/').length
+        return depthB - depthA
+      })
+
+      for (const fp of sorted) {
+        const node = findSubTreeInTree(fullTree, fp)
+        if (!node) continue
+        const isRoot = roots.includes(node.path)
         const basePath = isRoot ? '' : node.name
         const files = collectVGCopyFiles(node, basePath)
         for (const [src, rel] of files) {
@@ -960,33 +1031,12 @@ function collectSelectedFiles(): [string, string][] {
     }
   }
 
-  // 2. 直接选中的图片（保留相对于所属根的目录结构）
-  for (const path of state.selectedPaths) {
-    if (added.has(path)) continue
-    added.add(path)
-    const img = state.allImages.find(i => i.path === path)
-    if (img) {
-      const imgDir = img.dir.replace(/\\/g, '/')
-      let relative = img.name
-      for (const root of roots) {
-        if (imgDir === root || imgDir.startsWith(root + '/')) {
-          const relDir = imgDir === root ? '' : imgDir.substring(root.length + 1)
-          relative = relDir ? `${relDir}/${img.name}` : img.name
-          break
-        }
-      }
-      result.push([path, relative])
-    } else {
-      result.push([path, path.split('/').pop() || path.split('\\').pop() || path])
-    }
-  }
-
   return result
 }
 
 /** 复制选中图片到目标文件夹 */
 export async function copySelectedImages(): Promise<void> {
-  const files = collectSelectedFiles()
+  const files = collectSelectedFiles('copy')
   if (files.length === 0) return
 
   // 大量图片时确认
@@ -1015,7 +1065,7 @@ export async function copySelectedImages(): Promise<void> {
 
 /** 移动选中图片到目标文件夹 */
 export async function moveSelectedImages(): Promise<void> {
-  const files = collectSelectedFiles()
+  const files = collectSelectedFiles('move')
   if (files.length === 0) return
 
   // 大量图片时确认
@@ -1038,7 +1088,9 @@ export async function moveSelectedImages(): Promise<void> {
   if (!selected) return
 
   const destDir = String(selected).replace(/\\/g, '/')
-  const movedPaths: string[] = await invoke('move_files', { files, destDir })
+  // 计算选中的文件夹节点的绝对路径，用于移动后清理空目录
+  const cleanupDirs = computeSelectedFolderAbsolutePaths()
+  const movedPaths: string[] = await invoke('move_files', { files, destDir, cleanupDirs })
 
   // 从 state 中移除实际已移动的图片（后端会跳过同路径文件）
   const movedSet = new Set(movedPaths)

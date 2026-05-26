@@ -511,22 +511,33 @@ fn copy_files(files: Vec<Vec<String>>, dest_dir: String) -> Result<(), String> {
 }
 
 /// 移动文件列表到目标目录（复制后删除源文件，自动处理重名，返回实际移动的源路径列表）
+/// 移动完成后会清理 cleanup_dirs 中指定的目录及其下所有空的子目录
 #[tauri::command]
-fn move_files(files: Vec<Vec<String>>, dest_dir: String) -> Result<Vec<String>, String> {
+fn move_files(files: Vec<Vec<String>>, dest_dir: String, cleanup_dirs: Vec<String>) -> Result<Vec<String>, String> {
     let mut moved = Vec::new();
     for pair in &files {
         if pair.len() < 2 { continue; }
         let source = &pair[0];
         let relative = &pair[1];
+        let source_path = Path::new(&source);
         let dest_path = Path::new(&dest_dir).join(relative);
+
+        // 若目标路径与源路径相同，跳过（避免删除源文件）
+        if source_path == dest_path {
+            continue;
+        }
+
         // 创建父目录
         if let Some(parent) = dest_path.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
         }
-        // 先自动重命名（处理重名冲突），再用最终路径做同路径检查
+
+        // 自动重命名（处理重名冲突）
         let final_path = auto_rename_path(&dest_path);
+
+        // 规范化比较，确保目标与源不是同一个文件
         if let (Ok(src_canon), Ok(dst_canon)) = (
-            Path::new(&source).canonicalize(),
+            source_path.canonicalize(),
             final_path.canonicalize(),
         ) {
             if src_canon == dst_canon {
@@ -537,7 +548,50 @@ fn move_files(files: Vec<Vec<String>>, dest_dir: String) -> Result<Vec<String>, 
         fs::remove_file(source).map_err(|e| format!("移动-删除源文件失败 ({}): {}", source, e))?;
         moved.push(source.clone());
     }
+
+    // 从选中的节点目录向下递归清理空目录
+    for dir_str in &cleanup_dirs {
+        let dir = Path::new(dir_str);
+        remove_empty_dirs_recursive(dir);
+    }
+
     Ok(moved)
+}
+
+/// 递归清理空目录：先处理子目录（深优先），再尝试删除自身
+fn remove_empty_dirs_recursive(dir: &Path) {
+    if !dir.is_dir() {
+        return;
+    }
+    // 先递归处理所有子目录
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                remove_empty_dirs_recursive(&entry.path());
+            }
+        }
+    }
+    // 再尝试删除自己（如果为空）
+    let _ = try_remove_empty_dir(dir);
+}
+
+/// 尝试删除空目录
+/// - 目录不存在或不是目录 → Err（停止向上递归）
+/// - 目录非空 → Err（停止向上递归）
+/// - 目录为空并成功删除 → Ok(())
+fn try_remove_empty_dir(dir: &Path) -> Result<(), std::io::Error> {
+    if !dir.is_dir() {
+        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "not a directory"));
+    }
+    let mut has_entries = false;
+    if let Ok(mut read) = fs::read_dir(dir) {
+        has_entries = read.next().is_some();
+    }
+    if has_entries {
+        return Err(std::io::Error::new(std::io::ErrorKind::DirectoryNotEmpty, "directory not empty"));
+    }
+    fs::remove_dir(dir)?;
+    Ok(())
 }
 
 /// 删除文件（放入回收站）
