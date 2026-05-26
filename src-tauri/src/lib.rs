@@ -510,7 +510,7 @@ fn copy_files(files: Vec<Vec<String>>, dest_dir: String) -> Result<(), String> {
     Ok(())
 }
 
-/// 移动文件列表到目标目录（复制后删除源文件，自动处理重名，返回实际移动的源路径列表）
+/// 移动文件列表到目标目录（优先重命名，跨卷时回退到复制+删除，自动处理重名）
 /// 移动完成后会清理 cleanup_dirs 中指定的目录及其下所有空的子目录
 #[tauri::command]
 fn move_files(files: Vec<Vec<String>>, dest_dir: String, cleanup_dirs: Vec<String>) -> Result<Vec<String>, String> {
@@ -522,7 +522,7 @@ fn move_files(files: Vec<Vec<String>>, dest_dir: String, cleanup_dirs: Vec<Strin
         let source_path = Path::new(&source);
         let dest_path = Path::new(&dest_dir).join(relative);
 
-        // 若目标路径与源路径相同，跳过（避免删除源文件）
+        // 若目标路径与源路径相同，跳过
         if source_path == dest_path {
             continue;
         }
@@ -544,9 +544,36 @@ fn move_files(files: Vec<Vec<String>>, dest_dir: String, cleanup_dirs: Vec<Strin
                 continue;
             }
         }
-        fs::copy(source, &final_path).map_err(|e| format!("移动-复制失败 ({} -> {}): {}", source, final_path.display(), e))?;
-        fs::remove_file(source).map_err(|e| format!("移动-删除源文件失败 ({}): {}", source, e))?;
-        moved.push(source.clone());
+
+        // 优先尝试重命名（同文件系统，瞬间完成）
+        match fs::rename(source, &final_path) {
+            Ok(()) => {
+                moved.push(source.clone());
+            }
+            Err(e) => {
+                // 跨卷时 rename 失败，回退到复制+删除（保留创建时间等元数据）
+                fs::copy(source, &final_path)
+                    .map_err(|_| format!("移动失败 ({} -> {}): {}", source, final_path.display(), e))?;
+                // 复制源文件的时间戳到目标文件（保留修改时间、访问时间、创建时间）
+                if let Ok(src_meta) = fs::metadata(source) {
+                    use std::fs::FileTimes;
+                    if let Ok(file) = std::fs::OpenOptions::new().write(true).open(&final_path) {
+                        let mut times = FileTimes::new();
+                        if let Ok(t) = src_meta.accessed() { times = times.set_accessed(t); }
+                        if let Ok(t) = src_meta.modified() { times = times.set_modified(t); }
+                        #[cfg(windows)]
+                        if let Ok(t) = src_meta.created() {
+                            use std::os::windows::fs::FileTimesExt;
+                            times = times.set_created(t);
+                        }
+                        let _ = file.set_times(times);
+                    }
+                }
+                fs::remove_file(source)
+                    .map_err(|_| format!("移动-删除源文件失败 ({}): {}", source, e))?;
+                moved.push(source.clone());
+            }
+        }
     }
 
     // 从选中的节点目录向下递归清理空目录
