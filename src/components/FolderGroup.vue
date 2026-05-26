@@ -28,6 +28,8 @@ const emit = defineEmits<{
   toggleSelectFolder: [path: string]
   addToVirtualGroup: [vgIndex: number]
   removeFromVirtualGroup: [vgIndex: number]
+  copyToFolder: [targetPath: string]
+  moveToFolder: [targetPath: string]
 }>()
 
 function handleToggle() {
@@ -123,6 +125,29 @@ const hasFirstLevelSelection = () => {
     if (state.selectedFolderPaths.has(child.path)) return true
   }
   return false
+}
+
+/** 是否有任意选中项（用于显示 移动至此/复制至此 按钮） */
+const hasAnySelection = computed(() =>
+  state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0
+)
+
+function handleCopyToFolder() {
+  const p = getNodeAbsolutePath()
+  console.log('FolderGroup emit copyToFolder:', p)
+  emit('copyToFolder', p)
+}
+
+function handleMoveToFolder() {
+  const p = getNodeAbsolutePath()
+  console.log('FolderGroup emit moveToFolder:', p)
+  emit('moveToFolder', p)
+}
+
+// 调试：暴露 hasAnySelection 到 window
+if (import.meta.env.DEV) {
+  const win = window as any
+  win.__debug = { state, hasAnySelection }
 }
 
 /** 是否应该显示路径（虚拟根的一级子节点 或 普通根节点） */
@@ -228,6 +253,28 @@ function getNodeGridContainerBg(depth: number): string {
         </button>
         <span v-if="shouldShowPath()" class="folder-path">{{ parentPath(node.path) }}</span>
         <span class="folder-left-actions">
+          <!-- 移动至此 / 复制至此（非虚拟节点，选择模式下有选中时显示） -->
+          <template v-if="state.selectMode === 'select' && hasAnySelection && !isVirtualRoot">
+            <button
+              class="folder-action-btn folder-move-btn"
+              :title="$t('folder.move_here')"
+              @click.stop="handleMoveToFolder"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </button>
+            <button
+              class="folder-action-btn folder-copy-btn"
+              :title="$t('folder.copy_here')"
+              @click.stop="handleCopyToFolder"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
+          </template>
           <!-- 选择勾选框 -->
           <span
             v-if="state.selectMode === 'select' && !(isVirtualRoot && depth === 0)"
@@ -317,6 +364,8 @@ function getNodeGridContainerBg(depth: number): string {
         @removeRoot="(p: string) => emit('removeRoot', p)"
         @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
         @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
+        @copyToFolder="(p: string) => emit('copyToFolder', p)"
+        @moveToFolder="(p: string) => emit('moveToFolder', p)"
       />
       <!-- 当前文件夹图片网格 -->
       <div
@@ -340,7 +389,7 @@ function getNodeGridContainerBg(depth: number): string {
 
 <style scoped>
 .folder-group {
-  /* width: 100%; */
+  width: 100%;
 }
 
 .folder-header {
@@ -401,6 +450,33 @@ function getNodeGridContainerBg(depth: number): string {
 }
 .folder-left-actions .folder-select-box {
   margin-right: 2px;
+}
+
+.folder-action-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s;
+}
+.folder-header:hover .folder-action-btn {
+  opacity: 1;
+}
+.folder-move-btn:hover {
+  color: #4fc3f7;
+  background: rgba(79, 195, 247, 0.2);
+  border-color: rgba(79, 195, 247, 0.4);
+}
+.folder-copy-btn:hover {
+  color: #66d9a0;
+  background: rgba(102, 217, 160, 0.2);
+  border-color: rgba(102, 217, 160, 0.4);
 }
 
 .folder-open-btn {

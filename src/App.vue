@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder } from './stores/imageStore'
 import type { ImageItem } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -369,6 +369,24 @@ function handleToggleSelectFolder(path: string) {
   }
 }
 
+async function handleCopyToFolder(targetPath: string) {
+  try {
+    const dir = targetPath.replace(/\\/g, '/')
+    await copyImagesToFolder(dir)
+  } catch (e: any) {
+    console.error('复制失败:', e)
+  }
+}
+
+async function handleMoveToFolder(targetPath: string) {
+  try {
+    const dir = targetPath.replace(/\\/g, '/')
+    await moveImagesToFolder(dir)
+  } catch (e: any) {
+    console.error('移动失败:', e)
+  }
+}
+
 function closeCompare() {
   showCompare.value = false
   comparePair.value = null
@@ -511,6 +529,8 @@ async function handleRefresh() {
             @removeRoot="removeFolderRoot"
             @excludeNode="handleExcludeNode"
             @toggleSelectFolder="handleToggleSelectFolder"
+            @copyToFolder="handleCopyToFolder"
+            @moveToFolder="handleMoveToFolder"
           />
         </template>
       </div>

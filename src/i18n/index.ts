@@ -111,6 +111,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.first_level': '一级图片',
     'folder.open_in_explorer': '在资源管理器中打开',
     'folder.save_to_folder': '保存到文件夹',
+    'folder.move_here': '移动至此',
+    'folder.copy_here': '复制至此',
 
     // 空状态
     'empty.drop_hint': '拖入图片或文件夹到此处',
@@ -346,6 +348,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.first_level': 'First Level',
     'folder.open_in_explorer': 'Open in Explorer',
     'folder.save_to_folder': 'Save to Folder',
+    'folder.move_here': 'Move Here',
+    'folder.copy_here': 'Copy Here',
 
     'empty.drop_hint': 'Drop images or folders here',
     'empty.format_hint': 'Supports JPG, PNG, WebP formats',

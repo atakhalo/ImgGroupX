@@ -1099,6 +1099,63 @@ export async function moveSelectedImages(): Promise<void> {
   for (const vg of state.virtualGroups) {
     vg.images = vg.images.filter(img => !movedSet.has(img.path))
   }
+  // 清除所有选中状态
+  state.selectedFolderPaths.clear()
+  // 不需要退出选择模式
+//   state.selectMode = 'view'
+
+  showToast(t('hint.moved_to_folder', { n: movedPaths.length, path: destDir }))
+}
+
+/** 复制选中图片到指定文件夹（跳过文件夹选择弹窗） */
+export async function copyImagesToFolder(destDir: string): Promise<void> {
+  const files = collectSelectedFiles('copy')
+  if (files.length === 0) return
+
+  const srcInfo = state.selectedFolderPaths.size > 0
+    ? t('dialog.src_info', { direct: state.selectedPaths.size, fromFolder: files.length - state.selectedPaths.size })
+    : ''
+  if (files.length > 100) {
+    const ok = await ask(
+      t('dialog.copy_large_confirm', { n: files.length, info: srcInfo }),
+      { title: t('dialog.copy_confirm'), kind: 'warning' }
+    )
+    if (!ok) return
+  }
+
+  await invoke('copy_files', { files, destDir })
+  showToast(t('hint.copied_to_folder', { n: files.length, path: destDir }))
+}
+
+/** 移动选中图片到指定文件夹（跳过文件夹选择弹窗） */
+export async function moveImagesToFolder(destDir: string): Promise<void> {
+  const files = collectSelectedFiles('move')
+  if (files.length === 0) return
+
+  const srcInfo = state.selectedFolderPaths.size > 0
+    ? t('dialog.src_info', { direct: state.selectedPaths.size, fromFolder: files.length - state.selectedPaths.size })
+    : ''
+  if (files.length > 100) {
+    const ok = await ask(
+      t('dialog.move_large_confirm', { n: files.length, info: srcInfo }),
+      { title: t('dialog.move_confirm'), kind: 'warning' }
+    )
+    if (!ok) return
+  }
+
+  const cleanupDirs = computeSelectedFolderAbsolutePaths()
+  const movedPaths: string[] = await invoke('move_files', { files, destDir, cleanupDirs })
+
+  const movedSet = new Set(movedPaths)
+  state.allImages = state.allImages.filter(img => !movedSet.has(img.path))
+  for (const p of movedSet) state.selectedPaths.delete(p)
+  for (const vg of state.virtualGroups) {
+    vg.images = vg.images.filter(img => !movedSet.has(img.path))
+  }
+  // 清除所有选中状态（选中的文件夹可能已被删除或内容已空）
+  state.selectedFolderPaths.clear()
+  // 不需要退出选择模式
+	//   state.selectMode = 'view'
 
   showToast(t('hint.moved_to_folder', { n: movedPaths.length, path: destDir }))
 }

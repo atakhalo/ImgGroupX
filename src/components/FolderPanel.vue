@@ -19,6 +19,8 @@ const emit = defineEmits<{
   toggleSelectFolder: [path: string]
   addToVirtualGroup: [vgIndex: number]
   removeFromVirtualGroup: [vgIndex: number]
+  copyToFolder: [targetPath: string]
+  moveToFolder: [targetPath: string]
 }>()
 
 /** 展开状态存储：首次构造时确定，用户可切换，永不重算 */
@@ -313,6 +315,8 @@ defineExpose({ toggleAll, collapseLeaves })
         @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
         @addToVirtualGroup="handleAddToVirtualGroup"
         @removeFromVirtualGroup="handleRemoveFromVirtualGroup"
+        @copyToFolder="(p:string) => emit('copyToFolder', p)"
+        @moveToFolder="(p:string) => emit('moveToFolder', p)"
       />
       <!-- 文件夹树节点 -->
       <FolderGroup
@@ -328,6 +332,8 @@ defineExpose({ toggleAll, collapseLeaves })
         @removeRoot="(p:string) => emit('removeRoot', p)"
         @excludeNode="handleExcludeNode"
         @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
+        @copyToFolder="(p:string) => emit('copyToFolder', p)"
+        @moveToFolder="(p:string) => emit('moveToFolder', p)"
       />
     </template>
     <div v-if="allRootNodes.length === 0" class="empty-hint">
