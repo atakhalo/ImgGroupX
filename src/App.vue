@@ -33,6 +33,27 @@ const showGroupNameInput = ref(false)
 const showCompare = ref(false)
 const comparePair = ref<{ left: ImageItem; right: ImageItem } | null>(null)
 
+// 内容区右键菜单（模式切换）
+const contentCtx = ref({ show: false, x: 0, y: 0 })
+function handleContentCtxMenu(e: MouseEvent) {
+  // 单元格有自己的右键菜单，不处理
+  const target = e.target as HTMLElement
+  if (target.closest('.grid-item')) return
+  e.preventDefault()
+  contentCtx.value = { show: true, x: e.clientX, y: e.clientY }
+}
+function closeContentCtx() { contentCtx.value.show = false }
+function ctxSwitchToViewMode() {
+  closeContentCtx()
+  state.selectMode = 'view'
+  state.selectedPaths.clear()
+  state.selectedFolderPaths.clear()
+}
+function ctxSwitchToSelectMode() {
+  closeContentCtx()
+  state.selectMode = 'select'
+}
+
 // 命令行单图：待打开图片路径（加载完父文件夹后自动大图显示）
 const pendingOpenImagePath = ref('')
 
@@ -501,7 +522,25 @@ async function handleRefresh() {
         </FilterSortBar>
       </div>
 
-      <div class="content-area" @wheel="handleContentWheel">
+      <div class="content-area" @wheel="handleContentWheel" @contextmenu="handleContentCtxMenu">
+        <!-- 内容区右键菜单（模式切换） -->
+        <Teleport to="body">
+          <div v-if="contentCtx.show" class="content-ctx-backdrop" @click="closeContentCtx"></div>
+          <div v-if="contentCtx.show" class="content-ctx-menu" :style="{ left: contentCtx.x + 'px', top: contentCtx.y + 'px' }" @click.stop>
+            <button v-if="state.selectMode === 'select'" class="content-ctx-item" @click="ctxSwitchToViewMode">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+              <span>查看模式</span>
+            </button>
+            <button v-else class="content-ctx-item" @click="ctxSwitchToSelectMode">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+              </svg>
+              <span>选择模式</span>
+            </button>
+          </div>
+        </Teleport>
         <!-- 未分组模式：所有图片平铺网格 -->
         <template v-if="!state.folderGroup">
           <GridView :images="displayImages" @viewImage="(item: ImageItem, scope?: ImageItem[]) => viewImage(item, scope)" @selectImage="selectImage" />
@@ -641,6 +680,43 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
   overflow-y: auto;
   overflow-x: hidden;
   padding-bottom: 80px; /* 为底部固定控制栏留出空间，避免最后图片被遮挡 */
+}
+
+/* 内容区右键菜单 */
+.content-ctx-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 9998;
+}
+.content-ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  background: rgba(30, 30, 50, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 120px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.content-ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.content-ctx-item:hover {
+  background: rgba(100, 108, 255, 0.2);
+  color: white;
 }
 
 /* 未分组模式下的虚拟分组区域 */
