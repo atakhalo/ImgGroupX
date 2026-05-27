@@ -40,7 +40,7 @@ function handleContentCtxMenu(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (target.closest('.grid-item')) return
   e.preventDefault()
-  contentCtx.value = { show: true, x: e.clientX, y: e.clientY }
+  contentCtx.value = { show: true, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 120) }
 }
 function closeContentCtx() { contentCtx.value.show = false }
 function ctxSwitchToViewMode() {

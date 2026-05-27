@@ -234,7 +234,7 @@ function handleDeleteImage() {
 const viewerCtx = ref({ show: false, x: 0, y: 0 })
 function handleViewerContextMenu(e: MouseEvent) {
   e.preventDefault()
-  viewerCtx.value = { show: true, x: e.clientX, y: e.clientY }
+  viewerCtx.value = { show: true, x: Math.min(e.clientX, window.innerWidth - 200), y: Math.min(e.clientY, window.innerHeight - 280) }
 }
 function closeViewerCtx() { viewerCtx.value.show = false }
 function handleCtxExit() { closeViewerCtx(); emit('close') }
