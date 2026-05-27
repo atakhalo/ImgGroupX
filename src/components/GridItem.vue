@@ -27,6 +27,13 @@ const emit = defineEmits<{
 
 const isImage = computed(() => IMAGE_EXTENSIONS.has(props.item.ext))
 
+/** 格式化文件大小 */
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return bytes + 'B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'
+  return (bytes / 1024 / 1024).toFixed(1) + 'MB'
+}
+
 const markLevel = computed(() => props.item.markLevel || 0)
 const markColor = computed(() => {
   const lv = markLevel.value
@@ -306,15 +313,24 @@ async function handleCtxCopyImage() {
       <template v-else>
         <!-- 加载中 / 等待进入视口 -->
         <div v-if="!isLoaded && !hasError" class="item-placeholder">
-          <span v-if="item.loading" class="loading-spinner"></span>
+          <div class="item-placeholder-info">
+            <span v-if="item.loading" class="loading-spinner"></span>
+            <span class="placeholder-file-name">{{ item.name }}</span>
+            <span class="placeholder-file-size">{{ formatSize(item.size_bytes) }}</span>
+          </div>
         </div>
-        <!-- 加载失败 -->
+        <!-- 加载失败 / 跳过 -->
         <div v-if="hasError" class="item-placeholder item-error">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" />
-            <path d="M21 15l-5-5L5 21" />
-          </svg>
+          <div class="item-placeholder-info">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="M21 15l-5-5L5 21" />
+            </svg>
+            <span class="placeholder-file-name">{{ item.name }}</span>
+            <span class="placeholder-file-size">{{ formatSize(item.size_bytes) }}</span>
+            <span class="placeholder-skipped">已跳过</span>
+          </div>
         </div>
         <img
           v-if="imgSrc && !hasError"
@@ -327,7 +343,7 @@ async function handleCtxCopyImage() {
           @load="isLoaded = true"
           @error="hasError = true; isLoaded = false"
         />
-        <div v-if="isLoaded" class="item-overlay">
+        <div class="item-overlay">
           <span class="item-name">{{ item.name }}</span>
         </div>
       </template>
@@ -379,6 +395,36 @@ async function handleCtxCopyImage() {
   background: #2a2a3e;
 }
 
+.item-placeholder-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  text-align: center;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.placeholder-file-name {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.placeholder-file-size {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.placeholder-skipped {
+  font-size: 9px;
+  color: rgba(255, 180, 60, 0.5);
+}
+
 .file-placeholder {
   width: 100%;
   height: 100%;
@@ -399,6 +445,7 @@ async function handleCtxCopyImage() {
   word-break: break-all;
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: 1.3;

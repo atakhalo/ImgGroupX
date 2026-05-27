@@ -35,13 +35,19 @@ const IMAGE_EXTENSIONS = new Set([
 const isLeftImage = computed(() => IMAGE_EXTENSIONS.has(props.left.ext))
 const isRightImage = computed(() => IMAGE_EXTENSIONS.has(props.right.ext))
 
+/** 检查是否因大小跳过而未加载 */
+function isSkipped(item: { size_bytes: number }): boolean {
+  const maxMB = state.settings.maxLoadSizeMB
+  return maxMB > 0 && item.size_bytes > maxMB * 1024 * 1024 && !state.settings.loadSkippedOnView
+}
+
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
   if (isLeftImage.value) {
-    try { leftSrc.value = await loadImageBase64(props.left) } catch { /* */ }
+    try { leftSrc.value = await loadImageBase64(props.left, state.settings.loadSkippedOnView) } catch { /* */ }
   }
   if (isRightImage.value) {
-    try { rightSrc.value = await loadImageBase64(props.right) } catch { /* */ }
+    try { rightSrc.value = await loadImageBase64(props.right, state.settings.loadSkippedOnView) } catch { /* */ }
   }
 })
 
@@ -244,7 +250,7 @@ function handleCtxSaveRight() { closeCompareCtx(); saveImage(props.right, '右�
     <!-- 底层图（右侧可见） -->
     <div class="compare-layer compare-bottom" @click.self="handleClose">
       <img v-if="rightSrc" :src="rightSrc" class="compare-img" :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }" />
-      <div v-else-if="!isRightImage" class="compare-file-info">
+      <div v-else-if="!isRightImage || isSkipped(props.right)" class="compare-file-info">
         <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
           <polyline points="14 2 14 8 20 8" />
@@ -257,7 +263,7 @@ function handleCtxSaveRight() { closeCompareCtx(); saveImage(props.right, '右�
     <!-- 顶层图（左侧可见，clip裁剪） -->
     <div class="compare-layer compare-top" :style="{ clipPath: `inset(0 ${(1 - splitRatio) * 100}% 0 0)` }" @click.self="handleClose">
       <img v-if="leftSrc" :src="leftSrc" class="compare-img" :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }" />
-      <div v-else-if="!isLeftImage" class="compare-file-info">
+      <div v-else-if="!isLeftImage || isSkipped(props.left)" class="compare-file-info">
         <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
           <polyline points="14 2 14 8 20 8" />

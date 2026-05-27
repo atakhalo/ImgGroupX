@@ -52,6 +52,8 @@ const defaultSettings: AppSettings = {
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   showMarks: true,
   showMarkBadge: true,
+  maxLoadSizeMB: 0,
+  loadSkippedOnView: true,
   keyBindings: getDefaultBindings(),
   keyAltBindings: getDefaultBindings(true),
 }
@@ -635,8 +637,17 @@ export function deselectImagesByMark(level: import('../types').MarkLevel) {
 }
 
 /** 加载图片base64（按需加载） */
-export async function loadImageBase64(item: ImageItem): Promise<string> {
+export async function loadImageBase64(item: ImageItem, force = false): Promise<string> {
   if (item.base64) return item.base64
+  // 大小阈值检查（非强制加载时跳过）
+  if (!force) {
+    const maxMB = state.settings.maxLoadSizeMB
+    if (maxMB > 0 && item.size_bytes > maxMB * 1024 * 1024) {
+      const err = `文件过大 (${(item.size_bytes / 1024 / 1024).toFixed(1)}MB > ${maxMB}MB)`
+      item.error = err
+      throw new Error(err)
+    }
+  }
   item.loading = true
   try {
     const b64 = await invoke<string>('load_image_base64', { path: item.path })

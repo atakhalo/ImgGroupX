@@ -24,7 +24,7 @@ const tabs = [
 
 /** 各标签页对应的设置字段 */
 const tabFields: Record<string, (keyof typeof state.settings)[]> = {
-  general: ['language', 'filterPresets', 'filterRegex', 'filterTarget', 'sortBy', 'sortOrder'],
+  general: ['language', 'maxLoadSizeMB', 'loadSkippedOnView', 'filterPresets', 'filterRegex', 'filterTarget', 'sortBy', 'sortOrder'],
   grid: ['borderRadius', 'gap', 'gridSize', 'bgColor', 'nodeGridGap'],
   colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
@@ -46,6 +46,7 @@ const defaultSettings = {
   language: 'zh' as const,
   viewerBgMode: 'overlay' as const, viewerBgColor: '#202020',
   scanAllFiles: false, autoPan: true, autoCenter: true,
+  maxLoadSizeMB: 0, loadSkippedOnView: true,
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   showMarks: true, showMarkBadge: true,
   keyBindings: getDefaultBindings(),
@@ -170,6 +171,26 @@ onUnmounted(() => {
                 <option value="en">English</option>
               </select>
             </div>
+
+            <!-- 图片加载跳过设置 -->
+            <h4 style="margin-top: 20px;">{{ $t('settings.max_load_size') }}</h4>
+            <div class="setting-row">
+              <input type="number" min="0" max="9999" v-model.number="localSettings.maxLoadSizeMB" class="number-input" style="width:100px;" />
+              <span class="setting-unit">MB</span>
+            </div>
+            <div class="setting-hint">{{ $t('settings.max_load_size_hint') }}</div>
+
+            <template v-if="localSettings.maxLoadSizeMB > 0">
+              <h4 style="margin-top: 16px;">{{ $t('settings.load_skipped_on_view') }}</h4>
+              <div class="setting-row">
+                <label class="toggle-label">
+                  <input type="checkbox" v-model="localSettings.loadSkippedOnView" class="toggle-input" />
+                  <span class="toggle-switch"></span>
+                  {{ $t('settings.load_skipped_on_view') }}
+                </label>
+              </div>
+              <div class="setting-hint">{{ $t('settings.load_skipped_on_view_hint') }}</div>
+            </template>
 
             <!-- 筛选预设 -->
             <h4 style="margin-top: 20px;">{{ $t('settings.filter_presets') }}</h4>
@@ -628,6 +649,29 @@ onUnmounted(() => {
   color: rgba(255,255,255,0.4);
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.number-input {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  color: white;
+  font-size: 13px;
+  padding: 4px 8px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.number-input:focus {
+  border-color: rgba(100,108,255,0.6);
+}
+.number-input:hover {
+  border-color: rgba(255,255,255,0.25);
+}
+
+.setting-unit {
+  font-size: 12px;
+  color: rgba(255,255,255,0.35);
+  margin-left: 4px;
 }
 
 .color-input {

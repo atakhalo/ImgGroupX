@@ -26,6 +26,13 @@ const emit = defineEmits<{
 
 const currentIndex = ref(props.initialIndex)
 const isImage = computed(() => IMAGE_EXTENSIONS.has(currentItem.value?.ext || ''))
+/** 当前图片是否因大小阈值被跳过 */
+const isSkipped = computed(() => {
+  const item = currentItem.value
+  if (!item) return false
+  const maxMB = state.settings.maxLoadSizeMB
+  return maxMB > 0 && item.size_bytes > maxMB * 1024 * 1024 && !state.settings.loadSkippedOnView
+})
 const imgSrc = ref('')
 const textContent = ref<string | undefined>(undefined)
 const textError = ref<string | undefined>(undefined)
@@ -100,8 +107,14 @@ async function loadCurrentImage() {
     // offset.value = { x: 0, y: 0 }
   }
   prevImageSize.value = { width: item.width, height: item.height }
+  // 大小跳过且未开启查看时加载 → 不尝试加载，直接标记完成
+  const maxMB = state.settings.maxLoadSizeMB
+  if (maxMB > 0 && item.size_bytes > maxMB * 1024 * 1024 && !state.settings.loadSkippedOnView) {
+    isLoaded.value = true
+    return
+  }
   try {
-    const b64 = await loadImageBase64(item)
+    const b64 = await loadImageBase64(item, state.settings.loadSkippedOnView)
     // 只有当前序号未被更新的请求覆盖才应用结果
     if (seq === loadingSeq) {
       imgSrc.value = b64
@@ -368,7 +381,8 @@ function handleClose() {
       >
         <!-- 非图片文件：尝试文本展示 -->
         <div v-if="currentItem && !isImage" class="viewer-text-wrap"
-          :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }">
+          :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }"
+          @click.self="handleClose">
           <template v-if="textContent !== undefined">
             <pre class="viewer-text"><code>{{ textContent }}</code></pre>
           </template>
@@ -388,7 +402,7 @@ function handleClose() {
         </div>
         <!-- 图片文件：始终保留在 DOM 中，仅切换 src，避免重建元素导致闪烁 -->
         <img
-          v-if="isImage"
+          v-if="isImage && !isSkipped"
           ref="imgRef"
           :src="imgSrc || undefined"
           :alt="currentItem?.name"
@@ -399,8 +413,22 @@ function handleClose() {
           @error="isLoaded = true"
           :draggable="!panMode"
         />
+        <!-- 大小跳过的图片显示占位符 -->
+        <div v-if="isImage && isSkipped" class="viewer-text-wrap"
+          :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }"
+          @click.self="handleClose">
+          <div class="viewer-text-placeholder">
+            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="M21 15l-5-5L5 21" />
+            </svg>
+            <span class="viewer-text-name">{{ currentItem?.name }}</span>
+            <span class="viewer-text-hint">{{ formatSize(currentItem?.size_bytes) }} - 已跳过</span>
+          </div>
+        </div>
         <!-- 加载指示器使用 absolute 覆盖，避免撑开 flex 布局造成位移 -->
-        <div v-if="isImage && !isLoaded" class="viewer-loading-overlay">
+        <div v-if="isImage && !isSkipped && !isLoaded" class="viewer-loading-overlay">
           <span class="loading-spinner"></span>
         </div>
       </div>
@@ -511,7 +539,7 @@ function handleClose() {
   height: 100%;
   overflow: auto;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
 }
 

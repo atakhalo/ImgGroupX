@@ -123,6 +123,10 @@ export interface AppSettings {
   showMarks: boolean
   /** 是否显示标记角标 */
   showMarkBadge: boolean
+  /** 图片加载大小阈值（MB），超过则跳过加载仅显示文件名，0=不限 */
+  maxLoadSizeMB: number
+  /** 大小跳过的图片在查看/对比时是否尝试加载 */
+  loadSkippedOnView: boolean
   /** 自定义快捷键映射 */
   keyBindings: Record<string, string>
   /** 自定义替代键映射 */
