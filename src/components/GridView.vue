@@ -99,6 +99,7 @@ watch(() => props.images, () => {
       gap: state.settings.gap + 'px',
       backgroundColor: props.bgColor || state.settings.bgColor,
     }"
+    @contextmenu.prevent
   >
     <div
       class="grid-inner"

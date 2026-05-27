@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import type { ImageItem } from '../types'
-import { state, loadImageBase64 } from '../stores/imageStore'
+import { state, loadImageBase64, showToast } from '../stores/imageStore'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
+
 
 /** 可渲染为图片的支持格式 */
 const IMAGE_EXTENSIONS = new Set([
@@ -114,11 +117,87 @@ watch(() => props.item.base64, (val) => {
   }
 })
 
+const ctxMenu = ref({ show: false, x: 0, y: 0 })
+
 function handleClick(e: MouseEvent) {
   if (state.selectMode === 'select') {
     emit('select', props.item, e.ctrlKey || e.metaKey)
   } else {
     emit('click', props.item)
+  }
+}
+
+function handleContextMenu(e: MouseEvent) {
+  e.preventDefault()
+  ctxMenu.value = { show: true, x: e.clientX, y: e.clientY }
+}
+
+function closeCtxMenu() {
+  ctxMenu.value.show = false
+}
+
+function handleCtxView() {
+  closeCtxMenu()
+  emit('click', props.item)
+}
+
+function handleCtxOpenExplorer() {
+  closeCtxMenu()
+  revealItemInDir(props.item.path).catch(() => {})
+}
+
+function handleCtxOpenDefault() {
+  closeCtxMenu()
+  invoke('open_in_explorer', { path: props.item.path }).catch(() => {})
+}
+
+async function handleCtxCopyPath() {
+  closeCtxMenu()
+  try {
+    await navigator.clipboard.writeText(props.item.path)
+    showToast('已复制路径')
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = props.item.path
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  }
+}
+
+async function handleCtxCopyImage() {
+  closeCtxMenu()
+  const src = imgSrc.value
+  if (!src) { showToast('图片尚未加载'); return }
+  try {
+    const comma = src.indexOf(',')
+    const mime = src.slice(5, comma).match(/^(.*?);/)![1]
+    const raw = atob(src.slice(comma + 1))
+    const len = raw.length
+    const buf = new Uint8Array(len)
+    for (let i = 0; i < len; i++) buf[i] = raw.charCodeAt(i)
+
+    if (mime === 'image/png') {
+      // PNG 直接写入（浏览器剪贴板原生支持）
+      const blob = new Blob([buf], { type: 'image/png' })
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+    } else {
+      // 非 PNG 格式（webp/jpeg 等）→ Canvas 解码后重新编码为 PNG
+      const blob = new Blob([buf], { type: mime })
+      const bitmap = await createImageBitmap(blob)
+      const canvas = document.createElement('canvas')
+      canvas.width = bitmap.width
+      canvas.height = bitmap.height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(bitmap, 0, 0)
+      bitmap.close()
+      const pngBlob = await new Promise<Blob>(resolve => canvas.toBlob(b => resolve(b!), 'image/png'))
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })])
+    }
+    showToast('已复制图片')
+  } catch (e: any) {
+    showToast('复制图片失败: ' + (e.message || e))
   }
 }
 </script>
@@ -137,7 +216,45 @@ function handleClick(e: MouseEvent) {
     }"
     @click="handleClick"
     @dblclick="state.selectMode === 'select' && emit('click', item)"
+    @contextmenu.prevent="handleContextMenu"
   >
+    <!-- 右键菜单 -->
+    <Teleport to="body">
+      <div v-if="ctxMenu.show" class="ctx-backdrop" @click="closeCtxMenu"></div>
+      <div v-if="ctxMenu.show" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
+        <button class="ctx-menu-item" @click="handleCtxView">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+          <span>{{ $t('viewer.view') }}</span>
+        </button>
+        <div class="ctx-separator"></div>
+        <button class="ctx-menu-item" @click="handleCtxOpenExplorer">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>{{ $t('folder.open_in_explorer') }}</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxOpenDefault">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+          </svg>
+          <span>{{ $t('viewer.default') }}</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxCopyPath">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          <span>复制路径</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxCopyImage">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+          </svg>
+          <span>复制图片</span>
+        </button>
+      </div>
+    </Teleport>
     <div class="item-inner" :style="{ borderRadius: borderRadius + 'px' }">
       <!-- 非图片文件：仅显示文件名 -->
       <template v-if="!isImage">
@@ -322,5 +439,52 @@ function handleClick(e: MouseEvent) {
   font-weight: 700;
   line-height: 1;
   text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+/* 右键菜单背板 */
+.ctx-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 9998;
+}
+
+/* 右键菜单 */
+.ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  background: rgba(30, 30, 50, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 120px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.ctx-menu-item:hover {
+  background: rgba(100, 108, 255, 0.2);
+  color: white;
+}
+
+.ctx-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 8px;
 }
 </style>

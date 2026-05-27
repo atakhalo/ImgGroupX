@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { ImageItem } from '../types'
-import { loadImageBase64 } from '../stores/imageStore'
+import { loadImageBase64, showToast } from '../stores/imageStore'
 import { matchShortcut } from '../utils/shortcuts'
 
 const props = defineProps<{
@@ -108,10 +108,94 @@ function handleWheel(e: WheelEvent) {
 function handleClose() {
   emit('close')
 }
+
+// 右键菜单
+const compareCtx = ref({ show: false, x: 0, y: 0 })
+function handleCompareContextMenu(e: MouseEvent) {
+  e.preventDefault()
+  compareCtx.value = { show: true, x: e.clientX, y: e.clientY }
+}
+function closeCompareCtx() { compareCtx.value.show = false }
+function handleCtxExit() { closeCompareCtx(); emit('close') }
+async function handleCtxCopyPath(item: ImageItem | null) {
+  closeCompareCtx()
+  if (!item?.path) return
+  try { await navigator.clipboard.writeText(item.path); showToast('已复制路径') } catch {}
+}
+
+/** 将 data URI 的图片复制到剪贴板 */
+async function copyImageFromSrc(src: string, label: string) {
+  if (!src) { showToast(label + '尚未加载'); return }
+  try {
+    const comma = src.indexOf(',')
+    const mime = src.slice(5, comma).match(/^(.*?);/)![1]
+    const raw = atob(src.slice(comma + 1))
+    const buf = new Uint8Array(raw.length)
+    for (let i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i)
+
+    if (mime === 'image/png') {
+      const blob = new Blob([buf], { type: 'image/png' })
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+    } else {
+      const blob = new Blob([buf], { type: mime })
+      const bitmap = await createImageBitmap(blob)
+      const canvas = document.createElement('canvas')
+      canvas.width = bitmap.width
+      canvas.height = bitmap.height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(bitmap, 0, 0)
+      bitmap.close()
+      const pngBlob = await new Promise<Blob>(resolve => canvas.toBlob(b => resolve(b!), 'image/png'))
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })])
+    }
+    showToast('已复制' + label)
+  } catch { showToast('复制' + label + '失败') }
+}
+
+function handleCtxCopyLeftImage() { closeCompareCtx(); copyImageFromSrc(leftSrc.value, '左图') }
+function handleCtxCopyRightImage() { closeCompareCtx(); copyImageFromSrc(rightSrc.value, '右图') }
 </script>
 
 <template>
-  <div class="compare-viewer" ref="containerRef" :class="{ 'pan-active': panMode }" @mousedown="onPanDown" @wheel="handleWheel">
+  <div class="compare-viewer" ref="containerRef" :class="{ 'pan-active': panMode }" @mousedown="onPanDown" @wheel="handleWheel" @contextmenu.prevent="handleCompareContextMenu">
+    <!-- 右键菜单 -->
+    <Teleport to="body">
+      <div v-if="compareCtx.show" class="ctx-backdrop" @click="closeCompareCtx"></div>
+      <div v-if="compareCtx.show" class="ctx-menu" :style="{ left: compareCtx.x + 'px', top: compareCtx.y + 'px' }" @click.stop>
+        <button class="ctx-menu-item" @click="handleCtxExit">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+          <span>{{ $t('viewer.close') }}</span>
+        </button>
+        <div class="ctx-separator"></div>
+        <button class="ctx-menu-item" @click="handleCtxCopyPath(left)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          <span>复制左图路径</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxCopyPath(right)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          <span>复制右图路径</span>
+        </button>
+        <div class="ctx-separator"></div>
+        <button class="ctx-menu-item" @click="handleCtxCopyLeftImage">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+          </svg>
+          <span>复制左图</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxCopyRightImage">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+          </svg>
+          <span>复制右图</span>
+        </button>
+      </div>
+    </Teleport>
     <div class="compare-backdrop" @click="handleClose"></div>
 
     <!-- 底层图（右侧可见） -->
@@ -356,5 +440,47 @@ function handleClose() {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   padding: 0 4px;
+}
+
+/* 右键菜单 */
+.ctx-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 9998;
+}
+.ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  background: rgba(30, 30, 50, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 120px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.ctx-menu-item:hover {
+  background: rgba(100, 108, 255, 0.2);
+  color: white;
+}
+.ctx-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 8px;
 }
 </style>

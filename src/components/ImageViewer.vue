@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import type { ImageItem, MarkLevel } from '../types'
-import { state, loadImageBase64, setImageMark } from '../stores/imageStore'
+import { state, loadImageBase64, setImageMark, showToast } from '../stores/imageStore'
 import { matchShortcut } from '../utils/shortcuts'
 import { invoke } from '@tauri-apps/api/core'
 import OperationBar from './OperationBar.vue'
@@ -216,6 +216,56 @@ function handleDeleteImage() {
   if (item) emit('deleteImage', item.path, currentIndex.value)
 }
 
+// 右键菜单
+const viewerCtx = ref({ show: false, x: 0, y: 0 })
+function handleViewerContextMenu(e: MouseEvent) {
+  e.preventDefault()
+  viewerCtx.value = { show: true, x: e.clientX, y: e.clientY }
+}
+function closeViewerCtx() { viewerCtx.value.show = false }
+function handleCtxExit() { closeViewerCtx(); emit('close') }
+function handleCtxOpenExplorer() { closeViewerCtx(); handleOpenExplorer() }
+function handleCtxOpenDefault() { closeViewerCtx(); handleOpenDefault() }
+async function handleCtxCopyPath() {
+  closeViewerCtx()
+  const p = currentItem.value?.path
+  if (!p) return
+  try { await navigator.clipboard.writeText(p); showToast('已复制路径') }
+  catch { showToast('复制路径失败') }
+}
+async function handleCtxCopyImage() {
+  closeViewerCtx()
+  const src = imgSrc.value
+  if (!src) { showToast('图片尚未加载'); return }
+  try {
+    const comma = src.indexOf(',')
+    const mime = src.slice(5, comma).match(/^(.*?);/)![1]
+    const raw = atob(src.slice(comma + 1))
+    const len = raw.length
+    const buf = new Uint8Array(len)
+    for (let i = 0; i < len; i++) buf[i] = raw.charCodeAt(i)
+
+    if (mime === 'image/png') {
+      const blob = new Blob([buf], { type: 'image/png' })
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+    } else {
+      const blob = new Blob([buf], { type: mime })
+      const bitmap = await createImageBitmap(blob)
+      const canvas = document.createElement('canvas')
+      canvas.width = bitmap.width
+      canvas.height = bitmap.height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(bitmap, 0, 0)
+      bitmap.close()
+      const pngBlob = await new Promise<Blob>(resolve => canvas.toBlob(b => resolve(b!), 'image/png'))
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })])
+    }
+    showToast('已复制图片')
+  } catch (e: any) {
+    showToast('复制图片失败: ' + (e.message || e))
+  }
+}
+
 /** 点击背景遮罩或图片周围空白区域时关闭查看器 */
 function handleClose() {
   if (isFullscreen.value) exitFullscreen()
@@ -229,7 +279,45 @@ function handleClose() {
     class="image-viewer"
     :class="{ fullscreen: isFullscreen }"
     @wheel="handleWheel"
+    @contextmenu.prevent="handleViewerContextMenu"
   >
+    <!-- 右键菜单 -->
+    <Teleport to="body">
+      <div v-if="viewerCtx.show" class="ctx-backdrop" @click="closeViewerCtx"></div>
+      <div v-if="viewerCtx.show" class="ctx-menu" :style="{ left: viewerCtx.x + 'px', top: viewerCtx.y + 'px' }" @click.stop>
+        <button class="ctx-menu-item" @click="handleCtxExit">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+          <span>{{ $t('viewer.close') }}</span>
+        </button>
+        <div class="ctx-separator"></div>
+        <button class="ctx-menu-item" @click="handleCtxOpenExplorer">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>{{ $t('folder.open_in_explorer') }}</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxOpenDefault">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+          </svg>
+          <span>{{ $t('viewer.default') }}</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxCopyPath">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          <span>复制路径</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxCopyImage">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+          </svg>
+          <span>复制图片</span>
+        </button>
+      </div>
+    </Teleport>
     <div class="viewer-backdrop" :style="backdropStyle" @click="handleClose"></div>
 
     <div class="viewer-content" @click.self="handleClose">
@@ -517,5 +605,47 @@ function handleClose() {
   justify-content: center;
   background: rgba(0, 0, 0, 0.3);
   pointer-events: none;
+}
+
+/* 右键菜单 */
+.ctx-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 9998;
+}
+.ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  background: rgba(30, 30, 50, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 120px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.ctx-menu-item:hover {
+  background: rgba(100, 108, 255, 0.2);
+  color: white;
+}
+.ctx-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 8px;
 }
 </style>

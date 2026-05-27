@@ -121,6 +121,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'empty.no_results': '无',
 
     // 大图查看器
+    'viewer.view': '查看',
     'viewer.fullscreen': '全屏查看',
     'viewer.exit_fullscreen': '退出全屏',
     'viewer.hide_info': '隐藏信息',
@@ -357,6 +358,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'empty.format_hint': 'Supports JPG, PNG, WebP formats',
     'empty.no_results': 'None',
 
+    'viewer.view': 'View',
     'viewer.fullscreen': 'Fullscreen',
     'viewer.exit_fullscreen': 'Exit Fullscreen',
     'viewer.hide_info': 'Hide Info',
