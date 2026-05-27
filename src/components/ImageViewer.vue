@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import type { ImageItem, MarkLevel } from '../types'
-import { state, loadImageBase64, setImageMark, showToast } from '../stores/imageStore'
+import { state, loadImageBase64, setImageMark, showToast, applyFileChanges, setSuppressWatcher } from '../stores/imageStore'
 import { matchShortcut } from '../utils/shortcuts'
 import { invoke } from '@tauri-apps/api/core'
+import { save } from '@tauri-apps/plugin-dialog'
 import OperationBar from './OperationBar.vue'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 
@@ -233,6 +234,34 @@ async function handleCtxCopyPath() {
   try { await navigator.clipboard.writeText(p); showToast('已复制路径') }
   catch { showToast('复制路径失败') }
 }
+async function handleCtxSaveAs() {
+  closeViewerCtx()
+  const item = currentItem.value
+  if (!item) return
+  try {
+    const dest = await save({
+      defaultPath: item.name,
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff'] }],
+    })
+    if (!dest) return
+    const destStr = String(dest).replace(/\\/g, '/')
+    const lastSlash = destStr.lastIndexOf('/')
+    const destDir = lastSlash >= 0 ? destStr.substring(0, lastSlash) : ''
+    const fileName = lastSlash >= 0 ? destStr.substring(lastSlash + 1) : destStr
+    await setSuppressWatcher(true)
+    const created = await invoke<[string, string][]>('copy_files', { files: [[item.path, fileName]], destDir })
+    await setSuppressWatcher(false)
+    const createdPaths = created.map(([_, dest]) => dest)
+    const roots = state.loadedRootPaths.map(r => r.replace(/[\\/]/g, '/').replace(/\/$/, ''))
+    if (roots.some(r => destDir === r || destDir.startsWith(r + '/'))) {
+      await applyFileChanges(createdPaths)
+    }
+    showToast('已保存到 ' + destStr)
+  } catch (e: any) {
+    showToast('保存失败: ' + (e.message || e))
+  }
+}
+
 async function handleCtxCopyImage() {
   closeViewerCtx()
   const src = imgSrc.value
@@ -315,6 +344,12 @@ function handleClose() {
             <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
           </svg>
           <span>复制图片</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxSaveAs">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+          </svg>
+          <span>另存为</span>
         </button>
       </div>
     </Teleport>

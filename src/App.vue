@@ -67,8 +67,12 @@ async function closeApp() {
   }
 }
 
+function preventCtx(e: MouseEvent) { e.preventDefault() }
+
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
+  // 全局取消浏览器默认右键菜单
+  document.addEventListener('contextmenu', preventCtx)
   setupDragDrop()
   await loadConfig()
   settingsReady = true
@@ -140,6 +144,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('contextmenu', preventCtx)
   if (unlistenDragDrop) unlistenDragDrop()
   if (unlistenFsChange) unlistenFsChange()
 })

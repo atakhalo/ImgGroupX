@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { ImageItem } from '../types'
-import { loadImageBase64, showToast } from '../stores/imageStore'
+import { state, loadImageBase64, showToast, applyFileChanges, setSuppressWatcher } from '../stores/imageStore'
+import { invoke } from '@tauri-apps/api/core'
+import { save } from '@tauri-apps/plugin-dialog'
 import { matchShortcut } from '../utils/shortcuts'
 
 const props = defineProps<{
@@ -154,6 +156,34 @@ async function copyImageFromSrc(src: string, label: string) {
 
 function handleCtxCopyLeftImage() { closeCompareCtx(); copyImageFromSrc(leftSrc.value, '左图') }
 function handleCtxCopyRightImage() { closeCompareCtx(); copyImageFromSrc(rightSrc.value, '右图') }
+
+async function saveImage(item: ImageItem | null, label: string) {
+  if (!item) return
+  try {
+    const dest = await save({
+      defaultPath: item.name,
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff'] }],
+    })
+    if (!dest) return
+    const destStr = String(dest).replace(/\\/g, '/')
+    const lastSlash = destStr.lastIndexOf('/')
+    const destDir = lastSlash >= 0 ? destStr.substring(0, lastSlash) : ''
+    const fileName = lastSlash >= 0 ? destStr.substring(lastSlash + 1) : destStr
+    await setSuppressWatcher(true)
+    const created = await invoke<[string, string][]>('copy_files', { files: [[item.path, fileName]], destDir })
+    await setSuppressWatcher(false)
+    const createdPaths = created.map(([_, dest]) => dest)
+    const roots = state.loadedRootPaths.map(r => r.replace(/[\\/]/g, '/').replace(/\/$/, ''))
+    if (roots.some(r => destDir === r || destDir.startsWith(r + '/'))) {
+      await applyFileChanges(createdPaths)
+    }
+    showToast('已保存' + label + '到 ' + destStr)
+  } catch (e: any) {
+    showToast('保存' + label + '失败: ' + (e.message || e))
+  }
+}
+function handleCtxSaveLeft() { closeCompareCtx(); saveImage(props.left, '左图') }
+function handleCtxSaveRight() { closeCompareCtx(); saveImage(props.right, '右图') }
 </script>
 
 <template>
@@ -193,6 +223,19 @@ function handleCtxCopyRightImage() { closeCompareCtx(); copyImageFromSrc(rightSr
             <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
           </svg>
           <span>复制右图</span>
+        </button>
+        <div class="ctx-separator"></div>
+        <button class="ctx-menu-item" @click="handleCtxSaveLeft">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+          </svg>
+          <span>左图另存为</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxSaveRight">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+          </svg>
+          <span>右图另存为</span>
         </button>
       </div>
     </Teleport>
