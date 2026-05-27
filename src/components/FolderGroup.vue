@@ -338,10 +338,10 @@ function getNodeGridContainerBg(depth: number): string {
         <span class="folder-name" :style="{ color: depth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ node.name }}</span>
         <span v-if="totalCount(node)" class="folder-count" :class="{ 'all-selected': state.selectMode === 'select' && nodeSelectionState === 'all' }">
           <template v-if="state.selectMode === 'select' && nodeSelectionState !== 'none'">
-            <span :class="{ 'partial-selected': nodeSelectionState === 'partial' }">{{ countSelectedInNode(props.node) }}</span><span class="sep">/</span>{{ totalCount(node) }}
+            (<span :class="{ 'partial-selected': nodeSelectionState === 'partial' }">{{ countSelectedInNode(props.node) }}</span><span class="sep">/</span>{{ totalCount(node) }})
           </template>
           <template v-else>
-            {{ totalCount(node) }}
+            ({{ totalCount(node) }})
           </template>
         </span>
       </span>
