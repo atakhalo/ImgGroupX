@@ -56,6 +56,7 @@
 - Move, copy, delete (to recycle bin) with directory structure preservation
 - Auto-rename on conflict (`-copy` suffix)
 - **Node-level selection** — Select entire folder nodes with select-all / invert / first-level quick actions
+- **Right-click context menus** — Grid/viewer/compare: copy image, copy path, rename, save as
 
 ### 🔍 Filter & Sort
 - Filter by filename / folder name / full path using regex
@@ -76,7 +77,7 @@
 
 ### ⚡ Performance
 - Progressive scanning — renders each directory as soon as it's scanned
-- Lazy loading — images load only when visible
+- Lazy loading — images load only when visible; size threshold skip for large files (placeholder only)
 - File system watcher — auto-detects external changes with incremental refresh
 
 ---
