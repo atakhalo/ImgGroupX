@@ -4,6 +4,18 @@ import type { ImageItem } from '../types'
 import { state, getProcessedImages, releaseBase64, getLoadStats } from '../stores/imageStore'
 import GridItem from './GridItem.vue'
 
+const gridCtx = ref({ show: false, x: 0, y: 0 })
+function handleGridCtxMenu(e: MouseEvent) {
+  // 只响应空白区域（点击目标不是 GridItem 或其内部）
+  const target = e.target as HTMLElement
+  if (target.closest('.grid-item')) return
+  e.preventDefault()
+  gridCtx.value = { show: true, x: e.clientX, y: e.clientY }
+}
+function closeGridCtx() { gridCtx.value.show = false }
+function switchToViewMode() { closeGridCtx(); state.selectMode = 'view'; state.selectedPaths.clear(); state.selectedFolderPaths.clear() }
+function switchToSelectMode() { closeGridCtx(); state.selectMode = 'select' }
+
 const props = defineProps<{
   images: ImageItem[]
   bgColor?: string
@@ -99,8 +111,26 @@ watch(() => props.images, () => {
       gap: state.settings.gap + 'px',
       backgroundColor: props.bgColor || state.settings.bgColor,
     }"
-    @contextmenu.prevent
+    @contextmenu="handleGridCtxMenu"
   >
+    <!-- 空白处右键菜单 -->
+    <Teleport to="body">
+      <div v-if="gridCtx.show" class="ctx-backdrop" @click="closeGridCtx"></div>
+      <div v-if="gridCtx.show" class="ctx-menu" :style="{ left: gridCtx.x + 'px', top: gridCtx.y + 'px' }" @click.stop>
+        <button v-if="state.selectMode === 'select'" class="ctx-menu-item" @click="switchToViewMode">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+          <span>查看模式</span>
+        </button>
+        <button v-else class="ctx-menu-item" @click="switchToSelectMode">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+          </svg>
+          <span>选择模式</span>
+        </button>
+      </div>
+    </Teleport>
     <div
       class="grid-inner"
       :style="{
@@ -175,5 +205,46 @@ watch(() => props.images, () => {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.25);
   user-select: none;
+}
+
+/* 右键菜单 */
+.ctx-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 9998;
+}
+.ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  background: rgba(30, 30, 50, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 120px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.ctx-menu-item:hover {
+  background: rgba(100, 108, 255, 0.2);
+  color: white;
+}
+.ctx-menu-item.active {
+  background: rgba(100, 108, 255, 0.3);
+  color: #aab0ff;
 }
 </style>
