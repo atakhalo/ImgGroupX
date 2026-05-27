@@ -417,10 +417,6 @@ function getNodeGridContainerBg(depth: number): string {
 </template>
 
 <style scoped>
-.folder-group {
-  width: 100%;
-}
-
 .folder-header {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
