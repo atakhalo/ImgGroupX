@@ -137,6 +137,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'viewer.mark': '标记',
     'viewer.mark_level': '标记 {n}',
     'viewer.mark_clear': '取消标记',
+    'viewer.rename': '重命名',
 
     // 对比视图
     'compare.drag_hint': '拖动中间分隔条对比',
@@ -380,6 +381,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'viewer.mark': 'Mark',
     'viewer.mark_level': 'Mark {n}',
     'viewer.mark_clear': 'Clear Mark',
+    'viewer.rename': 'Rename',
 
     'compare.drag_hint': 'Drag the divider to compare',
 

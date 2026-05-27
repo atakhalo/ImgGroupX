@@ -96,6 +96,12 @@ export const state = reactive({
   pendingChanges: [] as string[],
   /** 用户取消扫描的根路径集合（忽略其后续事件） */
   cancelledRoots: new Set<string>(),
+  /** 重命名对话框状态 */
+  renameDialog: {
+    show: false,
+    item: null as ImageItem | null,
+    name: '',
+  },
 })
 
 /** 按路径去重后添加到allImages */
@@ -730,6 +736,59 @@ export async function deleteImages(paths: string[]): Promise<void> {
     })
   } finally {
     await setSuppressWatcher(false)
+  }
+}
+
+/** 重命名图片 */
+export function showRenameDialog(item: ImageItem) {
+  const ext = item.name.lastIndexOf('.')
+  state.renameDialog.item = item
+  state.renameDialog.name = ext > 0 ? item.name.substring(0, ext) : item.name
+  state.renameDialog.show = true
+}
+
+export function closeRenameDialog() {
+  state.renameDialog.show = false
+  state.renameDialog.item = null
+  state.renameDialog.name = ''
+}
+
+export async function renameImage(item: ImageItem, newName: string): Promise<void> {
+  const oldPath = item.path
+  const dir = item.dir.replace(/\\/g, '/')
+  const ext = item.name.substring(item.name.lastIndexOf('.'))
+  const newPath = `${dir}/${newName}${ext}`
+
+  // 同名忽略
+  if (newPath === oldPath) return
+
+  await setSuppressWatcher(true)
+  try {
+    const result = await invoke<string>('rename_file', { oldPath, newName })
+    // 更新 item 的路径信息
+    item.path = result
+    const resultPath = result.replace(/\\/g, '/')
+    item.name = resultPath.split('/').pop() || item.name
+    // 更新 selectedPaths
+    if (state.selectedPaths.has(oldPath)) {
+      state.selectedPaths.delete(oldPath)
+      state.selectedPaths.add(result)
+    }
+    showToast(`已重命名为 ${item.name}`)
+  } catch (e: any) {
+    const msg = e.message || e
+    if (typeof msg === 'string' && msg.startsWith('CONFLICT:')) {
+      const suggested = msg.slice(9)
+      const ok = await ask(`文件 ${newName}${ext} 已存在，是否使用「${suggested}」？`, { title: '重命名冲突', kind: 'warning' })
+      if (ok) {
+        await renameImage(item, suggested.replace(ext, ''))
+      }
+      return
+    }
+    showToast(`重命名失败: ${msg}`)
+  } finally {
+    await setSuppressWatcher(false)
+    await applyFileChanges([oldPath, item.path])
   }
 }
 

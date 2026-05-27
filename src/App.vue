@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage } from './stores/imageStore'
 import type { ImageItem } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -375,6 +375,14 @@ function cancelVirtualGroup() {
   showGroupNameInput.value = false
 }
 
+function confirmRename() {
+  const item = state.renameDialog.item
+  const name = state.renameDialog.name.trim()
+  if (!item || !name) return
+  closeRenameDialog()
+  renameImage(item, name)
+}
+
 function handleCompare() {
   if (state.selectedFolderPaths.size > 0) return
   const paths = Array.from(state.selectedPaths)
@@ -546,7 +554,7 @@ async function handleRefresh() {
                 <line x1="3" y1="9" x2="21" y2="9"/>
                 <line x1="9" y1="21" x2="9" y2="9"/>
               </svg>
-              <span>{{ state.alwaysShowFileName ? '隐藏文件名' : '常驻文件名' }}</span>
+              <span>文件名</span>
             </button>
           </div>
         </Teleport>
@@ -627,6 +635,27 @@ async function handleRefresh() {
           <div class="name-input-actions">
             <button class="name-btn secondary" @click="cancelVirtualGroup">{{ $t('settings.reset') }}</button>
             <button class="name-btn primary" @click="confirmVirtualGroup">{{ $t('settings.apply') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 重命名弹窗 -->
+    <Teleport to="body">
+      <div v-if="state.renameDialog.show" class="name-input-overlay" @click.self="closeRenameDialog">
+        <div class="name-input-dialog">
+          <h4>重命名</h4>
+          <p class="name-input-hint">{{ state.renameDialog.item?.name }}</p>
+          <input
+            v-model="state.renameDialog.name"
+            type="text"
+            class="name-input"
+            placeholder="输入新文件名"
+            @keyup.enter="confirmRename"
+          />
+          <div class="name-input-actions">
+            <button class="name-btn secondary" @click="closeRenameDialog">取消</button>
+            <button class="name-btn primary" @click="confirmRename">确认</button>
           </div>
         </div>
       </div>

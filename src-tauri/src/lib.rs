@@ -639,6 +639,39 @@ fn trash_paths(paths: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
+/// 重命名文件（仅修改文件名，不修改扩展名）
+/// 返回新的完整路径
+#[tauri::command]
+fn rename_file(old_path: String, new_name: String) -> Result<String, String> {
+    let old = Path::new(&old_path);
+    if !old.exists() {
+        return Err("文件不存在".into());
+    }
+    let parent = old.parent().unwrap_or(Path::new("."));
+    let ext = old.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{}", e))
+        .unwrap_or_default();
+    let new_path = parent.join(format!("{}{}", new_name, ext));
+
+    // 同名则忽略
+    if new_path == old {
+        return Ok(old_path);
+    }
+
+    // 检查目标是否存在，存在则返回提示
+    if new_path.exists() {
+        let suggested = auto_rename_path(&new_path);
+        let suggested_name = suggested.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&new_name);
+        return Err(format!("CONFLICT:{}", suggested_name));
+    }
+
+    fs::rename(old, &new_path).map_err(|e| format!("重命名失败: {}", e))?;
+    Ok(new_path.to_string_lossy().to_string())
+}
+
 /// 检查路径是否为目录
 #[tauri::command]
 fn check_is_dir(path: String) -> bool {
@@ -944,6 +977,7 @@ pub fn run() {
             scan_folders_progressive,
             cancel_scan,
             read_file_text,
+            rename_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

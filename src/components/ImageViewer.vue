@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import type { ImageItem, MarkLevel } from '../types'
-import { state, loadImageBase64, setImageMark, showToast, applyFileChanges, setSuppressWatcher } from '../stores/imageStore'
+import { state, loadImageBase64, setImageMark, showToast, applyFileChanges, setSuppressWatcher, showRenameDialog } from '../stores/imageStore'
 import { matchShortcut } from '../utils/shortcuts'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
@@ -238,6 +238,7 @@ function handleViewerContextMenu(e: MouseEvent) {
 }
 function closeViewerCtx() { viewerCtx.value.show = false }
 function handleCtxExit() { closeViewerCtx(); emit('close') }
+function handleCtxRename() { closeViewerCtx(); const item = currentItem.value; if (item) showRenameDialog(item) }
 function handleCtxOpenExplorer() { closeViewerCtx(); handleOpenExplorer() }
 function handleCtxOpenDefault() { closeViewerCtx(); handleOpenDefault() }
 async function handleCtxCopyPath() {
@@ -334,6 +335,32 @@ function handleClose() {
           <span>{{ $t('viewer.close') }}</span>
         </button>
         <div class="ctx-separator"></div>
+        <button class="ctx-menu-item" @click="handleCtxCopyImage">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+          </svg>
+          <span>复制图片</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxCopyPath">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          <span>复制路径</span>
+        </button>
+        <div class="ctx-separator"></div>
+        <button class="ctx-menu-item" @click="handleCtxRename">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+          </svg>
+          <span>{{ $t('viewer.rename') }}</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxSaveAs">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+          </svg>
+          <span>另存为</span>
+        </button>
+        <div class="ctx-separator"></div>
         <button class="ctx-menu-item" @click="handleCtxOpenExplorer">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -345,24 +372,6 @@ function handleClose() {
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
           </svg>
           <span>{{ $t('viewer.default') }}</span>
-        </button>
-        <button class="ctx-menu-item" @click="handleCtxCopyPath">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-          </svg>
-          <span>复制路径</span>
-        </button>
-        <button class="ctx-menu-item" @click="handleCtxCopyImage">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
-          </svg>
-          <span>复制图片</span>
-        </button>
-        <button class="ctx-menu-item" @click="handleCtxSaveAs">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-          </svg>
-          <span>另存为</span>
         </button>
       </div>
     </Teleport>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ImageItem, MarkLevel } from '../types'
-import { state, setImageMark } from '../stores/imageStore'
+import { state, setImageMark, showRenameDialog } from '../stores/imageStore'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps<{
@@ -43,6 +43,10 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
 
 function toggleInfo() {
   state.showImageInfo = !state.showImageInfo
+}
+
+function handleRename() {
+  if (props.item) showRenameDialog(props.item)
 }
 
 function handleSetMark(level: MarkLevel) {
@@ -95,6 +99,13 @@ function handleSetMark(level: MarkLevel) {
       <button class="op-btn" :class="{ active: state.showImageInfo }" :title="state.showImageInfo ? $t('viewer.hide_info') : $t('viewer.show_info')" @click="toggleInfo">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+
+      <!-- 重命名 -->
+      <button class="op-btn" :title="$t('viewer.rename')" @click="handleRename">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
         </svg>
       </button>
 
