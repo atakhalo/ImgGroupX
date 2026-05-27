@@ -539,6 +539,15 @@ async function handleRefresh() {
               </svg>
               <span>选择模式</span>
             </button>
+            <div class="content-ctx-separator"></div>
+            <button class="content-ctx-item" :class="{ active: state.alwaysShowFileName }" @click="state.alwaysShowFileName = !state.alwaysShowFileName; closeContentCtx()">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <line x1="3" y1="9" x2="21" y2="9"/>
+                <line x1="9" y1="21" x2="9" y2="9"/>
+              </svg>
+              <span>{{ state.alwaysShowFileName ? '隐藏文件名' : '常驻文件名' }}</span>
+            </button>
           </div>
         </Teleport>
         <!-- 未分组模式：所有图片平铺网格 -->
@@ -717,6 +726,15 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
 .content-ctx-item:hover {
   background: rgba(100, 108, 255, 0.2);
   color: white;
+}
+.content-ctx-item.active {
+  background: rgba(100, 108, 255, 0.3);
+  color: #aab0ff;
+}
+.content-ctx-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 8px;
 }
 
 /* 未分组模式下的虚拟分组区域 */

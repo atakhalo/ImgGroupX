@@ -243,7 +243,7 @@ async function handleCtxCopyImage() {
   <div
     ref="elRef"
     class="grid-item"
-    :class="{ selected: isSelected }"
+    :class="{ selected: isSelected, 'show-filename': state.alwaysShowFileName }"
     :style="{
       height: gridSize + 'px',
       width: itemWidth + 'px',
@@ -490,13 +490,15 @@ async function handleCtxCopyImage() {
   opacity: 1;
 }
 
+.grid-item.show-filename .item-overlay {
+  opacity: 1;
+}
+
 .item-name {
   color: white;
   font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: block;
+  line-height: 1.3;
+  word-break: break-all;
 }
 
 .select-check {

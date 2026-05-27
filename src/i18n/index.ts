@@ -250,6 +250,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.toggle_rainbow': '彩虹层级着色',
     'control.marks': '标记',
     'control.toggle_marks': '显示/隐藏标记',
+    'control.filename': '文件名',
+    'control.toggle_filename': '切换文件名常驻显示',
     'control.collapse_leaves': '折叠叶子',
             'virtual_group_default': '临时图片分组',
   },
@@ -484,6 +486,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.toggle_rainbow': 'Rainbow Hierarchy',
     'control.marks': 'Marks',
     'control.toggle_marks': 'Show/Hide Marks',
+    'control.filename': 'File Name',
+    'control.toggle_filename': 'Toggle always show file name',
     'control.collapse_leaves': 'Collapse Leaves',
             'virtual_group_default': 'Temp Group',
   }
