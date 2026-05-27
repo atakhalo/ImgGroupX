@@ -131,6 +131,21 @@ async function loadCurrentImage() {
 
 watch(currentIndex, () => { loadCurrentImage() })
 
+// 外部更新 initialIndex 时同步（如图片删除后索引调整）
+watch(() => props.initialIndex, (val) => {
+  if (val !== currentIndex.value) {
+    currentIndex.value = val
+  }
+})
+
+// 图片数组变化时确保索引不越界并重新加载（如图片被删除但索引值不变时）
+watch(() => props.images.length, () => {
+  if (currentIndex.value >= props.images.length) {
+    currentIndex.value = Math.max(0, props.images.length - 1)
+  }
+  loadCurrentImage()
+})
+
 // 缩放超过 100% 时自动开启平移（设置启用时）
 watch([scale, () => state.settings.autoPan], ([s, auto]) => {
   if (auto && s > 1) panMode.value = true

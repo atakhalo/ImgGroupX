@@ -311,7 +311,6 @@ async function handleViewerDelete(path: string, index: number) {
   viewingImages.value = updated
   // 使用删除时的实际索引计算新位置，避免因查看器内导航导致索引不同步
   viewingIndex.value = Math.min(index, updated.length - 1)
-  viewerKey.value++
 }
 
 function toggleFolderGroup() { state.folderGroup = !state.folderGroup }
