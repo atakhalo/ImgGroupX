@@ -118,10 +118,13 @@ async function loadCurrentImage() {
     // 只有当前序号未被更新的请求覆盖才应用结果
     if (seq === loadingSeq) {
       imgSrc.value = b64
+      // data URI 同步加载，直接标记完成，避免浏览器 @load 事件不可靠
+      isLoaded.value = true
     }
   } catch {
     if (seq === loadingSeq) {
       imgSrc.value = ''
+      isLoaded.value = true
     }
   }
 }
