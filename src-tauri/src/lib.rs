@@ -425,6 +425,286 @@ fn get_image_metadata(path: String) -> Result<Vec<Vec<String>>, String> {
     Ok(fields)
 }
 
+/// 读取图片 UserComment（手动 TIFF/EXIF 解析，支持 JPEG/PNG/WebP/TIFF）
+#[tauri::command]
+fn read_user_comment(path: String) -> Result<String, String> {
+    let data = std::fs::read(&path).map_err(|e| format!("读取文件失败: {}", e))?;
+
+    let raw = manual_read_user_comment(&data);
+    // 过滤空字节
+    Ok(raw.chars().filter(|&c| c != '\0').collect())
+}
+
+fn manual_read_user_comment(data: &[u8]) -> String {
+    let tiff_start = match find_tiff_block(data) {
+        Some(o) => o,
+        None => return String::new(),
+    };
+    let tiff = &data[tiff_start..];
+    if tiff.len() < 8 {
+        return String::new();
+    }
+
+    let is_be = if &tiff[..2] == b"MM" {
+        true
+    } else if &tiff[..2] == b"II" {
+        false
+    } else {
+        return String::new();
+    };
+
+    let ifd0 = ru32(&tiff[4..8], is_be) as usize;
+    if ifd0 + 6 > tiff.len() {
+        return String::new();
+    }
+
+    let count = ru16(&tiff[ifd0..], is_be) as usize;
+    let entries_end = ifd0 + 2 + count * 12;
+    if entries_end > tiff.len() {
+        return String::new();
+    }
+
+    let mut exif_sub_ifd = None;
+
+    for i in 0..count {
+        let off = ifd0 + 2 + i * 12;
+        let tag = ru16(&tiff[off..], is_be);
+
+        if tag == 0x9286 {
+            let r = extract_usercomment(tiff, off, is_be);
+            if !r.is_empty() {
+                return r;
+            }
+        } else if tag == 0x8769 {
+            let ptr = ru32(&tiff[off + 8..], is_be) as usize;
+            if ptr < tiff.len() {
+                exif_sub_ifd = Some(ptr);
+            }
+        }
+    }
+
+    if let Some(sub) = exif_sub_ifd {
+        if sub + 2 > tiff.len() {
+            return String::new();
+        }
+        let sub_count = ru16(&tiff[sub..], is_be) as usize;
+        let sub_end = sub + 2 + sub_count * 12;
+        if sub_end > tiff.len() {
+            return String::new();
+        }
+        for i in 0..sub_count {
+            let off = sub + 2 + i * 12;
+            let tag = ru16(&tiff[off..], is_be);
+            if tag == 0x9286 {
+                return extract_usercomment(tiff, off, is_be);
+            }
+        }
+    }
+
+    String::new()
+}
+
+/// 根据字节序读取 u16
+fn ru16(buf: &[u8], is_be: bool) -> u16 {
+    if is_be { read_u16_be(buf) } else { read_u16_le(buf) }
+}
+/// 根据字节序读取 u32
+fn ru32(buf: &[u8], is_be: bool) -> u32 {
+    if is_be { read_u32_be(buf) } else { read_u32_le(buf) }
+}
+
+fn extract_usercomment(tiff: &[u8], entry_off: usize, is_be: bool) -> String {
+    let count = ru32(&tiff[entry_off + 4..], is_be) as usize;
+    if count == 0 {
+        return String::new();
+    }
+
+    let raw: &[u8] = if count <= 4 {
+        let end = (entry_off + 8 + count).min(tiff.len());
+        &tiff[entry_off + 8..end]
+    } else {
+        let offset = ru32(&tiff[entry_off + 8..], is_be) as usize;
+        if offset >= tiff.len() {
+            return String::new();
+        }
+        let end = (offset + count).min(tiff.len());
+        &tiff[offset..end]
+    };
+
+    if raw.is_empty() {
+        return String::new();
+    }
+
+    let (encoding, bytes) = if raw.len() > 8
+        && (raw[..8].starts_with(b"ASCII\x00\x00\x00")
+            || raw[..8].starts_with(b"UNICODE\x00")
+            || raw[..8].starts_with(b"JIS\x00\x00\x00\x00\x00"))
+    {
+        (&raw[..8], &raw[8..])
+    } else {
+        (&[][..], raw)
+    };
+
+    // Try UTF-8 first
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        return s.trim_end_matches('\0').to_string();
+    }
+
+    // UNICODE = UTF-16LE per EXIF standard
+    if bytes.len() >= 4 {
+        if encoding.starts_with(b"UNICODE") {
+            return decode_utf16le(bytes).unwrap_or_default();
+        }
+        if bytes.len() % 2 == 0 && bytes.iter().skip(1).step_by(2).all(|&b| b == 0x00) {
+            if let Some(s) = decode_utf16le(bytes) {
+                if !s.trim_end_matches('\0').is_empty() {
+                    return s.trim_end_matches('\0').to_string();
+                }
+            }
+        }
+    }
+
+    // Latin-1 fallback
+    bytes
+        .iter()
+        .filter_map(|&b| if b == 0x00 { None } else { Some(b as char) })
+        .collect::<String>()
+}
+
+fn decode_utf16le(bytes: &[u8]) -> Option<String> {
+    let u16s: Vec<u16> = bytes
+        .chunks(2)
+        .filter(|c| c.len() == 2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    String::from_utf16(&u16s).ok()
+}
+
+fn find_tiff_block(data: &[u8]) -> Option<usize> {
+    // JPEG: APP1 marker (0xFFE1) followed by "Exif\0\0"
+    if data.starts_with(&[0xFF, 0xD8]) {
+        let mut i = 2;
+        while i + 4 < data.len() {
+            if data[i] != 0xFF {
+                i += 1;
+                continue;
+            }
+            if i + 4 > data.len() {
+                break;
+            }
+            let seg_len = read_u16_be(&data[i + 2..]) as usize;
+            if i + 2 + seg_len > data.len() {
+                break;
+            }
+            if data[i + 1] == 0xE1 && seg_len >= 8
+                && &data[i + 4..i + 10] == b"Exif\x00\x00"
+            {
+                return Some(i + 10);
+            }
+            i += 2 + seg_len;
+        }
+        return None;
+    }
+
+    // PNG: eXIf chunk
+    if data.len() > 8 && data[1..4] == [0x50, 0x4E, 0x47] {
+        let mut i = 8;
+        while i + 8 < data.len() {
+            let len = read_u32_be(&data[i..]) as usize;
+            if i + 8 + len > data.len() {
+                break;
+            }
+            if &data[i + 4..i + 8] == b"eXIf" {
+                return Some(i + 8);
+            }
+            i += 12 + len;
+        }
+        return None;
+    }
+
+    // WebP: EXIF chunk within RIFF container
+    if data.len() > 12 && &data[0..4] == b"RIFF" && &data[8..12] == b"WEBP" {
+        let mut i = 12;
+        while i + 8 < data.len() {
+            let len = read_u32_le(&data[i + 4..]) as usize;
+            if i + 8 + len > data.len() {
+                break;
+            }
+            if &data[i..i + 4] == b"EXIF" {
+                return Some(i + 8);
+            }
+            i += 8 + len + (len & 1);
+        }
+        return None;
+    }
+
+    // TIFF: raw file starts with byte-order mark
+    if data.len() >= 2 && (&data[..2] == b"II" || &data[..2] == b"MM") {
+        return Some(0);
+    }
+
+    // Fallback: scan for TIFF byte-order mark
+    for (idx, win) in data.windows(2).enumerate() {
+        if win == b"II" {
+            if idx + 4 <= data.len() {
+                let magic = read_u16_le(&data[idx + 2..]);
+                if magic == 42 {
+                    return Some(idx);
+                }
+            }
+        } else if win == b"MM" {
+            if idx + 4 <= data.len() {
+                let magic = read_u16_be(&data[idx + 2..]);
+                if magic == 42 {
+                    return Some(idx);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+// 小端读取（TIFF 默认使用小端 II 字节序）
+fn read_u16_le(bytes: &[u8]) -> u16 {
+    if bytes.len() < 2 { return 0; }
+    u16::from_le_bytes([bytes[0], bytes[1]])
+}
+fn read_u32_le(bytes: &[u8]) -> u32 {
+    if bytes.len() < 4 { return 0; }
+    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+}
+fn read_u16_be(bytes: &[u8]) -> u16 {
+    if bytes.len() < 2 { return 0; }
+    u16::from_be_bytes([bytes[0], bytes[1]])
+}
+fn read_u32_be(bytes: &[u8]) -> u32 {
+    if bytes.len() < 4 { return 0; }
+    u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+}
+
+/// 获取文件创建时间和修改时间
+#[tauri::command]
+fn get_file_times(path: String) -> Result<[String; 2], String> {
+    use std::time::UNIX_EPOCH;
+    use chrono::{DateTime, Local};
+
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    let fmt = |t: std::time::SystemTime| -> String {
+        t.duration_since(UNIX_EPOCH)
+            .ok()
+            .and_then(|d| DateTime::from_timestamp(d.as_secs() as i64, 0))
+            .map(|dt| {
+                let local: DateTime<Local> = dt.into();
+                local.format("%Y-%m-%d %H:%M:%S").to_string()
+            })
+            .unwrap_or_default()
+    };
+    let created = meta.created().ok().map(&fmt).unwrap_or_default();
+    let modified = meta.modified().ok().map(&fmt).unwrap_or_default();
+    Ok([created, modified])
+}
+
 /// 在系统文件管理器中打开文件/文件夹
 #[tauri::command]
 fn open_in_explorer(path: String) -> Result<(), String> {
@@ -961,6 +1241,8 @@ pub fn run() {
             scan_folders,
             load_image_base64,
             get_image_metadata,
+            read_user_comment,
+            get_file_times,
             open_in_explorer,
             check_is_dir,
             open_with_program,

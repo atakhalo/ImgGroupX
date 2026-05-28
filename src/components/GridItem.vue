@@ -210,6 +210,63 @@ function handleCtxRename() {
   showRenameDialog(item)
 }
 
+/** 元信息弹窗状态 */
+const showMetaDialog = ref(false)
+const metaFields = ref<[string, string][]>([])
+const metaLoading = ref(false)
+
+async function loadMetadata() {
+  const item = props.item
+  if (!item) return
+  metaLoading.value = true
+  metaFields.value = []
+  try {
+    const [allFields, uc, times] = await Promise.all([
+      invoke<[string, string][]>('get_image_metadata', { path: item.path }).catch(() => [] as [string, string][]),
+      invoke<string>('read_user_comment', { path: item.path }).catch(() => ''),
+      invoke<[string, string]>('get_file_times', { path: item.path }).catch(() => ['', ''] as [string, string]),
+    ])
+    let merged: [string, string][]
+    if (uc) {
+      merged = allFields.filter(([k]) => k !== 'UserComment')
+      merged.push(['UserComment', uc])
+    } else {
+      merged = allFields
+    }
+    if (times[0]) merged.push(['创建时间', times[0]])
+    if (times[1]) merged.push(['修改时间', times[1]])
+    if (merged.length === 0) {
+      merged = [['文件大小', formatSize(item.size_bytes)], ['分辨率', `${item.width}×${item.height}`]]
+    }
+    metaFields.value = merged
+  } catch (e) {
+    metaFields.value = []
+  } finally {
+    metaLoading.value = false
+  }
+  showMetaDialog.value = true
+}
+
+function copyMetaText(text: string) {
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  })
+}
+
+function copyAllMeta() {
+  copyMetaText(metaFields.value.map(([k, v]) => `${k}: ${v}`).join('\n'))
+}
+
+function handleCtxMetadata() {
+  closeCtxMenu()
+  loadMetadata()
+}
+
 async function handleCtxCopyImage() {
   closeCtxMenu()
   const src = imgSrc.value
@@ -299,6 +356,12 @@ async function handleCtxCopyImage() {
           <span>另存为</span>
         </button>
         <div class="ctx-separator"></div>
+        <button class="ctx-menu-item" @click="handleCtxMetadata">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+          <span>{{ $t('viewer.metadata') }}</span>
+        </button>
         <button class="ctx-menu-item" @click="handleCtxOpenExplorer">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -311,6 +374,39 @@ async function handleCtxCopyImage() {
           </svg>
           <span>{{ $t('viewer.default') }}</span>
         </button>
+      </div>
+    </Teleport>
+    <!-- 元信息弹窗 -->
+    <Teleport to="body">
+      <div v-if="showMetaDialog" class="meta-backdrop" @click="showMetaDialog = false"></div>
+      <div v-if="showMetaDialog" class="meta-dialog" @click.stop>
+        <div class="meta-header">
+          <h3>{{ $t('hint.meta_title') }}</h3>
+          <button class="meta-close-btn" @click="showMetaDialog = false">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="meta-body">
+          <div v-if="metaLoading" class="meta-loading">{{ $t('hint.loading') }}</div>
+          <div v-else-if="metaFields.length === 0" class="meta-empty">{{ $t('hint.no_meta') }}</div>
+          <div v-else class="meta-list">
+            <div v-for="([key, val], i) in metaFields" :key="i" class="meta-row">
+              <span class="meta-key">{{ key }}</span>
+              <span class="meta-val" :class="{ 'meta-val-comment': key === 'UserComment' }">{{ val }}</span>
+              <button class="meta-copy-btn" :title="$t('hint.copy_field')" @click="copyMetaText(val)">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                <span class="meta-copy-label">复制</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-if="metaFields.length > 0" class="meta-footer">
+          <button class="meta-copy-all-btn" @click="copyAllMeta">{{ $t('hint.copy_all') }}</button>
+        </div>
       </div>
     </Teleport>
     <div class="item-inner" :style="{ borderRadius: borderRadius + 'px' }">
@@ -586,5 +682,124 @@ async function handleCtxCopyImage() {
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
   margin: 4px 8px;
+}
+
+/* 元信息弹窗样式 */
+.meta-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 10000;
+}
+.meta-dialog {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 620px;
+  max-height: 80vh;
+  background: rgba(30,30,50,0.97);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  z-index: 10001;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+}
+.meta-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.meta-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: rgba(255,255,255,0.9);
+}
+.meta-close-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.4);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+.meta-close-btn:hover { color: white; }
+.meta-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px;
+}
+.meta-loading, .meta-empty {
+  text-align: center;
+  padding: 30px;
+  color: rgba(255,255,255,0.3);
+  font-size: 13px;
+}
+.meta-list { display: flex; flex-direction: column; gap: 2px; }
+.meta-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.meta-row:hover { background: rgba(255,255,255,0.05); }
+.meta-key {
+  color: rgba(255,255,255,0.4);
+  white-space: nowrap;
+  min-width: 100px;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+.meta-val {
+  color: rgba(255,255,255,0.8);
+  word-break: break-all;
+  flex: 1;
+}
+.meta-val-comment {
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.meta-copy-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.25);
+  cursor: pointer;
+  padding: 2px 6px;
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+}
+.meta-copy-label { font-size: 11px; color: inherit; }
+.meta-row:hover .meta-copy-btn { opacity: 0.7; }
+.meta-copy-btn:hover { opacity: 1 !important; color: #7eb8ff; background: rgba(120,180,255,0.12); }
+.meta-footer {
+  padding: 10px 16px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  justify-content: flex-end;
+}
+.meta-copy-all-btn {
+  background: rgba(100,108,255,0.15);
+  border: 1px solid rgba(100,108,255,0.3);
+  color: #aab0ff;
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.meta-copy-all-btn:hover {
+  background: rgba(100,108,255,0.25);
 }
 </style>

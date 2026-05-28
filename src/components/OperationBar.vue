@@ -21,6 +21,7 @@ const emit = defineEmits<{
   openDefault: []
   openWith: [program: string]
   deleteImage: []
+  showMetadata: []
 }>()
 
 const showOpenMenu = ref(false)
@@ -176,6 +177,13 @@ function handleSetMark(level: MarkLevel) {
         </div>
       </div>
 
+      <button class="op-btn" :title="$t('viewer.metadata')" @click="emit('showMetadata')">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="16" x2="12" y2="12"/>
+          <line x1="12" y1="8" x2="12.01" y2="8"/>
+        </svg>
+      </button>
       <button class="op-btn delete-btn" :title="$t('control.delete_title')" @click="emit('deleteImage')">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="3 6 5 6 21 6" />
