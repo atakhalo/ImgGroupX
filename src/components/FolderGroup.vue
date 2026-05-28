@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { state, openInExplorer, saveVirtualGroup, getProcessedImages } from '../stores/imageStore'
+import { state, openInExplorer, saveVirtualGroup, getProcessedImages, startProgressiveScan } from '../stores/imageStore'
 import GridView from './GridView.vue'
 import GridItem from './GridItem.vue'
 import FolderGroup from './FolderGroup.vue'
@@ -52,8 +52,11 @@ function handleSelectClick(e: MouseEvent) {
 }
 
 function parentPath(path: string): string {
-  const i = path.lastIndexOf('/')
-  return i > 0 ? path.substring(0, i + 1) : ''
+  // 先去掉尾部斜杠，避免 lastIndexOf 定位到末尾
+  const clean = path.replace(/\/$/, '')
+  const i = clean.lastIndexOf('/')
+  if (i <= 0) return ''
+  return clean.substring(0, i + 1)
 }
 
 function totalCount(node: FolderNode): number {
@@ -246,6 +249,18 @@ function closeHeaderCtxMenu() {
   headerCtxMenu.value.show = false
 }
 
+/** 向上：加载父文件夹并移除当前根节点 */
+async function handleUp() {
+  if (props.depth !== 0 || props.isVirtualRoot) return
+  const currentPath = getNodeAbsolutePath()
+  const parent = parentPath(currentPath)
+  if (!parent || parent === currentPath) return
+  // 先移除当前根节点（会取消正在进行的扫描），再加载父文件夹
+  emit('removeRoot', props.node.path)
+  const cleanParent = parent.replace(/\/$/, '')
+  await startProgressiveScan([cleanParent])
+}
+
 /** 复制文件夹路径到剪贴板 */
 async function handleCopyFolderPath() {
   const p = getNodeAbsolutePath()
@@ -397,6 +412,17 @@ function getNodeGridContainerBg(depth: number): string {
         >
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+        <button
+          v-if="depth === 0 && !isVirtualRoot && !(state.settings.compactHeader && isCompactNode)"
+          class="folder-up-btn"
+          :title="$t('folder.up')"
+          @click.stop="handleUp"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 19V5M5 12l7-7 7 7" />
+            <line x1="5" y1="19" x2="19" y2="19" />
           </svg>
         </button>
         <button
@@ -859,6 +885,27 @@ function getNodeGridContainerBg(depth: number): string {
   opacity: 1;
 }
 .folder-open-btn:hover {
+  color: #4fc3f7;
+  background: rgba(79, 195, 247, 0.2);
+  border-color: rgba(79, 195, 247, 0.4);
+}
+
+.folder-up-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  align-items: center;
+  flex-shrink: 0;
+  display: none;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.folder-header:hover .folder-up-btn {
+  display: flex;
+}
+.folder-up-btn:hover {
   color: #4fc3f7;
   background: rgba(79, 195, 247, 0.2);
   border-color: rgba(79, 195, 247, 0.4);
