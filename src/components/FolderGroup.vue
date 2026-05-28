@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
 import { state, openInExplorer, saveVirtualGroup, getProcessedImages } from '../stores/imageStore'
 import GridView from './GridView.vue'
@@ -197,6 +197,37 @@ function handleGridImageSelect(item: ImageItem, ctrl: boolean) {
   emit('selectImage', item, ctrl)
 }
 
+/** 标题栏右键菜单状态 */
+const headerCtxMenu = ref({ show: false, x: 0, y: 0 })
+
+function openHeaderCtxMenu(e: MouseEvent) {
+  e.preventDefault()
+  headerCtxMenu.value = {
+    show: true,
+    x: Math.min(e.clientX, window.innerWidth - 200),
+    y: Math.min(e.clientY, window.innerHeight - 350),
+  }
+}
+
+function closeHeaderCtxMenu() {
+  headerCtxMenu.value.show = false
+}
+
+/** 复制文件夹路径到剪贴板 */
+async function handleCopyFolderPath() {
+  const p = getNodeAbsolutePath()
+  try {
+    await navigator.clipboard.writeText(p)
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = p
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  }
+}
+
 function handleCopyToFolder() {
   const p = getNodeAbsolutePath()
   console.log('FolderGroup emit copyToFolder:', p)
@@ -297,10 +328,11 @@ function getNodeGridContainerBg(depth: number): string {
         boxShadow: 'inset 0 0 0px 1px rgba(255,255,255,0.06)',
       }"
       @click="handleToggle"
+      @contextmenu="openHeaderCtxMenu"
     >
       <span class="folder-left">
         <button
-          v-if="!(isVirtualRoot && depth === 0)"
+          v-if="!(isVirtualRoot && depth === 0) && !(state.settings.compactHeader && isCompactNode)"
           class="folder-open-btn"
           :title="$t('folder.open_in_explorer')"
           @click.stop="openInExplorer(getNodeAbsolutePath())"
@@ -323,33 +355,37 @@ function getNodeGridContainerBg(depth: number): string {
         </button>
         <span v-if="shouldShowPath()" class="folder-path">{{ parentPath(node.path) }}</span>
         <span class="folder-left-actions">
-          <!-- 移动至此 / 复制至此（非虚拟节点，选择模式下有选中时显示） -->
-          <template v-if="state.selectMode === 'select' && hasAnySelection && !isVirtualRoot">
-            <button
-              class="folder-action-btn folder-move-btn"
-              :title="$t('folder.move_here')"
-              @click.stop="handleMoveToFolder"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M5 12h14M12 5l7 7-7 7"/>
-              </svg>
-            </button>
-            <button
-              class="folder-action-btn folder-copy-btn"
-              :title="$t('folder.copy_here')"
-              @click.stop="handleCopyToFolder"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-            </button>
-          </template>
-          <!-- 选择勾选框 -->
+          <!-- 移动至此 / 复制至此（隐藏时保留宽度，用 visibility 控制） -->
+          <button
+            v-if="!(state.settings.compactHeader && isCompactNode)"
+            class="folder-action-btn folder-move-btn"
+            :class="{ 'btn-invisible': !(state.selectMode === 'select' && hasAnySelection && !isVirtualRoot) }"
+            :title="$t('folder.move_here')"
+            @click.stop="handleMoveToFolder"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+          <button
+            v-if="!(state.settings.compactHeader && isCompactNode)"
+            class="folder-action-btn folder-copy-btn"
+            :class="{ 'btn-invisible': !(state.selectMode === 'select' && hasAnySelection && !isVirtualRoot) }"
+            :title="$t('folder.copy_here')"
+            @click.stop="handleCopyToFolder"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
+          <!-- 选择勾选框（隐藏时保留宽度） -->
           <span
-            v-if="state.selectMode === 'select' && !(isVirtualRoot && depth === 0)"
             class="folder-select-box"
-            :class="{ checked: isSelected() }"
+            :class="{
+              checked: isSelected(),
+              'btn-invisible': !(state.selectMode === 'select' && !(isVirtualRoot && depth === 0)),
+            }"
             @click="handleSelectClick"
           >
             <svg v-if="isSelected()" viewBox="0 0 24 24" width="14" height="14" fill="white">
@@ -394,7 +430,8 @@ function getNodeGridContainerBg(depth: number): string {
         </span>
       </span>
       <span class="folder-right">
-        <span v-if="state.selectMode === 'select'" class="folder-select-actions">
+        <!-- 紧凑模式下隐藏选择按钮，放入右键菜单 -->
+        <span v-if="state.selectMode === 'select' && !isCompactNode" class="folder-select-actions">
           <button
             class="folder-select-action-btn"
             :title="$t('folder.select_all')"
@@ -413,6 +450,7 @@ function getNodeGridContainerBg(depth: number): string {
           >{{ $t('folder.first_level') }}</button>
         </span>
         <button
+          v-if="!(state.settings.compactHeader && isCompactNode)"
           class="folder-remove-btn"
           :title="$t('folder.remove')"
           @click.stop="handleRemove"
@@ -423,6 +461,120 @@ function getNodeGridContainerBg(depth: number): string {
         </button>
       </span>
     </div>
+
+    <!-- 标题栏右键菜单 -->
+    <Teleport to="body">
+      <div v-if="headerCtxMenu.show" class="ctx-backdrop" @click="closeHeaderCtxMenu"></div>
+      <div
+        v-if="headerCtxMenu.show"
+        class="ctx-menu folder-header-ctx-menu"
+        :style="{ left: headerCtxMenu.x + 'px', top: headerCtxMenu.y + 'px' }"
+        @click.stop
+      >
+        <!-- 选择操作（选择模式下） -->
+        <template v-if="state.selectMode === 'select'">
+          <button class="ctx-menu-item" @click="selectAll(), closeHeaderCtxMenu()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <polyline points="9 12 12 15 17 8"/>
+            </svg>
+            <span>{{ $t('folder.select_all') }}</span>
+          </button>
+          <button class="ctx-menu-item" @click="invertSelection(), closeHeaderCtxMenu()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <line x1="9" y1="12" x2="15" y2="12"/>
+            </svg>
+            <span>{{ $t('folder.invert_selection') }}</span>
+          </button>
+          <button
+            v-if="hasBothChildrenAndImages"
+            class="ctx-menu-item"
+            @click="selectDirectImages(), closeHeaderCtxMenu()"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <line x1="12" y1="8" x2="12" y2="16"/>
+            </svg>
+            <span>{{ $t('folder.first_level') }}</span>
+          </button>
+          <!-- 移动至此 / 复制至此（显示条件同在标题栏上） -->
+          <template v-if="hasAnySelection && !isVirtualRoot">
+            <div class="ctx-separator"></div>
+            <button class="ctx-menu-item" @click="handleMoveToFolder(), closeHeaderCtxMenu()">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+              <span>{{ $t('folder.move_here') }}</span>
+            </button>
+            <button class="ctx-menu-item" @click="handleCopyToFolder(), closeHeaderCtxMenu()">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              <span>{{ $t('folder.copy_here') }}</span>
+            </button>
+          </template>
+          <div class="ctx-separator"></div>
+        </template>
+        <!-- 模式切换 -->
+        <button
+          v-if="state.selectMode === 'select'"
+          class="ctx-menu-item"
+          @click="state.selectMode = 'view', state.selectedPaths.clear(), state.selectedFolderPaths.clear(), closeHeaderCtxMenu()"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+          <span>{{ $t('control.view_mode') }}</span>
+        </button>
+        <button
+          v-else
+          class="ctx-menu-item"
+          @click="state.selectMode = 'select', closeHeaderCtxMenu()"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+          </svg>
+          <span>{{ $t('control.select_mode') }}</span>
+        </button>
+        <div class="ctx-separator"></div>
+        <!-- 文件名显隐 -->
+        <button
+          class="ctx-menu-item"
+          :class="{ active: state.alwaysShowFileName }"
+          @click="state.alwaysShowFileName = !state.alwaysShowFileName, closeHeaderCtxMenu()"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <line x1="3" y1="9" x2="21" y2="9"/>
+            <line x1="9" y1="21" x2="9" y2="9"/>
+          </svg>
+          <span>{{ $t('control.filename') }}</span>
+        </button>
+        <div class="ctx-separator"></div>
+        <!-- 文件夹操作 -->
+        <button class="ctx-menu-item" @click="openInExplorer(getNodeAbsolutePath()), closeHeaderCtxMenu()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>{{ $t('folder.open_in_explorer') }}</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCopyFolderPath(), closeHeaderCtxMenu()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          <span>{{ $t('hint.copy_path') }}</span>
+        </button>
+        <div class="ctx-separator"></div>
+        <button class="ctx-menu-item ctx-danger" @click="handleRemove(), closeHeaderCtxMenu()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+          <span>{{ $t('folder.remove') }}</span>
+        </button>
+      </div>
+    </Teleport>
 
     <!-- 紧凑模式：统一内容网格（子节点 + 图片作为同级网格项混合排列） -->
     <div
@@ -591,6 +743,11 @@ function getNodeGridContainerBg(depth: number): string {
 }
 .folder-left-actions .folder-select-box {
   margin-right: 2px;
+}
+
+/* 隐藏但保留宽度（用于移动/复制/勾选框） */
+.btn-invisible {
+  visibility: hidden;
 }
 
 .folder-action-btn {
@@ -793,6 +950,66 @@ function getNodeGridContainerBg(depth: number): string {
 .folder-grid-wrapper {
   padding: 0;
   overflow: hidden;
+}
+
+/* ===== 右键菜单通用样式（与 GridItem 保持一致） ===== */
+.ctx-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 9998;
+}
+
+.ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  background: rgba(30, 30, 50, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 120px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.ctx-menu-item:hover {
+  background: rgba(100, 108, 255, 0.2);
+  color: white;
+}
+
+.ctx-menu-item.active {
+  color: #aab0ff;
+}
+
+.ctx-menu-item.ctx-danger:hover {
+  background: rgba(255, 60, 60, 0.2);
+  color: #ff6b6b;
+}
+
+.ctx-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 8px;
+}
+
+/* 标题栏右键菜单 */
+.folder-header-ctx-menu {
+  min-width: 170px;
 }
 
 /* ===== 紧凑模式 ===== */

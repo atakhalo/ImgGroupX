@@ -39,6 +39,8 @@ function handleContentCtxMenu(e: MouseEvent) {
   // 单元格有自己的右键菜单，不处理
   const target = e.target as HTMLElement
   if (target.closest('.grid-item')) return
+  // 标题栏有自己的右键菜单，不重复弹出
+  if (target.closest('.folder-header')) return
   e.preventDefault()
   contentCtx.value = { show: true, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 120) }
 }

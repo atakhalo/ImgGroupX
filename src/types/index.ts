@@ -105,6 +105,8 @@ export interface AppSettings {
   nodeGridGapH: number
   /** 紧凑模式（非根节点自适应宽度排列） */
   compactMode: boolean
+  /** 标题栏紧凑（紧凑模式时隐藏打开/移动/复制/移除按钮） */
+  compactHeader: boolean
   /** 彩虹层级着色开关 */
   rainbowEnabled: boolean
   /** 彩虹层级颜色列表 */

@@ -43,6 +43,7 @@ const defaultSettings: AppSettings = {
   nodeGridGapV: 4,
   nodeGridGapH: 4,
   compactMode: false,
+  compactHeader: false,
   rainbowEnabled: false,
   rainbowColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   language: 'zh',
