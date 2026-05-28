@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
+import { matchShortcut } from './utils/shortcuts'
 import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage } from './stores/imageStore'
 import type { ImageItem, FolderNode } from './types'
 import GridView from './components/GridView.vue'
@@ -78,6 +79,15 @@ function handleKeydown(e: KeyboardEvent) {
       closeCompare()
     } else {
       closeApp()
+    }
+  } else if (matchShortcut(e, 'global.modeSwitch') && viewingIndex.value < 0 && !showCompare.value) {
+    e.preventDefault()
+    if (state.selectMode === 'view') {
+      state.selectMode = 'select'
+    } else {
+      state.selectMode = 'view'
+      state.selectedPaths.clear()
+      state.selectedFolderPaths.clear()
     }
   }
 }

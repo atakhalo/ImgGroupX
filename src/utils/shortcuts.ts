@@ -19,6 +19,7 @@ export interface ShortcutDef {
 export const SHORTCUTS: ShortcutDef[] = [
   // 全局
   { id: 'close', defaultKey: 'Escape', scope: 'global', labelKey: 'shortcuts.close' },
+  { id: 'global.modeSwitch', defaultKey: 'Tab', scope: 'grid', labelKey: 'shortcuts.mode_switch' },
   // 网格视图
   { id: 'grid.zoom', defaultKey: 'Ctrl+Wheel', scope: 'grid', labelKey: 'shortcuts.grid_zoom', readonly: true },
   { id: 'grid.shiftSelect', defaultKey: 'Shift+点击', scope: 'grid', labelKey: 'shortcuts.grid_shift_select', readonly: true },
