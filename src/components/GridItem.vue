@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ImageItem } from '../types'
 import { state, loadImageBase64, showToast, applyFileChanges, setSuppressWatcher, showRenameDialog } from '../stores/imageStore'
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { save } from '@tauri-apps/plugin-dialog'
@@ -262,6 +262,19 @@ function copyAllMeta() {
   copyMetaText(metaFields.value.map(([k, v]) => `${k}: ${v}`).join('\n'))
 }
 
+/** 元信息弹窗打开时自动聚焦，支持 Esc 关闭 */
+const metaBackdropRef = ref<HTMLElement | null>(null)
+function handleMetaKeydown(e: KeyboardEvent) {
+  e.stopPropagation()
+  showMetaDialog.value = false
+}
+watch(showMetaDialog, async (val) => {
+  if (val) {
+    await nextTick()
+    metaBackdropRef.value?.focus()
+  }
+})
+
 function handleCtxMetadata() {
   closeCtxMenu()
   loadMetadata()
@@ -378,7 +391,7 @@ async function handleCtxCopyImage() {
     </Teleport>
     <!-- 元信息弹窗 -->
     <Teleport to="body">
-      <div v-if="showMetaDialog" class="meta-backdrop" @click="showMetaDialog = false"></div>
+      <div v-if="showMetaDialog" class="meta-backdrop" tabindex="-1" @click="showMetaDialog = false" @keydown.escape="handleMetaKeydown" ref="metaBackdropRef"></div>
       <div v-if="showMetaDialog" class="meta-dialog" @click.stop>
         <div class="meta-header">
           <h3>{{ $t('hint.meta_title') }}</h3>

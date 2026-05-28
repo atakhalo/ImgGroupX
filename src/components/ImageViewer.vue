@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import type { ImageItem, MarkLevel } from '../types'
 import { state, loadImageBase64, setImageMark, showToast, applyFileChanges, setSuppressWatcher, showRenameDialog } from '../stores/imageStore'
 import { matchShortcut } from '../utils/shortcuts'
@@ -82,6 +82,19 @@ function copyAllMeta() {
   const text = metaFields.value.map(([k, v]) => `${k}: ${v}`).join('\n')
   copyMetaText(text)
 }
+
+/** 元信息弹窗打开时自动聚焦，支持 Esc 关闭 */
+const metaBackdropRef = ref<HTMLElement | null>(null)
+function handleMetaKeydown(e: KeyboardEvent) {
+  e.stopPropagation()
+  showMetaDialog.value = false
+}
+watch(showMetaDialog, async (val) => {
+  if (val) {
+    await nextTick()
+    metaBackdropRef.value?.focus()
+  }
+})
 
 const currentIndex = ref(props.initialIndex)
 const isImage = computed(() => IMAGE_EXTENSIONS.has(currentItem.value?.ext || ''))
@@ -572,7 +585,7 @@ function handleClose() {
 
     <!-- 元信息弹窗 -->
     <Teleport to="body">
-      <div v-if="showMetaDialog" class="meta-backdrop" @click="showMetaDialog = false"></div>
+      <div v-if="showMetaDialog" class="meta-backdrop" tabindex="-1" @click="showMetaDialog = false" @keydown.escape="handleMetaKeydown" ref="metaBackdropRef"></div>
       <div v-if="showMetaDialog" class="meta-dialog" @click.stop>
         <div class="meta-header">
           <h3>{{ $t('hint.meta_title') }}</h3>
