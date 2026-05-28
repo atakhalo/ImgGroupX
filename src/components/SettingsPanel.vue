@@ -25,7 +25,7 @@ const tabs = [
 /** 各标签页对应的设置字段 */
 const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   general: ['language', 'maxLoadSizeMB', 'loadSkippedOnView', 'filterPresets', 'filterRegex', 'filterTarget', 'sortBy', 'sortOrder'],
-  grid: ['borderRadius', 'gap', 'gridSize', 'bgColor', 'nodeGridGap'],
+  grid: ['borderRadius', 'gap', 'gridSize', 'bgColor', 'nodeGridGapV', 'nodeGridGapH', 'compactMode'],
   colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
@@ -40,7 +40,9 @@ const defaultSettings = {
   openWithPrograms: [] as string[],
   rootTitleColor: '#ffffff', childTitleColor: '#c0c0e0',
   rootTitleBgColor: '#222240', childTitleBgColor: '#23234d',
-  nodeGridGap: 4,
+  nodeGridGapV: 4,
+  nodeGridGapH: 4,
+  compactMode: false,
   rainbowEnabled: false,
   rainbowColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   language: 'zh' as const,
@@ -244,10 +246,23 @@ onUnmounted(() => {
 
             <h4 style="margin-top: 20px;">{{ $t('settings.node_grid') }}</h4>
             <div class="setting-row">
-              <label>{{ $t('settings.node_grid_gap') }}</label>
-              <input type="range" v-model.number="localSettings.nodeGridGap" min="0" max="40" step="1" />
-              <span class="setting-value">{{ localSettings.nodeGridGap }}px</span>
+              <label>{{ $t('settings.node_grid_gap_v') }}</label>
+              <input type="range" v-model.number="localSettings.nodeGridGapV" min="0" max="40" step="1" />
+              <span class="setting-value">{{ localSettings.nodeGridGapV }}px</span>
             </div>
+            <div class="setting-row">
+              <label>{{ $t('settings.node_grid_gap_h') }}</label>
+              <input type="range" v-model.number="localSettings.nodeGridGapH" min="0" max="40" step="1" />
+              <span class="setting-value">{{ localSettings.nodeGridGapH }}px</span>
+            </div>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.compactMode" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.compact_mode') }}
+              </label>
+            </div>
+            <div class="setting-hint" v-if="localSettings.compactMode">{{ $t('settings.compact_mode_hint') }}</div>
           </div>
 
           <!-- ===== 颜色 ===== -->

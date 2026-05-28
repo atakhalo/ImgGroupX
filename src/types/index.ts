@@ -99,8 +99,12 @@ export interface AppSettings {
   rootTitleBgColor: string
   /** 子节点标题背景色 */
   childTitleBgColor: string
-  /** 节点网格视图间距 */
-  nodeGridGap: number
+  /** 节点网格垂直间距 */
+  nodeGridGapV: number
+  /** 节点网格水平间距 */
+  nodeGridGapH: number
+  /** 紧凑模式（非根节点自适应宽度排列） */
+  compactMode: boolean
   /** 彩虹层级着色开关 */
   rainbowEnabled: boolean
   /** 彩虹层级颜色列表 */

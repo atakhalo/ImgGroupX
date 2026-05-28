@@ -154,6 +154,24 @@ const hasAnySelection = computed(() =>
   state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0
 )
 
+/** 此节点自身是否采用紧凑布局 */
+const isCompactNode = computed(() => {
+  if (!state.settings.compactMode) return false
+  // 根节点不紧凑
+  if (props.depth === 0) return false
+  // 虚拟分组的一级子节点不紧凑
+  if (props.isVirtualRoot && props.depth === 1) return false
+  return true
+})
+
+/** 此节点的子节点是否需要放在 flex-wrap 容器中 */
+const wrapChildren = computed(() => {
+  if (!state.settings.compactMode) return false
+  // 虚拟根节点的一级子节点不紧凑，不需要 wrap
+  if (props.isVirtualRoot && props.depth === 0) return false
+  return true
+})
+
 function handleCopyToFolder() {
   const p = getNodeAbsolutePath()
   console.log('FolderGroup emit copyToFolder:', p)
@@ -225,15 +243,20 @@ function getNodeGridContainerBg(depth: number): string {
 <template>
   <div
     class="folder-group"
-    :class="{ 'folder-group-selected': isSelected() }"
+    :class="{ 
+      'folder-group-selected': isSelected(),
+      'folder-group-compact': isCompactNode,
+    }"
     :style="{ 
       borderRadius: '20px',
       marginLeft: depth === 0 ? 0: 20 + 'px',
       backgroundColor: getNodeGroupBg(depth),
-      marginTop: state.settings.nodeGridGap + 'px',
-      marginBottom: state.settings.nodeGridGap + 'px',
+      marginTop: state.settings.nodeGridGapV + 'px',
+      marginBottom: state.settings.nodeGridGapV + 'px',
       boxShadow: isSelected() ? '0 0 0 2px rgba(100,108,255,0.6)' : 'inset 0 0 0px 2px rgba(255,255,255,0.08)',
 	  padding: '4px',
+      // 紧凑模式下：等分行宽，最小宽度由内容（含图片网格）决定
+      ...(isCompactNode ? { flex: '1 1 0%', minWidth: 'fit-content' } : {}),
     }"
   >
     <div
@@ -376,43 +399,70 @@ function getNodeGridContainerBg(depth: number): string {
       </span>
     </div>
 
-    <template v-if="getExpanded(node)">
-      <!-- 递归子文件夹 -->
-      <FolderGroup
-        v-for="child in node.children"
-        :key="child.path"
-        :node="child"
-        :depth="depth + 1"
-        :rootPath="rootPath"
-        :showTitle="showTitle"
-        :getExpanded="getExpanded"
-        :isVirtualRoot="isVirtualRoot"
-        @toggle="(n: FolderNode) => emit('toggle', n)"
-        @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
-        @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
-        @removeRoot="(p: string) => emit('removeRoot', p)"
-        @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
-        @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
-        @copyToFolder="(p: string) => emit('copyToFolder', p)"
-        @moveToFolder="(p: string) => emit('moveToFolder', p)"
-      />
-      <!-- 当前文件夹图片网格 -->
-      <div
-        v-if="node.images.length"
-        class="folder-grid-wrapper"
-        :style="{
-		  borderRadius:'20px',
-          backgroundColor: getNodeGridWrapperBg(depth),
-        }"
-      >
-        <GridView
-          :images="node.images"
-          :bgColor="getNodeGridContainerBg(depth)"
+    <!-- 递归子文件夹：始终渲染，折叠时隐藏但保留宽度 -->
+    <div
+      v-if="node.children.length"
+      class="folder-children-section"
+      :class="{ 'folder-children-collapsed': !getExpanded(node) }"
+    >
+      <div v-if="wrapChildren" class="folder-children-compact" :style="{ gap: state.settings.nodeGridGapH + 'px' }">
+        <FolderGroup
+          v-for="child in node.children"
+          :key="child.path"
+          :node="child"
+          :depth="depth + 1"
+          :rootPath="rootPath"
+          :showTitle="showTitle"
+          :getExpanded="getExpanded"
+          :isVirtualRoot="isVirtualRoot"
+          @toggle="(n: FolderNode) => emit('toggle', n)"
           @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
           @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
+          @removeRoot="(p: string) => emit('removeRoot', p)"
+          @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
+          @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
+          @copyToFolder="(p: string) => emit('copyToFolder', p)"
+          @moveToFolder="(p: string) => emit('moveToFolder', p)"
         />
       </div>
-    </template>
+      <template v-else>
+        <FolderGroup
+          v-for="child in node.children"
+          :key="child.path"
+          :node="child"
+          :depth="depth + 1"
+          :rootPath="rootPath"
+          :showTitle="showTitle"
+          :getExpanded="getExpanded"
+          :isVirtualRoot="isVirtualRoot"
+          @toggle="(n: FolderNode) => emit('toggle', n)"
+          @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
+          @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
+          @removeRoot="(p: string) => emit('removeRoot', p)"
+          @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
+          @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
+          @copyToFolder="(p: string) => emit('copyToFolder', p)"
+          @moveToFolder="(p: string) => emit('moveToFolder', p)"
+        />
+      </template>
+    </div>
+    <!-- 当前文件夹图片网格：始终渲染，折叠时隐藏但保留宽度 -->
+    <div
+      v-if="node.images.length"
+      class="folder-grid-wrapper"
+      :class="{ 'folder-grid-collapsed': !getExpanded(node) }"
+      :style="{
+		borderRadius:'20px',
+        backgroundColor: getNodeGridWrapperBg(depth),
+      }"
+    >
+      <GridView
+        :images="node.images"
+        :bgColor="getNodeGridContainerBg(depth)"
+        @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
+        @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
+      />
+    </div>
   </div>
 </template>
 
@@ -677,5 +727,38 @@ function getNodeGridContainerBg(depth: number): string {
 .folder-grid-wrapper {
   padding: 0;
   overflow: hidden;
+}
+
+/* ===== 紧凑模式 ===== */
+
+/* 紧凑节点自身：inline-flex，宽度由内容撑开 */
+.folder-group-compact {
+  display: inline-flex;
+  flex-direction: column;
+  width: auto;
+  max-width: 100%;
+  vertical-align: top;
+}
+
+/* 折叠状态：图片网格不可见，高度为 0，宽度保留 */
+.folder-grid-collapsed {
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+}
+
+/* 子文件夹区域折叠状态：不可见，高度为 0，宽度保留 */
+.folder-children-collapsed {
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+}
+
+/* 子节点 flex-wrap 容器：等分占满行宽 */
+.folder-children-compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0;
 }
 </style>
