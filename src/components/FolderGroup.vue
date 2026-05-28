@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { state, openInExplorer, saveVirtualGroup } from '../stores/imageStore'
+import { state, openInExplorer, saveVirtualGroup, getProcessedImages } from '../stores/imageStore'
 import GridView from './GridView.vue'
+import GridItem from './GridItem.vue'
 import FolderGroup from './FolderGroup.vue'
 
 defineOptions({
@@ -164,6 +165,15 @@ const isCompactNode = computed(() => {
   return true
 })
 
+/** 内容区域是否使用统一网格（子节点+图片混合排列）
+ *  与 isCompactNode 不同：根节点自身不紧凑，但内容区域也可使用统一网格 */
+const useUnifiedGrid = computed(() => {
+  if (!state.settings.compactMode) return false
+  // 虚拟分组的一级子节点不紧凑，内容也不使用统一网格
+  if (props.isVirtualRoot && props.depth === 1) return false
+  return true
+})
+
 /** 此节点的子节点是否需要放在 flex-wrap 容器中 */
 const wrapChildren = computed(() => {
   if (!state.settings.compactMode) return false
@@ -171,6 +181,21 @@ const wrapChildren = computed(() => {
   if (props.isVirtualRoot && props.depth === 0) return false
   return true
 })
+
+/** 紧凑模式下统一网格中的图片列表（排序+筛选） */
+const processedImages = computed(() => getProcessedImages(props.node.images))
+
+function isImageSelected(item: ImageItem): boolean {
+  return state.selectedPaths.has(item.path)
+}
+
+function handleGridImageClick(item: ImageItem) {
+  emit('viewImage', item, processedImages.value)
+}
+
+function handleGridImageSelect(item: ImageItem, ctrl: boolean) {
+  emit('selectImage', item, ctrl)
+}
 
 function handleCopyToFolder() {
   const p = getNodeAbsolutePath()
@@ -399,70 +424,111 @@ function getNodeGridContainerBg(depth: number): string {
       </span>
     </div>
 
-    <!-- 递归子文件夹：始终渲染，折叠时隐藏但保留宽度 -->
+    <!-- 紧凑模式：统一内容网格（子节点 + 图片作为同级网格项混合排列） -->
     <div
-      v-if="node.children.length"
-      class="folder-children-section"
-      :class="{ 'folder-children-collapsed': !getExpanded(node) }"
-    >
-      <div v-if="wrapChildren" class="folder-children-compact" :style="{ gap: state.settings.nodeGridGapH + 'px' }">
-        <FolderGroup
-          v-for="child in node.children"
-          :key="child.path"
-          :node="child"
-          :depth="depth + 1"
-          :rootPath="rootPath"
-          :showTitle="showTitle"
-          :getExpanded="getExpanded"
-          :isVirtualRoot="isVirtualRoot"
-          @toggle="(n: FolderNode) => emit('toggle', n)"
-          @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
-          @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
-          @removeRoot="(p: string) => emit('removeRoot', p)"
-          @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
-          @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
-          @copyToFolder="(p: string) => emit('copyToFolder', p)"
-          @moveToFolder="(p: string) => emit('moveToFolder', p)"
-        />
-      </div>
-      <template v-else>
-        <FolderGroup
-          v-for="child in node.children"
-          :key="child.path"
-          :node="child"
-          :depth="depth + 1"
-          :rootPath="rootPath"
-          :showTitle="showTitle"
-          :getExpanded="getExpanded"
-          :isVirtualRoot="isVirtualRoot"
-          @toggle="(n: FolderNode) => emit('toggle', n)"
-          @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
-          @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
-          @removeRoot="(p: string) => emit('removeRoot', p)"
-          @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
-          @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
-          @copyToFolder="(p: string) => emit('copyToFolder', p)"
-          @moveToFolder="(p: string) => emit('moveToFolder', p)"
-        />
-      </template>
-    </div>
-    <!-- 当前文件夹图片网格：始终渲染，折叠时隐藏但保留宽度 -->
-    <div
-      v-if="node.images.length"
-      class="folder-grid-wrapper"
-      :class="{ 'folder-grid-collapsed': !getExpanded(node) }"
+      v-if="useUnifiedGrid"
+      class="folder-content-grid"
+      :class="{ 'folder-content-collapsed': !getExpanded(node) }"
       :style="{
-		borderRadius:'20px',
-        backgroundColor: getNodeGridWrapperBg(depth),
+        gap: state.settings.gap + 'px',
+        backgroundColor: getNodeGridContainerBg(depth),
       }"
     >
-      <GridView
-        :images="node.images"
-        :bgColor="getNodeGridContainerBg(depth)"
+      <FolderGroup
+        v-for="child in node.children"
+        :key="child.path"
+        :node="child"
+        :depth="depth + 1"
+        :rootPath="rootPath"
+        :showTitle="showTitle"
+        :getExpanded="getExpanded"
+        :isVirtualRoot="isVirtualRoot"
+        @toggle="(n: FolderNode) => emit('toggle', n)"
         @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
         @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
+        @removeRoot="(p: string) => emit('removeRoot', p)"
+        @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
+        @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
+        @copyToFolder="(p: string) => emit('copyToFolder', p)"
+        @moveToFolder="(p: string) => emit('moveToFolder', p)"
+      />
+      <GridItem
+        v-for="item in processedImages"
+        :key="item.path"
+        :item="item"
+        :gridSize="state.settings.gridSize"
+        :borderRadius="state.settings.borderRadius"
+        :isSelected="isImageSelected(item)"
+        @click="handleGridImageClick"
+        @select="handleGridImageSelect"
       />
     </div>
+
+    <!-- 非紧凑模式：子节点 + 图片分区域布局 -->
+    <template v-if="!useUnifiedGrid">
+      <div
+        v-if="node.children.length"
+        class="folder-children-section"
+        :class="{ 'folder-children-collapsed': !getExpanded(node) }"
+      >
+        <div v-if="wrapChildren" class="folder-children-compact" :style="{ gap: state.settings.nodeGridGapH + 'px' }">
+          <FolderGroup
+            v-for="child in node.children"
+            :key="child.path"
+            :node="child"
+            :depth="depth + 1"
+            :rootPath="rootPath"
+            :showTitle="showTitle"
+            :getExpanded="getExpanded"
+            :isVirtualRoot="isVirtualRoot"
+            @toggle="(n: FolderNode) => emit('toggle', n)"
+            @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
+            @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
+            @removeRoot="(p: string) => emit('removeRoot', p)"
+            @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
+            @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
+            @copyToFolder="(p: string) => emit('copyToFolder', p)"
+            @moveToFolder="(p: string) => emit('moveToFolder', p)"
+          />
+        </div>
+        <template v-else>
+          <FolderGroup
+            v-for="child in node.children"
+            :key="child.path"
+            :node="child"
+            :depth="depth + 1"
+            :rootPath="rootPath"
+            :showTitle="showTitle"
+            :getExpanded="getExpanded"
+            :isVirtualRoot="isVirtualRoot"
+            @toggle="(n: FolderNode) => emit('toggle', n)"
+            @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
+            @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
+            @removeRoot="(p: string) => emit('removeRoot', p)"
+            @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
+            @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
+            @copyToFolder="(p: string) => emit('copyToFolder', p)"
+            @moveToFolder="(p: string) => emit('moveToFolder', p)"
+          />
+        </template>
+      </div>
+      <div
+        v-if="node.images.length"
+        class="folder-grid-wrapper"
+        :class="{ 'folder-grid-collapsed': !getExpanded(node) }"
+        :style="{
+		  borderRadius:'20px',
+          backgroundColor: getNodeGridWrapperBg(depth),
+        }"
+      >
+        <GridView
+          :images="node.images"
+          :bgColor="getNodeGridContainerBg(depth)"
+          @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
+          @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
+        />
+      </div>
+    </template>
   </div>
 </template>
 
@@ -739,6 +805,28 @@ function getNodeGridContainerBg(depth: number): string {
   max-width: 100%;
   vertical-align: top;
 }
+
+/* ===== 紧凑模式 - 统一内容网格 ===== */
+
+/* 统一网格容器：flex-wrap，子节点和图片作为同级项排列 */
+.folder-content-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+/* 折叠状态：不可见，高度为 0，宽度保留 */
+.folder-content-collapsed {
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+}
+
+/* ===== 非紧凑模式 - 原有布局 ===== */
 
 /* 折叠状态：图片网格不可见，高度为 0，宽度保留 */
 .folder-grid-collapsed {
