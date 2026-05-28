@@ -107,6 +107,8 @@ export interface AppSettings {
   compactMode: boolean
   /** 标题栏紧凑（紧凑模式时隐藏打开/移动/复制/移除按钮） */
   compactHeader: boolean
+  /** 层级压缩（隐藏只有一个子节点的中间节点，路径合并到子节点标题） */
+  collapseHierarchy: boolean
   /** 彩虹层级着色开关 */
   rainbowEnabled: boolean
   /** 彩虹层级颜色列表 */

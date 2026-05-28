@@ -25,7 +25,7 @@ const tabs = [
 /** 各标签页对应的设置字段 */
 const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   general: ['language', 'maxLoadSizeMB', 'loadSkippedOnView', 'filterPresets', 'filterRegex', 'filterTarget', 'sortBy', 'sortOrder'],
-  grid: ['borderRadius', 'gap', 'gridSize', 'bgColor', 'nodeGridGapV', 'nodeGridGapH', 'compactMode', 'compactHeader'],
+  grid: ['borderRadius', 'gap', 'gridSize', 'bgColor', 'nodeGridGapV', 'nodeGridGapH', 'compactMode', 'compactHeader', 'collapseHierarchy'],
   colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
@@ -44,6 +44,7 @@ const defaultSettings = {
   nodeGridGapH: 4,
   compactMode: false,
   compactHeader: false,
+  collapseHierarchy: false,
   rainbowEnabled: false,
   rainbowColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   language: 'zh' as const,
@@ -263,7 +264,7 @@ onUnmounted(() => {
                 {{ $t('settings.compact_mode') }}
               </label>
             </div>
-            <div class="setting-hint" v-if="localSettings.compactMode">{{ $t('settings.compact_mode_hint') }}</div>
+            <div class="setting-hint">{{ $t('settings.compact_mode_hint') }}</div>
             <div class="setting-row" v-if="localSettings.compactMode">
               <label class="toggle-label">
                 <input type="checkbox" v-model="localSettings.compactHeader" class="toggle-input" />
@@ -271,7 +272,15 @@ onUnmounted(() => {
                 {{ $t('settings.compact_header') }}
               </label>
             </div>
-            <div class="setting-hint" v-if="localSettings.compactMode && localSettings.compactHeader">{{ $t('settings.compact_header_hint') }}</div>
+            <div class="setting-hint" v-if="localSettings.compactMode">{{ $t('settings.compact_header_hint') }}</div>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.collapseHierarchy" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.collapse_hierarchy') }}
+              </label>
+            </div>
+            <div class="setting-hint">{{ $t('settings.collapse_hierarchy_hint') }}</div>
           </div>
 
           <!-- ===== 颜色 ===== -->

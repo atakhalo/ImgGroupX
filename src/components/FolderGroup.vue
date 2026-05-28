@@ -10,7 +10,7 @@ defineOptions({
   name: 'FolderGroup',
 })
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   node: FolderNode
   depth: number
   rootPath: string
@@ -18,7 +18,13 @@ const props = defineProps<{
   getExpanded: (node: FolderNode) => boolean
   isVirtualRoot?: boolean
   vgIndex?: number
-}>()
+  collapsePrefix?: string
+  /** 真实层级深度（不受压缩影响） */
+  realDepth?: number
+}>(), {
+  collapsePrefix: '',
+  realDepth: 0,
+})
 
 const emit = defineEmits<{
   toggle: [node: FolderNode]
@@ -154,6 +160,33 @@ const hasFirstLevelSelection = () => {
 const hasAnySelection = computed(() =>
   state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0
 )
+
+/** 是否启用层级压缩（只有一个子节点时跳过自身） */
+const shouldCollapse = computed(() => {
+  if (!state.settings.collapseHierarchy) return false
+  if (props.node.children.length !== 1) return false
+  return true
+})
+
+/** 压缩路径分段：每段对应其原始层级 */
+const collapsePrefixSegments = computed(() => {
+  const prefix = props.collapsePrefix
+  if (!prefix) return []
+  const parts = prefix.split(' / ').filter(Boolean)
+  // 根据 realDepth 计算每段的起始层级
+  const startLevel = props.realDepth - parts.length
+  return parts.map((name, i) => ({
+    name: name + ' / ',
+    level: startLevel + i,
+  }))
+})
+
+/** 获取路径段在对应层级的颜色（与 getBaseColor 映射一致） */
+function getSegmentColor(level: number): string {
+  if (!state.settings.rainbowEnabled) return 'rgba(255, 255, 255, 0.35)'
+  // 使用 getBaseColor(level + 1)，与节点着色算法一致
+  return hexToRgba(getBaseColor(level), 0.85)
+}
 
 /** 此节点自身是否采用紧凑布局 */
 const isCompactNode = computed(() => {
@@ -297,8 +330,33 @@ function getNodeGridContainerBg(depth: number): string {
 </script>
 
 <template>
-  <div
-    class="folder-group"
+  <!-- 层级压缩：跳过当前节点，子节点继承路径 -->
+  <template v-if="shouldCollapse">
+    <FolderGroup
+      v-for="child in node.children"
+      :key="child.path"
+      :node="child"
+      :depth="depth"
+      :rootPath="rootPath"
+      :showTitle="showTitle"
+      :getExpanded="getExpanded"
+      :isVirtualRoot="isVirtualRoot"
+      :collapsePrefix="collapsePrefix + node.name + ' / '"
+      :realDepth="realDepth + 1"
+      @toggle="(n: FolderNode) => emit('toggle', n)"
+      @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
+      @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
+      @removeRoot="(p: string) => emit('removeRoot', p)"
+      @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
+      @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
+      @copyToFolder="(p: string) => emit('copyToFolder', p)"
+      @moveToFolder="(p: string) => emit('moveToFolder', p)"
+    />
+  </template>
+  <!-- 正常渲染 -->
+  <template v-else>
+    <div
+      class="folder-group"
     :class="{ 
       'folder-group-selected': isSelected(),
       'folder-group-compact': isCompactNode,
@@ -306,7 +364,7 @@ function getNodeGridContainerBg(depth: number): string {
     :style="{ 
       borderRadius: '20px',
       marginLeft: depth === 0 ? 0: 20 + 'px',
-      backgroundColor: getNodeGroupBg(depth),
+      backgroundColor: getNodeGroupBg(realDepth),
       marginTop: state.settings.nodeGridGapV + 'px',
       marginBottom: state.settings.nodeGridGapV + 'px',
       boxShadow: isSelected() ? '0 0 0 2px rgba(100,108,255,0.6)' : 'inset 0 0 0px 2px rgba(255,255,255,0.08)',
@@ -324,7 +382,7 @@ function getNodeGridContainerBg(depth: number): string {
       }"
       :style="{
         borderRadius: '20px',
-        backgroundColor: getNodeHeaderBg(depth),
+        backgroundColor: getNodeHeaderBg(realDepth),
         boxShadow: 'inset 0 0 0px 1px rgba(255,255,255,0.06)',
       }"
       @click="handleToggle"
@@ -417,9 +475,12 @@ function getNodeGridContainerBg(depth: number): string {
           </template>
         </span>
       </span>
-      <span class="folder-label">
+      <span class="folder-label" :class="{ 'has-collapse': collapsePrefixSegments.length > 0 }">
         <span class="folder-arrow">{{ getExpanded(node) ? '▼' : '▶' }}</span>
-        <span class="folder-name" :style="{ color: depth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ node.name }}</span>
+        <span v-if="collapsePrefixSegments.length" class="collapse-prefix">
+          <span v-for="(seg, i) in collapsePrefixSegments" :key="i" :style="{ color: getSegmentColor(seg.level) }">{{ seg.name }}</span>
+        </span>
+        <span class="folder-name" :style="{ color: realDepth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ node.name }}</span>
         <span v-if="totalCount(node)" class="folder-count" :class="{ 'all-selected': state.selectMode === 'select' && nodeSelectionState === 'all' }">
           <template v-if="state.selectMode === 'select' && nodeSelectionState !== 'none'">
             (<span :class="{ 'partial-selected': nodeSelectionState === 'partial' }">{{ countSelectedInNode(props.node) }}</span><span class="sep">/</span>{{ totalCount(node) }})
@@ -583,7 +644,7 @@ function getNodeGridContainerBg(depth: number): string {
       :class="{ 'folder-content-collapsed': !getExpanded(node) }"
       :style="{
         gap: state.settings.gap + 'px',
-        backgroundColor: getNodeGridContainerBg(depth),
+        backgroundColor: getNodeGridContainerBg(realDepth),
       }"
     >
       <FolderGroup
@@ -591,6 +652,7 @@ function getNodeGridContainerBg(depth: number): string {
         :key="child.path"
         :node="child"
         :depth="depth + 1"
+        :realDepth="realDepth + 1"
         :rootPath="rootPath"
         :showTitle="showTitle"
         :getExpanded="getExpanded"
@@ -629,6 +691,7 @@ function getNodeGridContainerBg(depth: number): string {
             :key="child.path"
             :node="child"
             :depth="depth + 1"
+            :realDepth="realDepth + 1"
             :rootPath="rootPath"
             :showTitle="showTitle"
             :getExpanded="getExpanded"
@@ -649,6 +712,7 @@ function getNodeGridContainerBg(depth: number): string {
             :key="child.path"
             :node="child"
             :depth="depth + 1"
+            :realDepth="realDepth + 1"
             :rootPath="rootPath"
             :showTitle="showTitle"
             :getExpanded="getExpanded"
@@ -670,18 +734,19 @@ function getNodeGridContainerBg(depth: number): string {
         :class="{ 'folder-grid-collapsed': !getExpanded(node) }"
         :style="{
 		  borderRadius:'20px',
-          backgroundColor: getNodeGridWrapperBg(depth),
+          backgroundColor: getNodeGridWrapperBg(realDepth),
         }"
       >
         <GridView
           :images="node.images"
-          :bgColor="getNodeGridContainerBg(depth)"
+          :bgColor="getNodeGridContainerBg(realDepth)"
           @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
           @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
         />
       </div>
     </template>
   </div>
+  </template>
 </template>
 
 <style scoped>
@@ -901,6 +966,16 @@ function getNodeGridContainerBg(depth: number): string {
   border-color: rgba(255, 60, 60, 0.4);
 }
 
+.collapse-prefix {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 200px;
+  /* text-shadow: 0 1px 3px rgba(0,0,0,0.5); */
+}
+
 .folder-arrow {
   font-size: 10px;
   color: rgba(255, 255, 255, 0.4);
@@ -932,6 +1007,12 @@ function getNodeGridContainerBg(depth: number): string {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.folder-label.has-collapse {
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  padding: 2px 8px;
 }
 
 .folder-name {
