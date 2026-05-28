@@ -21,6 +21,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'close', defaultKey: 'Escape', scope: 'global', labelKey: 'shortcuts.close' },
   // 网格视图
   { id: 'grid.zoom', defaultKey: 'Ctrl+Wheel', scope: 'grid', labelKey: 'shortcuts.grid_zoom', readonly: true },
+  { id: 'grid.shiftSelect', defaultKey: 'Shift+点击', scope: 'grid', labelKey: 'shortcuts.grid_shift_select', readonly: true },
   // 查看器
   { id: 'viewer.prev', defaultKey: 'ArrowLeft', scope: 'viewer', labelKey: 'shortcuts.viewer_prev' },
   { id: 'viewer.next', defaultKey: 'ArrowRight', scope: 'viewer', labelKey: 'shortcuts.viewer_next' },

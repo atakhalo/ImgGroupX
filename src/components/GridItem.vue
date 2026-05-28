@@ -22,7 +22,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   click: [item: ImageItem]
-  select: [item: ImageItem, ctrl: boolean]
+  select: [item: ImageItem, ctrl: boolean, shift: boolean]
 }>()
 
 const isImage = computed(() => IMAGE_EXTENSIONS.has(props.item.ext))
@@ -129,7 +129,7 @@ const ctxMenu = ref({ show: false, x: 0, y: 0 })
 
 function handleClick(e: MouseEvent) {
   if (state.selectMode === 'select') {
-    emit('select', props.item, e.ctrlKey || e.metaKey)
+    emit('select', props.item, e.ctrlKey || e.metaKey, e.shiftKey)
   } else {
     emit('click', props.item)
   }

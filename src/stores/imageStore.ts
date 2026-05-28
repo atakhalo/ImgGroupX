@@ -100,6 +100,8 @@ export const state = reactive({
   pendingChanges: [] as string[],
   /** 用户取消扫描的根路径集合（忽略其后续事件） */
   cancelledRoots: new Set<string>(),
+  /** Shift 连选：上次选中的图片路径（全局唯一，用于检测跨节点） */
+  lastSelectedImagePath: null as string | null,
   /** 重命名对话框状态 */
   renameDialog: {
     show: false,

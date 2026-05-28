@@ -26,6 +26,8 @@ const displayLimit = ref(INITIAL_LIMIT)
 
 const processedImages = computed(() => getProcessedImages(props.images))
 
+
+
 /** 当前 DOM 中渲染的图片 */
 const visibleImages = computed(() =>
   processedImages.value.slice(0, displayLimit.value)
@@ -68,8 +70,32 @@ function handleClick(item: ImageItem) {
   emit('viewImage', item, processedImages.value)
 }
 
-function handleSelect(item: ImageItem, ctrl: boolean) {
-  emit('selectImage', item, ctrl)
+function handleSelect(item: ImageItem, ctrl: boolean, shift: boolean) {
+  if (shift && state.lastSelectedImagePath) {
+    // 查找上次选中在当前列表中的索引
+    const lastIdx = processedImages.value.findIndex(i => i.path === state.lastSelectedImagePath)
+    if (lastIdx < 0) {
+      // 上次选中的不在当前列表（跨节点），只选当前图片并更新锚点
+      emit('selectImage', item, ctrl)
+      state.lastSelectedImagePath = item.path
+      return
+    }
+    const currentIdx = processedImages.value.findIndex(i => i.path === item.path)
+    if (currentIdx >= 0) {
+      const start = Math.min(lastIdx, currentIdx)
+      const end = Math.max(lastIdx, currentIdx)
+      const isSelecting = !state.selectedPaths.has(item.path)
+      for (let i = start; i <= end; i++) {
+        const p = processedImages.value[i].path
+        if (isSelecting) state.selectedPaths.add(p)
+        else state.selectedPaths.delete(p)
+      }
+    }
+    state.lastSelectedImagePath = item.path
+  } else {
+    emit('selectImage', item, ctrl)
+    state.lastSelectedImagePath = item.path
+  }
 }
 
 function isSelected(item: ImageItem): boolean {
