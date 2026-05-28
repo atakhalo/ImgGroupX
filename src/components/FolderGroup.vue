@@ -643,7 +643,7 @@ function getNodeGridContainerBg(depth: number): string {
       class="folder-content-grid"
       :class="{ 'folder-content-collapsed': !getExpanded(node) }"
       :style="{
-        gap: state.settings.gap + 'px',
+        gap: getExpanded(node) ? state.settings.gap + 'px' : '0',
         backgroundColor: getNodeGridContainerBg(realDepth),
       }"
     >
@@ -1122,6 +1122,8 @@ function getNodeGridContainerBg(depth: number): string {
   visibility: hidden;
   height: 0;
   overflow: hidden;
+  padding: 0 !important;
+  gap: 0 !important;
 }
 
 /* ===== 非紧凑模式 - 原有布局 ===== */
