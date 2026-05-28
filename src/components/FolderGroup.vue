@@ -164,10 +164,12 @@ const hasAnySelection = computed(() =>
   state.selectedPaths.size > 0 || state.selectedFolderPaths.size > 0
 )
 
-/** 是否启用层级压缩（只有一个子节点时跳过自身） */
+/** 是否启用层级压缩（只有一个子节点且无图片时跳过自身） */
 const shouldCollapse = computed(() => {
   if (!state.settings.collapseHierarchy) return false
   if (props.node.children.length !== 1) return false
+  // 有图片（一级图片）的节点不压缩，避免图片归属混乱
+  if (props.node.images.length > 0) return false
   return true
 })
 
