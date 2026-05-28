@@ -28,6 +28,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'viewer.zoomIn', defaultKey: '+', altKeys: ['='], scope: 'viewer', labelKey: 'shortcuts.viewer_zoom_in' },
   { id: 'viewer.zoomOut', defaultKey: '-', scope: 'viewer', labelKey: 'shortcuts.viewer_zoom_out' },
   { id: 'viewer.zoomWheel', defaultKey: 'Wheel', scope: 'viewer', labelKey: 'shortcuts.viewer_zoom_wheel', readonly: true },
+  { id: 'viewer.prevNode', defaultKey: 'Ctrl+←', scope: 'viewer', labelKey: 'shortcuts.viewer_prev_node', readonly: true },
+  { id: 'viewer.nextNode', defaultKey: 'Ctrl+→', scope: 'viewer', labelKey: 'shortcuts.viewer_next_node', readonly: true },
   { id: 'viewer.delete', defaultKey: 'Delete', scope: 'viewer', labelKey: 'shortcuts.viewer_delete' },
   { id: 'viewer.mark0', defaultKey: '`', altKeys: ['0'], scope: 'viewer', labelKey: 'shortcuts.viewer_mark_0' },
   { id: 'viewer.mark1', defaultKey: '1', scope: 'viewer', labelKey: 'shortcuts.viewer_mark_1' },

@@ -22,6 +22,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   deleteImage: [path: string, index: number]
+  prevNode: []
+  nextNode: []
 }>()
 
 const currentIndex = ref(props.initialIndex)
@@ -164,7 +166,9 @@ function handleKeydown(e: KeyboardEvent) {
   if (matchShortcut(e, 'close')) {
     if (isFullscreen.value) exitFullscreen()
     else emit('close')
-  } else if (matchShortcut(e, 'viewer.prev')) prevImage()
+  } else if (e.ctrlKey && e.key === 'ArrowLeft') { e.preventDefault(); emit('prevNode') }
+  else if (e.ctrlKey && e.key === 'ArrowRight') { e.preventDefault(); emit('nextNode') }
+  else if (matchShortcut(e, 'viewer.prev')) prevImage()
   else if (matchShortcut(e, 'viewer.next')) nextImage()
   else if (matchShortcut(e, 'viewer.zoomIn')) zoomIn()
   else if (matchShortcut(e, 'viewer.zoomOut')) zoomOut()

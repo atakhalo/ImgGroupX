@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage } from './stores/imageStore'
-import type { ImageItem } from './types'
+import type { ImageItem, FolderNode } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
 import ControlBar from './components/ControlBar.vue'
@@ -313,6 +313,53 @@ async function handleViewerDelete(path: string, index: number) {
   viewingImages.value = updated
   // 使用删除时的实际索引计算新位置，避免因查看器内导航导致索引不同步
   viewingIndex.value = Math.min(index, updated.length - 1)
+}
+
+/** 收集树中所有节点的图片组（后序遍历：子节点→父节点） */
+function collectAllImageGroups(): { images: ImageItem[]; path: string }[] {
+  const groups: { images: ImageItem[]; path: string }[] = []
+  const tree = buildFolderTree(state.allImages, state.loadedRootPaths)
+  function walk(nodes: FolderNode[]) {
+    for (const node of nodes) {
+      if (node.children.length > 0) {
+        walk(node.children)
+      }
+      if (node.images.length > 0) {
+        groups.push({ images: node.images, path: node.path })
+      }
+    }
+  }
+  walk(tree)
+  return groups
+}
+
+/** 查找当前图片所属的节点组索引 */
+function findCurrentGroupIndex(groups: { images: ImageItem[]; path: string }[], imagePath: string): number {
+  return groups.findIndex(g => g.images.some(img => img.path === imagePath))
+}
+
+/** 大图查看器：切换到上一节点 */
+function handleViewerPrevNode() {
+  const currentItem = viewingImages.value[viewingIndex.value]
+  if (!currentItem) return
+  const groups = collectAllImageGroups()
+  const idx = findCurrentGroupIndex(groups, currentItem.path)
+  if (idx <= 0) return
+  const prevGroup = groups[idx - 1]
+  viewingImages.value = [...prevGroup.images]
+  viewingIndex.value = prevGroup.images.length - 1
+}
+
+/** 大图查看器：切换到下一节点 */
+function handleViewerNextNode() {
+  const currentItem = viewingImages.value[viewingIndex.value]
+  if (!currentItem) return
+  const groups = collectAllImageGroups()
+  const idx = findCurrentGroupIndex(groups, currentItem.path)
+  if (idx < 0 || idx >= groups.length - 1) return
+  const nextGroup = groups[idx + 1]
+  viewingImages.value = [...nextGroup.images]
+  viewingIndex.value = 0
 }
 
 function toggleFolderGroup() { state.folderGroup = !state.folderGroup }
@@ -666,7 +713,7 @@ async function handleRefresh() {
     <SettingsPanel v-if="showSettingsPanel" @close="closeSettings" />
 
     <!-- 大图查看器 -->
-    <ImageViewer v-if="viewingIndex >= 0" :key="viewerKey" :images="viewingImages" :initialIndex="viewingIndex" @close="closeViewer" @deleteImage="handleViewerDelete" />
+    <ImageViewer v-if="viewingIndex >= 0" :key="viewerKey" :images="viewingImages" :initialIndex="viewingIndex" @close="closeViewer" @deleteImage="handleViewerDelete" @prevNode="handleViewerPrevNode" @nextNode="handleViewerNextNode" />
 
     <!-- 对比查看器 -->
     <CompareViewer v-if="showCompare && comparePair" :left="comparePair.left" :right="comparePair.right" @close="closeCompare" />
