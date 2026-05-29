@@ -28,7 +28,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   toggle: [node: FolderNode]
-  viewImage: [item: ImageItem, scope?: ImageItem[]]
+  viewImage: [item: ImageItem, scope?: ImageItem[], isVirtual?: boolean]
   selectImage: [item: ImageItem, ctrl: boolean]
   removeRoot: [path: string]
   excludeNode: [rootPath: string, subPath: string]
@@ -230,7 +230,7 @@ function isImageSelected(item: ImageItem): boolean {
 }
 
 function handleGridImageClick(item: ImageItem) {
-  emit('viewImage', item, processedImages.value)
+  emit('viewImage', item, processedImages.value, props.isVirtualRoot)
 }
 
 function handleGridImageSelect(item: ImageItem, ctrl: boolean, shift: boolean) {
@@ -389,7 +389,7 @@ function getNodeGridContainerBg(depth: number): string {
       :collapsePrefix="collapsePrefix + node.name + ' / '"
       :realDepth="realDepth + 1"
       @toggle="(n: FolderNode) => emit('toggle', n)"
-      @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
+      @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean) => emit('viewImage', item, scope, isVirtual)"
       @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
       @removeRoot="(p: string) => emit('removeRoot', p)"
       @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -714,7 +714,7 @@ function getNodeGridContainerBg(depth: number): string {
         :getExpanded="getExpanded"
         :isVirtualRoot="isVirtualRoot"
         @toggle="(n: FolderNode) => emit('toggle', n)"
-        @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
+        @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean) => emit('viewImage', item, scope, isVirtual)"
         @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
         @removeRoot="(p: string) => emit('removeRoot', p)"
         @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -753,7 +753,7 @@ function getNodeGridContainerBg(depth: number): string {
             :getExpanded="getExpanded"
             :isVirtualRoot="isVirtualRoot"
             @toggle="(n: FolderNode) => emit('toggle', n)"
-            @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
+            @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean) => emit('viewImage', item, scope, isVirtual)"
             @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
             @removeRoot="(p: string) => emit('removeRoot', p)"
             @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -774,7 +774,7 @@ function getNodeGridContainerBg(depth: number): string {
             :getExpanded="getExpanded"
             :isVirtualRoot="isVirtualRoot"
             @toggle="(n: FolderNode) => emit('toggle', n)"
-            @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
+            @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean) => emit('viewImage', item, scope, isVirtual)"
             @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
             @removeRoot="(p: string) => emit('removeRoot', p)"
             @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -796,7 +796,7 @@ function getNodeGridContainerBg(depth: number): string {
         <GridView
           :images="node.images"
           :bgColor="getNodeGridContainerBg(realDepth)"
-          @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope)"
+          @viewImage="(item: ImageItem, scope: ImageItem[]) => emit('viewImage', item, scope, props.isVirtualRoot)"
           @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
         />
       </div>

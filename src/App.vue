@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut } from './utils/shortcuts'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage } from './stores/imageStore'
 import type { ImageItem, FolderNode } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -22,6 +22,7 @@ const folderPanelRef = ref<InstanceType<typeof FolderPanel>>()
 const viewingIndex = ref(-1)
 const viewingImages = ref<ImageItem[]>([])
 const viewerKey = ref(0)
+const viewingIsVirtual = ref(false)
 const showControls = ref(true)
 const isDragOver = ref(false)
 const showSettingsPanel = ref(false)
@@ -289,7 +290,7 @@ async function handleOpenImages() {
   }
 }
 
-function viewImage(item: ImageItem, scope?: ImageItem[]) {
+function viewImage(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean) {
   const images = (scope && state.folderGroup) ? scope : state.allImages
   const idx = images.findIndex(i => i.path === item.path)
   if (idx >= 0) {
@@ -299,6 +300,7 @@ function viewImage(item: ImageItem, scope?: ImageItem[]) {
     viewingImages.value = [item]
     viewingIndex.value = 0
   }
+  viewingIsVirtual.value = !!(isVirtual && state.folderGroup && scope)
 }
 
 function selectImage(item: ImageItem, _ctrl: boolean) {
@@ -325,6 +327,23 @@ async function handleViewerDelete(path: string, index: number) {
   viewingIndex.value = Math.min(index, updated.length - 1)
 }
 
+/** 收集虚拟分组中所有节点的图片组（后序遍历，与 collectAllImageGroups 一致） */
+function collectVirtualImageGroups(): { images: ImageItem[]; path: string }[] {
+  const groups: { images: ImageItem[]; path: string }[] = []
+  function walk(nodes: FolderNode[]) {
+    for (const node of nodes) {
+      if (node.children.length > 0) {
+        walk(node.children)
+      }
+      if (node.images.length > 0) {
+        groups.push({ images: node.images, path: node.path })
+      }
+    }
+  }
+  walk(state.virtualGroups)
+  return groups
+}
+
 /** 收集树中所有节点的图片组（后序遍历：子节点→父节点） */
 function collectAllImageGroups(): { images: ImageItem[]; path: string }[] {
   const groups: { images: ImageItem[]; path: string }[] = []
@@ -343,6 +362,39 @@ function collectAllImageGroups(): { images: ImageItem[]; path: string }[] {
   return groups
 }
 
+/** 在树节点列表中递归查找目标路径的显示路径 */
+function findDisplayPathInNodes(nodes: FolderNode[], targetPath: string, prefix: string): string | null {
+  for (const node of nodes) {
+    const current = prefix + ' / ' + node.name
+    if (node.path === targetPath) return current
+    if (node.children.length > 0) {
+      const result = findDisplayPathInNodes(node.children, targetPath, current)
+      if (result) return result
+    }
+  }
+  return null
+}
+
+/** 获取节点组的显示路径（用于冒泡提示） */
+function getGroupDisplayPath(groupPath: string, isVirtual: boolean): string {
+  if (isVirtual) {
+    for (const vg of state.virtualGroups) {
+      if (vg.path === groupPath) return vg.name
+      const result = findDisplayPathInNodes(vg.children, groupPath, vg.name)
+      if (result) return result
+    }
+    return groupPath
+  } else {
+    const tree = buildFolderTree(state.allImages, state.loadedRootPaths)
+    for (const root of tree) {
+      if (root.path === groupPath) return root.name
+      const result = findDisplayPathInNodes(root.children, groupPath, root.name)
+      if (result) return result
+    }
+    return groupPath.split('/').pop() || groupPath
+  }
+}
+
 /** 查找当前图片所属的节点组索引 */
 function findCurrentGroupIndex(groups: { images: ImageItem[]; path: string }[], imagePath: string): number {
   return groups.findIndex(g => g.images.some(img => img.path === imagePath))
@@ -352,24 +404,26 @@ function findCurrentGroupIndex(groups: { images: ImageItem[]; path: string }[], 
 function handleViewerPrevNode() {
   const currentItem = viewingImages.value[viewingIndex.value]
   if (!currentItem) return
-  const groups = collectAllImageGroups()
+  const groups = viewingIsVirtual.value ? collectVirtualImageGroups() : collectAllImageGroups()
   const idx = findCurrentGroupIndex(groups, currentItem.path)
   if (idx <= 0) return
   const prevGroup = groups[idx - 1]
   viewingImages.value = [...prevGroup.images]
   viewingIndex.value = prevGroup.images.length - 1
+  showToast(`切换至 ${getGroupDisplayPath(prevGroup.path, viewingIsVirtual.value)}`, 1000)
 }
 
 /** 大图查看器：切换到下一节点 */
 function handleViewerNextNode() {
   const currentItem = viewingImages.value[viewingIndex.value]
   if (!currentItem) return
-  const groups = collectAllImageGroups()
+  const groups = viewingIsVirtual.value ? collectVirtualImageGroups() : collectAllImageGroups()
   const idx = findCurrentGroupIndex(groups, currentItem.path)
   if (idx < 0 || idx >= groups.length - 1) return
   const nextGroup = groups[idx + 1]
   viewingImages.value = [...nextGroup.images]
   viewingIndex.value = 0
+  showToast(`切换至 ${getGroupDisplayPath(nextGroup.path, viewingIsVirtual.value)}`, 1000)
 }
 
 function toggleFolderGroup() { state.folderGroup = !state.folderGroup }
@@ -617,7 +671,7 @@ async function handleRefresh() {
         </Teleport>
         <!-- 未分组模式：所有图片平铺网格 -->
         <template v-if="!state.folderGroup">
-          <GridView :images="displayImages" @viewImage="(item: ImageItem, scope?: ImageItem[]) => viewImage(item, scope)" @selectImage="selectImage" />
+          <GridView :images="displayImages" @viewImage="(item: ImageItem, scope: ImageItem[]) => viewImage(item, scope)" @selectImage="selectImage" />
           <!-- 虚拟分组（未分组模式下额外显示） -->
           <template v-for="(vg, vi) in state.virtualGroups" :key="vg.path">
             <div class="vg-section">
@@ -631,7 +685,7 @@ async function handleRefresh() {
                   </svg>
                 </button>
               </div>
-              <GridView :images="vg.images" @viewImage="(item: ImageItem, scope?: ImageItem[]) => viewImage(item, scope)" @selectImage="selectImage" />
+              <GridView :images="vg.images" @viewImage="(item: ImageItem, scope: ImageItem[]) => viewImage(item, scope)" @selectImage="selectImage" />
             </div>
           </template>
         </template>
@@ -641,7 +695,7 @@ async function handleRefresh() {
             ref="folderPanelRef"
             :images="state.allImages"
             :virtualGroups="state.virtualGroups"
-            @viewImage="(item: ImageItem, scope?: ImageItem[]) => viewImage(item, scope)"
+            @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean) => viewImage(item, scope, isVirtual)"
             @selectImage="selectImage"
             @deleteVirtualGroup="handleDeleteVirtualGroup"
             @removeRoot="removeFolderRoot"

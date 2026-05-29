@@ -218,6 +218,14 @@ watch(() => props.images.length, () => {
   loadCurrentImage()
 })
 
+// 数组引用变化时也重新加载（切换节点时数组长度可能相同，但内容已变）
+watch(() => props.images, () => {
+  if (currentIndex.value >= props.images.length) {
+    currentIndex.value = Math.max(0, props.images.length - 1)
+  }
+  loadCurrentImage()
+})
+
 // 缩放超过 100% 时自动开启平移（设置启用时）
 watch([scale, () => state.settings.autoPan], ([s, auto]) => {
   if (auto && s > 1) panMode.value = true
