@@ -102,9 +102,9 @@ onUnmounted(() => {
       <span>{{ $t('control.new_group') }}</span>
     </button>
 
-    <!-- 对比 -->
+    <!-- 对比（2-8张） -->
     <button
-      v-if="state.selectedPaths.size === 2 && state.selectedFolderPaths.size === 0"
+      v-if="state.selectedPaths.size >= 2 && state.selectedPaths.size <= 8 && state.selectedFolderPaths.size === 0"
       class="ctrl-btn"
       :title="$t('control.compare')"
       @click="emit('compare')"

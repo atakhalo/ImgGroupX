@@ -30,9 +30,9 @@ const showSettingsPanel = ref(false)
 const groupNameInput = ref('')
 const showGroupNameInput = ref(false)
 
-// 对比模式
+// 对比模式（多图比对，2-8张）
 const showCompare = ref(false)
-const comparePair = ref<{ left: ImageItem; right: ImageItem } | null>(null)
+const compareImages = ref<ImageItem[]>([])
 
 // 内容区右键菜单（模式切换）
 const contentCtx = ref({ show: false, x: 0, y: 0 })
@@ -444,11 +444,10 @@ function confirmRename() {
 function handleCompare() {
   if (state.selectedFolderPaths.size > 0) return
   const paths = Array.from(state.selectedPaths)
-  if (paths.length !== 2) return
-  const left = state.allImages.find(img => img.path === paths[0])
-  const right = state.allImages.find(img => img.path === paths[1])
-  if (left && right) {
-    comparePair.value = { left, right }
+  if (paths.length < 2 || paths.length > 8) return
+  const imgs = paths.map(p => state.allImages.find(img => img.path === p)).filter(Boolean) as ImageItem[]
+  if (imgs.length >= 2) {
+    compareImages.value = imgs
     showCompare.value = true
   }
 }
@@ -481,7 +480,7 @@ async function handleMoveToFolder(targetPath: string) {
 
 function closeCompare() {
   showCompare.value = false
-  comparePair.value = null
+  compareImages.value = []
 }
 
 function openSettings() {
@@ -725,8 +724,8 @@ async function handleRefresh() {
     <!-- 大图查看器 -->
     <ImageViewer v-if="viewingIndex >= 0" :key="viewerKey" :images="viewingImages" :initialIndex="viewingIndex" @close="closeViewer" @deleteImage="handleViewerDelete" @prevNode="handleViewerPrevNode" @nextNode="handleViewerNextNode" />
 
-    <!-- 对比查看器 -->
-    <CompareViewer v-if="showCompare && comparePair" :left="comparePair.left" :right="comparePair.right" @close="closeCompare" />
+    <!-- 对比查看器（多图比对） -->
+    <CompareViewer v-if="showCompare && compareImages.length >= 2" :images="compareImages" @close="closeCompare" />
 
     <!-- 冒泡提示 -->
     <div v-if="toastState.visible" class="toast-bubble">{{ toastState.text }}</div>
