@@ -588,6 +588,24 @@ export function removeVirtualGroup(index: number) {
 }
 
 /** 设置指定图片的标记等级 */
+/** 递归更新节点树中指定路径图片的标记 */
+function updateNodeTreeMark(nodes: FolderNode[], path: string, level: import('../types').MarkLevel) {
+  for (const node of nodes) {
+    for (const img of node.images) {
+      if (img.path === path) {
+        if (level === 0) {
+          delete img.markLevel
+        } else {
+          img.markLevel = level
+        }
+      }
+    }
+    if (node.children.length > 0) {
+      updateNodeTreeMark(node.children, path, level)
+    }
+  }
+}
+
 export function setImageMark(path: string, level: import('../types').MarkLevel) {
   const img = state.allImages.find(i => i.path === path)
   if (img) {
@@ -597,17 +615,8 @@ export function setImageMark(path: string, level: import('../types').MarkLevel) 
       img.markLevel = level
     }
   }
-  // 同时更新虚拟分组中的图片
-  for (const vg of state.virtualGroups) {
-    const vgImg = vg.images.find(i => i.path === path)
-    if (vgImg) {
-      if (level === 0) {
-        delete vgImg.markLevel
-      } else {
-        vgImg.markLevel = level
-      }
-    }
-  }
+  // 同时更新虚拟分组中的图片（含子节点树）
+  updateNodeTreeMark(state.virtualGroups, path, level)
 }
 
 /** 为所有选中图片（含文件夹节点内图片）设置标记 */

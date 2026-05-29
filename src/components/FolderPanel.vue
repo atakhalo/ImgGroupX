@@ -216,13 +216,8 @@ function handleAddToVirtualGroup(vgIndex: number) {
   const vg = state.virtualGroups[vgIndex]
   if (!vg) return
 
-  // 收集分组中已有图片路径
-  const existingPaths = new Set<string>()
-  function collectImagePaths(n: FolderNode) {
-    for (const img of n.images) existingPaths.add(img.path)
-    for (const c of n.children) collectImagePaths(c)
-  }
-  collectImagePaths(vg)
+  // 只检查一级图片是否已存在（非一级图片即使已在子节点中，也应允许添加为一级图片）
+  const existingPaths = new Set(vg.images.map(i => i.path))
 
   // 添加不重复的选中图片
   for (const fp of state.selectedPaths) {

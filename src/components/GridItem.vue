@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ImageItem } from '../types'
-import { state, loadImageBase64, showToast, applyFileChanges, setSuppressWatcher, showRenameDialog } from '../stores/imageStore'
+import { state, loadImageBase64, showToast, applyFileChanges, setSuppressWatcher, showRenameDialog, setImageMark } from '../stores/imageStore'
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
@@ -280,6 +280,11 @@ function handleCtxMetadata() {
   loadMetadata()
 }
 
+function handleCtxMark(level: number) {
+  closeCtxMenu()
+  setImageMark(props.item.path, level as any)
+}
+
 async function handleCtxCopyImage() {
   closeCtxMenu()
   const src = imgSrc.value
@@ -342,6 +347,35 @@ async function handleCtxCopyImage() {
           </svg>
           <span>{{ $t('viewer.view') }}</span>
         </button>
+        <div class="ctx-separator"></div>
+        <div class="ctx-menu-item ctx-menu-hoverable">
+          <div class="ctx-menu-item-inner">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            <span>{{ $t('control.mark') }}</span>
+            <svg class="ctx-submenu-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </div>
+          <div class="ctx-submenu">
+            <button
+              v-for="lv in 5" :key="lv"
+              class="ctx-submenu-item"
+              @click="handleCtxMark(lv)"
+            >
+              <span class="ctx-mark-dot" :style="{ background: state.settings.markColors[lv - 1] }"></span>
+              <span>{{ $t('viewer.mark_level', { n: lv }) }}</span>
+            </button>
+            <div class="ctx-separator"></div>
+            <button class="ctx-submenu-item" @click="handleCtxMark(0)">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+              <span>{{ $t('control.mark_clear') }}</span>
+            </button>
+          </div>
+        </div>
         <div class="ctx-separator"></div>
         <button class="ctx-menu-item" @click="handleCtxCopyImage">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -695,6 +729,84 @@ async function handleCtxCopyImage() {
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
   margin: 4px 8px;
+}
+
+/* 可展开菜单项 */
+.ctx-menu-hoverable {
+  position: relative;
+  padding: 0;
+}
+.ctx-menu-item-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.ctx-menu-hoverable:hover > .ctx-menu-item-inner {
+  background: rgba(100, 108, 255, 0.2);
+  color: white;
+}
+.ctx-submenu-arrow {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+.ctx-menu-hoverable:hover .ctx-submenu-arrow {
+  opacity: 1;
+}
+
+/* 子菜单：默认隐藏，hover 时显示 */
+.ctx-submenu {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: -4px;
+  z-index: 10000;
+  background: rgba(30, 30, 50, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 130px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.ctx-menu-hoverable:hover > .ctx-submenu,
+.ctx-submenu:hover {
+  display: block;
+}
+.ctx-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.ctx-submenu-item:hover {
+  background: rgba(100, 108, 255, 0.2);
+  color: white;
+}
+.ctx-mark-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 /* 元信息弹窗样式 */
