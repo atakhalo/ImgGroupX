@@ -42,10 +42,10 @@
 ## ✨ Core Features
 
 ### 📁 Grid & Group View
-- **Auto folder grouping** — Images organized in a folder tree with recursive counts
-- **Virtual groups** — Create temporary groups from selected images, save to disk
-- **Multi-folder support** — Load and browse multiple folders simultaneously
-- **Rainbow tier coloring** — Depth-based background colors for visual hierarchy
+- **Auto folder grouping** — Organized in a folder tree with hierarchical display
+- **Virtual groups** — Create temporary groups from arbitrary selected images
+- **Multi-folder viewing** — Browse multiple folders at once; compact mode for efficient small-folder handling
+- **Rainbow tier coloring** — Depth-based auto-cycling background colors for clear hierarchy
 
 ### 🏷️ 5-Level Mark System
 - Customizable mark colors with visible borders and badges in grid view
@@ -68,9 +68,10 @@
 - **Mark menu** — Set/clear marks directly in the viewer
 - Open with external programs
 
-### ⚖️ Side-by-Side Compare
-- Overlay mode with draggable divider
-- Synchronized zoom and pan
+### ⚖️ Comparison Matrix
+- Compare 2 to 8 images in a comparison matrix (triangular / full matrix layout)
+- Drag dividers synchronize across all panes for multi-image comparison
+- Synchronized zoom and pan for detailed comparison
 
 ### ⌨️ Customizable Shortcuts
 - All keyboard shortcuts (including alternative keys) are configurable in Settings

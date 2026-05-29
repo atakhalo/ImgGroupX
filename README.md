@@ -20,20 +20,20 @@
 		<td align="center"><b>🌈 彩虹层级视图</b></td>
 	</tr>
 	<tr>
-		<td align="center"><img src="DocImage/groupNoTitle.webp" height="300" alt="分组紧凑视图"></td>
+		<td align="center"><img src="DocImage/compactGroup.webp" height="300" alt="分组紧凑视图"></td>
 		<td align="center"><img src="DocImage/nogroup.webp" height="300" alt="无分组视图"></td>
 	</tr>
 	<tr>
 		<td align="center"><b>🔇 分组紧凑视图</b></td>
-		<td align="center"><b>📦 无分组紧凑视图</b></td>
+		<td align="center"><b>📦 无分组视图</b></td>
 	</tr>
 	<tr>
 		<td align="center"><img src="DocImage/bigView.webp" height="300" alt="大图模式"></td>
-		<td align="center"><img src="DocImage/compare.webp" height="300" alt="对比模式"></td>
+		<td align="center"><img src="DocImage/compareM.webp" height="300" alt="对比模式"></td>
 	</tr>
 	<tr>
 		<td align="center"><b>🖼️ 大图查看</b></td>
-		<td align="center"><b>⚖️ 双图对比</b></td>
+		<td align="center"><b>⚖️ 对比矩阵</b></td>
 	</tr>
 </table>
 
@@ -42,10 +42,10 @@
 ## ✨ 核心功能
 
 ### 📁 网格分组视图
-- **自动文件夹分组** — 以文件夹为组，树状层级展示，递归统计图片数
-- **手动虚拟分组** — 选中任意图片创建临时分组，支持保存到文件夹
-- **多组集合查看** — 同时加载多个文件夹，统一网格浏览
-- **彩虹层级着色** — 按目录深度自动轮换背景色，层级一目了然
+- **自动文件夹分组** — 以文件夹为组，树状层级展示
+- **手动虚拟分组** — 选中任意图片创建临时分组
+- **多组查看** — 多个文件夹统一浏览；紧凑模式高效处理小文件夹
+- **彩虹层级** — 按目录深度自动轮换背景色，层级一目了然
 
 ### 🏷️ 图片标记
 - **5 级标记系统** — 自定义标记颜色，网格视图显示彩色边框 + 角标
@@ -68,8 +68,9 @@
 - 分组内导航、外部程序打开
 - **标记菜单** — 大图中直接设置/取消标记
 
-### ⚖️ 双图对比
-- 重叠显示 + 可拖拽分割线
+### ⚖️ 对比矩阵
+- 支持 2-8 张图片显示对比矩阵
+- 同步拖拽分割线，方便查看多图差异
 - 同步缩放平移，适合细节对比
 
 ### ⌨️ 可自定义快捷键
