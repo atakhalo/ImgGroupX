@@ -371,6 +371,9 @@ function getNodeGroupBg(depth: number): string {
 
 /** 获取节点标题背景色（folder-header） */
 function getNodeHeaderBg(_depth: number): string {
+  if (state.settings.rainbowEnabled && _depth > 0) {
+    return 'rgba(128,128,128,0.12)'
+  }
   return 'transparent'
 }
 
@@ -429,7 +432,7 @@ function getNodeGridContainerBg(depth: number): string {
       backgroundColor: getNodeGroupBg(realDepth),
       marginTop: state.settings.nodeGridGapV + 'px',
       marginBottom: state.settings.nodeGridGapV + 'px',
-      boxShadow: isSelected() ? '0 0 0 2px rgba(100,108,255,0.6)' : 'inset 0 0 0px 2px rgba(255,255,255,0.08)',
+      boxShadow: isSelected() ? '0 0 0 2px rgba(100,108,255,0.6)' : state.settings.rainbowEnabled ? 'inset 0 0 0px 2px rgba(255,255,255,0.08)' : 'inset 0 0 0px 2px rgba(255,255,255,0.08)',
 	  padding: '4px',
       // 紧凑模式下：等分行宽，最小宽度由内容（含图片网格）决定
       ...(isCompactNode ? { flex: '1 1 0%', minWidth: 'fit-content' } : {}),
@@ -441,11 +444,12 @@ function getNodeGridContainerBg(depth: number): string {
       :class="{ 
         'root-header': depth === 0, 
         'child-header': depth > 0,
+        'rainbow-header': state.settings.rainbowEnabled && depth > 0,
       }"
       :style="{
         borderRadius: '20px',
         backgroundColor: getNodeHeaderBg(realDepth),
-        boxShadow: 'inset 0 0 0px 1px rgba(255,255,255,0.06)',
+        boxShadow: state.settings.rainbowEnabled ? 'inset 0 0 0px 1px rgba(255,255,255,0.15)' : 'inset 0 0 0px 1px rgba(255,255,255,0.06)',
       }"
       @click="handleToggle"
       @contextmenu="openHeaderCtxMenu"
@@ -548,7 +552,7 @@ function getNodeGridContainerBg(depth: number): string {
           </template>
         </span>
       </span>
-      <span class="folder-label" :class="{ 'has-collapse': collapsePrefixSegments.length > 0 }">
+      <span class="folder-label" :class="{ 'has-collapse': collapsePrefixSegments.length > 0, 'rainbow-bg': state.settings.rainbowEnabled && collapsePrefixSegments.length === 0 && realDepth > 0 }">
         <span class="folder-arrow">{{ getExpanded(node) ? '▼' : '▶' }}</span>
         <span v-if="collapsePrefixSegments.length" class="collapse-prefix">
           <span v-for="(seg, i) in collapsePrefixSegments" :key="i" :style="{ color: getSegmentColor(seg.level) }">{{ seg.name }}</span>
@@ -845,6 +849,10 @@ function getNodeGridContainerBg(depth: number): string {
   background-image: linear-gradient(rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.09));
 }
 
+.folder-header.rainbow-header:hover {
+  background-image: linear-gradient(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.12));
+}
+
 .folder-group-selected {
   box-shadow: 0 0 0 2px rgba(100,108,255,0.6) !important;
 }
@@ -1111,6 +1119,12 @@ function getNodeGridContainerBg(depth: number): string {
 
 .folder-label.has-collapse {
   background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.folder-label.rainbow-bg {
+  background: rgba(0, 0, 0, 0.25);
   border-radius: 4px;
   padding: 2px 8px;
 }
