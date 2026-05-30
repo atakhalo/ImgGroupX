@@ -389,6 +389,7 @@ function getNodeGridContainerBg(depth: number): string {
   if (!state.settings.rainbowEnabled) {
     return state.settings.bgColor
   } else {
+	if(depth === 0) return state.settings.bgColor
     return hexToRgba(getBaseColor(depth), 1)
   }
 }
@@ -763,75 +764,74 @@ function getNodeGridContainerBg(depth: number): string {
 
     <!-- 非紧凑模式：子节点 + 图片分区域布局 -->
     <template v-if="!useUnifiedGrid">
-      <div
-        v-if="node.children.length"
-        class="folder-children-section"
-        :class="{ 'folder-children-collapsed': !getExpanded(node) }"
-      >
-        <div v-if="wrapChildren" class="folder-children-compact" :style="{ gap: state.settings.nodeGridGapH + 'px' }">
-          <FolderGroup
-            v-for="(child, childIdx) in node.children"
-            :key="child.path"
-            :node="child"
-            :depth="depth + 1"
-            :realDepth="realDepth + 1"
-            :rootPath="rootPath"
-            :showTitle="showTitle"
-            :getExpanded="getExpanded"
-            :isVirtualRoot="isVirtualRoot"
-            :vgIndex="vgIndex"
-            :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
-            :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
-            @toggle="(n: FolderNode) => emit('toggle', n)"
-            @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
+      <div class="folder-noncompact-body" :style="{ borderRadius: '20px', background: getNodeGridContainerBg(realDepth) }">
+        <div
+          v-if="node.children.length"
+          class="folder-children-section"
+          :class="{ 'folder-children-collapsed': !getExpanded(node) }"
+        >
+          <div v-if="wrapChildren" class="folder-children-compact" :style="{ gap: state.settings.nodeGridGapH + 'px' }">
+            <FolderGroup
+              v-for="(child, childIdx) in node.children"
+              :key="child.path"
+              :node="child"
+              :depth="depth + 1"
+              :realDepth="realDepth + 1"
+              :rootPath="rootPath"
+              :showTitle="showTitle"
+              :getExpanded="getExpanded"
+              :isVirtualRoot="isVirtualRoot"
+              :vgIndex="vgIndex"
+              :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
+              :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
+              @toggle="(n: FolderNode) => emit('toggle', n)"
+              @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
+              @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
+              @removeRoot="(p: string) => emit('removeRoot', p)"
+              @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
+              @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
+              @copyToFolder="(p: string) => emit('copyToFolder', p)"
+              @moveToFolder="(p: string) => emit('moveToFolder', p)"
+            />
+          </div>
+          <template v-else>
+            <FolderGroup
+              v-for="(child, childIdx) in node.children"
+              :key="child.path"
+              :node="child"
+              :depth="depth + 1"
+              :realDepth="realDepth + 1"
+              :rootPath="rootPath"
+              :showTitle="showTitle"
+              :getExpanded="getExpanded"
+              :isVirtualRoot="isVirtualRoot"
+              :vgIndex="vgIndex"
+              :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
+              :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
+              @toggle="(n: FolderNode) => emit('toggle', n)"
+              @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
+              @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
+              @removeRoot="(p: string) => emit('removeRoot', p)"
+              @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
+              @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
+              @copyToFolder="(p: string) => emit('copyToFolder', p)"
+              @moveToFolder="(p: string) => emit('moveToFolder', p)"
+            />
+          </template>
+        </div>
+        <div
+          v-if="node.images.length"
+          class="folder-grid-wrapper"
+          :class="{ 'folder-grid-collapsed': !getExpanded(node) }"
+          :style="{ borderRadius: '20px', backgroundColor: getNodeGridWrapperBg(realDepth) }"
+        >
+          <GridView
+            :images="node.images"
+            :bgColor="getNodeGridContainerBg(realDepth)"
+            @viewImage="(item: ImageItem, scope: ImageItem[]) => { const _k = getNavKey(); const _ii = scope.findIndex(i => i.path === item.path); emit('viewImage', item, scope, _k, _ii >= 0 ? _ii : 0) }"
             @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
-            @removeRoot="(p: string) => emit('removeRoot', p)"
-            @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
-            @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
-            @copyToFolder="(p: string) => emit('copyToFolder', p)"
-            @moveToFolder="(p: string) => emit('moveToFolder', p)"
           />
         </div>
-        <template v-else>
-          <FolderGroup
-            v-for="(child, childIdx) in node.children"
-            :key="child.path"
-            :node="child"
-            :depth="depth + 1"
-            :realDepth="realDepth + 1"
-            :rootPath="rootPath"
-            :showTitle="showTitle"
-            :getExpanded="getExpanded"
-            :isVirtualRoot="isVirtualRoot"
-            :vgIndex="vgIndex"
-            :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
-            :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
-            @toggle="(n: FolderNode) => emit('toggle', n)"
-            @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
-            @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
-            @removeRoot="(p: string) => emit('removeRoot', p)"
-            @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
-            @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
-            @copyToFolder="(p: string) => emit('copyToFolder', p)"
-            @moveToFolder="(p: string) => emit('moveToFolder', p)"
-          />
-        </template>
-      </div>
-      <div
-        v-if="node.images.length"
-        class="folder-grid-wrapper"
-        :class="{ 'folder-grid-collapsed': !getExpanded(node) }"
-        :style="{
-		  borderRadius:'20px',
-          backgroundColor: getNodeGridWrapperBg(realDepth),
-        }"
-      >
-        <GridView
-          :images="node.images"
-          :bgColor="getNodeGridContainerBg(realDepth)"
-          @viewImage="(item: ImageItem, scope: ImageItem[]) => { const _k = getNavKey(); const _ii = scope.findIndex(i => i.path === item.path); emit('viewImage', item, scope, _k, _ii >= 0 ? _ii : 0) }"
-          @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
-        />
       </div>
     </template>
   </div>
@@ -1247,6 +1247,12 @@ function getNodeGridContainerBg(depth: number): string {
 }
 
 /* ===== 非紧凑模式 - 原有布局 ===== */
+
+/* 非紧凑模式内容包裹体 */
+.folder-noncompact-body {
+  overflow: hidden;
+  transition: background 0.2s;
+}
 
 /* 折叠状态：图片网格不可见，高度为 0，宽度保留 */
 .folder-grid-collapsed {
