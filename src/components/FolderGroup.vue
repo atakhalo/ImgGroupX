@@ -32,7 +32,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  toggle: [node: FolderNode]
+  toggle: [node: FolderNode, scopeKey?: string]
   viewImage: [item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number]
   selectImage: [item: ImageItem, ctrl: boolean]
   removeRoot: [path: string]
@@ -45,7 +45,12 @@ const emit = defineEmits<{
 }>()
 
 function handleToggle() {
-  emit('toggle', props.node)
+  emit('toggle', props.node, getScopeKey())
+}
+
+function getScopeKey(): string | undefined {
+  if (props.vgIndex !== undefined) return `vg:${props.vgIndex}:${props.node.path}`
+  return undefined
 }
 
 function handleSelectClick(e: MouseEvent) {
@@ -471,7 +476,7 @@ function getNodeGridContainerBg(depth: number): string {
       :collapsePrefix="collapsePrefix + node.name + ' / '"
       :realDepth="realDepth + 1"
       :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
-      @toggle="(n: FolderNode) => emit('toggle', n)"
+      @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
       @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
       @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
       @removeRoot="(p: string) => emit('removeRoot', p)"
@@ -845,7 +850,7 @@ function getNodeGridContainerBg(depth: number): string {
         :vgIndex="vgIndex"
         :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
         :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
-        @toggle="(n: FolderNode) => emit('toggle', n)"
+        @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
         @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
         @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
         @removeRoot="(p: string) => emit('removeRoot', p)"
@@ -888,7 +893,7 @@ function getNodeGridContainerBg(depth: number): string {
               :vgIndex="vgIndex"
               :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
               :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
-              @toggle="(n: FolderNode) => emit('toggle', n)"
+              @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
               @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
               @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
               @removeRoot="(p: string) => emit('removeRoot', p)"
@@ -912,7 +917,7 @@ function getNodeGridContainerBg(depth: number): string {
               :vgIndex="vgIndex"
               :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
               :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
-              @toggle="(n: FolderNode) => emit('toggle', n)"
+              @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
               @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
               @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
               @removeRoot="(p: string) => emit('removeRoot', p)"

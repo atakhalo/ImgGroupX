@@ -54,25 +54,38 @@ function isRootLarge(rootNode: FolderNode): boolean {
 }
 
 /** 获取节点展开状态：仅在首次构造时决定，之后不变 */
-function isExpanded(node: FolderNode): boolean {
-  if (expandedMap.has(node.path)) {
-    return expandedMap.get(node.path)!
+function isExpanded(node: FolderNode, scopeKey?: string): boolean {
+  const key = scopeKey || node.path
+  if (expandedMap.has(key)) {
+    return expandedMap.get(key)!
   }
   // 首次构造：找到所属根节点
   const rootNode = folderTree.value.find(r => r.path === node.path) ?? findRootForNode(node, folderTree.value)
   const rootKey = rootNode?.path ?? node.path
   // 查该根路径的检测标志
   if (rootLargeDetected.get(rootKey)) {
-    expandedMap.set(node.path, false)
+    expandedMap.set(key, false)
     return false
   }
   // 默认为展开，然后检查根节点维度是否达到大型标准
-  expandedMap.set(node.path, true)
+  expandedMap.set(key, true)
   if (rootNode && isRootLarge(rootNode)) {
     rootLargeDetected.set(rootKey, true)
-    expandedMap.set(node.path, false) // 触发节点自身也折叠
+    expandedMap.set(key, false) // 触发节点自身也折叠
   }
-  return expandedMap.get(node.path)!
+  return expandedMap.get(key)!
+}
+
+/** 为虚拟分组创建作用域化的 isExpanded */
+function makeVgExpanded(vgIndex: number): (node: FolderNode) => boolean {
+  return (node: FolderNode) => {
+    const key = `vg:${vgIndex}:${node.path}`
+    if (expandedMap.has(key)) {
+      return expandedMap.get(key)!
+    }
+    // 委托给 isExpanded 初始化，但使用作用域键
+    return isExpanded(node, key)
+  }
 }
 
 const folderTree = computed(() => {
@@ -89,8 +102,9 @@ const allRootNodes = computed<(FolderNode & { isVirtualGroup?: boolean })[]>(() 
   return [...virtualRoots, ...folderTree.value]
 })
 
-function toggleNode(node: FolderNode) {
-  expandedMap.set(node.path, !(expandedMap.get(node.path) ?? true))
+function toggleNode(node: FolderNode, scopeKey?: string) {
+  const key = scopeKey || node.path
+  expandedMap.set(key, !(expandedMap.get(key) ?? true))
 }
 
 function toggleAll(expand: boolean) {
@@ -105,8 +119,16 @@ function toggleAll(expand: boolean) {
   for (const node of folderTree.value) {
     setAll(node)
   }
-  for (const vg of props.virtualGroups) {
-    expandedMap.set(vg.path, expand)
+  for (let vi = 0; vi < props.virtualGroups.length; vi++) {
+    setAllVg(props.virtualGroups[vi], vi, expand)
+  }
+}
+
+function setAllVg(vg: FolderNode, vi: number, expand: boolean) {
+  expandedMap.set(`vg:${vi}:${vg.path}`, expand)
+  for (const child of vg.children) {
+    expandedMap.set(`vg:${vi}:${child.path}`, expand)
+    setAllVg(child, vi, expand)
   }
 }
 
@@ -124,8 +146,16 @@ function collapseLeaves() {
   for (const root of folderTree.value) {
     walk(root)
   }
-  for (const vg of props.virtualGroups) {
-    expandedMap.set(vg.path, true)
+  for (let vi = 0; vi < props.virtualGroups.length; vi++) {
+    collapseLeavesVg(props.virtualGroups[vi], vi)
+  }
+}
+
+function collapseLeavesVg(vg: FolderNode, vi: number) {
+  const isLeaf = vg.images.length > 0 && vg.children.length === 0
+  expandedMap.set(`vg:${vi}:${vg.path}`, !isLeaf)
+  for (const child of vg.children) {
+    collapseLeavesVg(child, vi)
   }
 }
 
@@ -161,12 +191,14 @@ function updateExpandedByFilter() {
   for (const node of folderTree.value) {
     walk(node)
   }
-  for (const vg of state.virtualGroups) {
+  for (let vi = 0; vi < state.virtualGroups.length; vi++) {
+    const vg = state.virtualGroups[vi]
+    const vgKey = `vg:${vi}:${vg.path}`
     if (!regex) {
-      expandedMap.set(vg.path, true)
+      expandedMap.set(vgKey, true)
     } else {
       const filtered = filterImages(vg.images, regex, state.settings.filterTarget, state.virtualGroups)
-      expandedMap.set(vg.path, filtered.length > 0)
+      expandedMap.set(vgKey, filtered.length > 0)
     }
   }
 }
@@ -306,7 +338,7 @@ defineExpose({ toggleAll, collapseLeaves })
           :depth="0"
           :rootPath="node.path"
           :showTitle="state.showGroupTitle"
-          :getExpanded="isExpanded"
+          :getExpanded="makeVgExpanded((node as any)._vgIndex)"
           :isVirtualRoot="true"
           :vgIndex="(node as any)._vgIndex"
           collapsePrefix=""
@@ -350,7 +382,7 @@ defineExpose({ toggleAll, collapseLeaves })
         :depth="0"
         :rootPath="node.path"
         :showTitle="state.showGroupTitle"
-        :getExpanded="isExpanded"
+        :getExpanded="makeVgExpanded((node as any)._vgIndex)"
         :isVirtualRoot="true"
         :vgIndex="(node as any)._vgIndex"
         collapsePrefix=""
