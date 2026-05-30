@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { state, openInExplorer, saveVirtualGroup, getProcessedImages, startProgressiveScan } from '../stores/imageStore'
+import { state, openInExplorer, saveVirtualGroup, getProcessedImages, startProgressiveScan, renameVirtualGroup } from '../stores/imageStore'
 import GridView from './GridView.vue'
 import GridItem from './GridItem.vue'
 import FolderGroup from './FolderGroup.vue'
@@ -321,6 +321,30 @@ async function handleCopyFolderPath() {
     document.execCommand('copy')
     document.body.removeChild(ta)
   }
+}
+
+/** 虚拟分组重命名弹窗状态 */
+const renameDialogShow = ref(false)
+const renameInput = ref('')
+
+function handleRenameVirtualGroup() {
+  if (!props.isVirtualRoot || props.depth !== 0 || props.vgIndex === undefined) return
+  const vg = state.virtualGroups[props.vgIndex]
+  if (!vg) return
+  renameInput.value = vg.name
+  renameDialogShow.value = true
+}
+
+function confirmRename() {
+  const name = renameInput.value.trim()
+  if (name && props.vgIndex !== undefined) {
+    renameVirtualGroup(props.vgIndex, name)
+  }
+  renameDialogShow.value = false
+}
+
+function cancelRename() {
+  renameDialogShow.value = false
 }
 
 function handleCopyToFolder() {
@@ -659,6 +683,18 @@ function getNodeGridContainerBg(depth: number): string {
           </template>
           <div class="ctx-separator"></div>
         </template>
+        <!-- 虚拟分组重命名（仅虚拟根节点显示） -->
+        <button
+          v-if="isVirtualRoot && depth === 0"
+          class="ctx-menu-item"
+          @click="handleRenameVirtualGroup(), closeHeaderCtxMenu()"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+          </svg>
+          <span>{{ $t('folder.rename_group') }}</span>
+        </button>
+        <div class="ctx-separator"></div>
         <!-- 模式切换 -->
         <button
           v-if="state.selectMode === 'select'"
@@ -715,6 +751,27 @@ function getNodeGridContainerBg(depth: number): string {
           </svg>
           <span>{{ $t('folder.remove') }}</span>
         </button>
+      </div>
+    </Teleport>
+
+    <!-- 重命名虚拟分组弹窗 -->
+    <Teleport to="body">
+      <div v-if="renameDialogShow" class="name-input-overlay" @click.self="cancelRename">
+        <div class="name-input-dialog">
+          <h4>{{ $t('folder.rename_group') }}</h4>
+          <input
+            v-model="renameInput"
+            type="text"
+            class="name-input"
+            :placeholder="$t('folder.rename_group_hint')"
+            @keyup.enter="confirmRename"
+            @keyup.escape="cancelRename"
+          />
+          <div class="name-input-actions">
+            <button class="name-btn secondary" @click="cancelRename">{{ $t('settings.reset') }}</button>
+            <button class="name-btn primary" @click="confirmRename">{{ $t('settings.apply') }}</button>
+          </div>
+        </div>
       </div>
     </Teleport>
 
@@ -1275,4 +1332,43 @@ function getNodeGridContainerBg(depth: number): string {
   align-items: flex-start;
   gap: 0;
 }
+</style>
+<style>
+/* 重命名虚拟分组弹窗（非 scoped，因 Teleport 到 body） */
+.name-input-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 20000;
+}
+.name-input-dialog {
+  background: rgba(30,30,50,0.97);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.name-input-dialog h4 { margin: 0 0 4px; font-size: 15px; color: white; font-weight: 500; }
+.name-input-hint { font-size: 12px; color: rgba(255,255,255,0.35); margin: 4px 0 12px; }
+.name-input {
+  width: 100%; box-sizing: border-box;
+  padding: 8px 12px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: white; font-size: 14px; outline: none;
+  transition: border-color 0.15s;
+}
+.name-input:focus { border-color: rgba(100,108,255,0.5); }
+.name-input-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.name-btn {
+  padding: 6px 16px; border-radius: 6px; border: 1px solid; cursor: pointer;
+  font-size: 13px; transition: background 0.12s, color 0.12s;
+}
+.name-btn.primary { background: rgba(100,108,255,0.2); border-color: rgba(100,108,255,0.3); color: #aab0ff; }
+.name-btn.primary:hover { background: rgba(100,108,255,0.3); }
+.name-btn.secondary { background: transparent; border-color: rgba(255,255,255,0.1); color: rgba(255,255,255,0.5); }
+.name-btn.secondary:hover { background: rgba(255,255,255,0.06); color: white; }
 </style>

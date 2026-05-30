@@ -654,6 +654,12 @@ export function removeVirtualGroup(index: number) {
   state.virtualGroups.splice(index, 1)
 }
 
+/** 重命名虚拟分组 */
+export function renameVirtualGroup(index: number, newName: string) {
+  const vg = state.virtualGroups[index]
+  if (vg) vg.name = newName
+}
+
 /** 设置指定图片的标记等级 */
 /** 递归更新节点树中指定路径图片的标记 */
 function updateNodeTreeMark(nodes: FolderNode[], path: string, level: import('../types').MarkLevel) {
