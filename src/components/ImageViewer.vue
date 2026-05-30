@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import type { ImageItem, MarkLevel } from '../types'
-import { state, loadImageBase64, setImageMark, showToast, applyFileChanges, setSuppressWatcher, showRenameDialog } from '../stores/imageStore'
+import { state, loadImageBase64, setImageMark, showToast, applyFileChanges, setSuppressWatcher, showRenameDialog, ensurePrivacyIcon } from '../stores/imageStore'
 import { matchShortcut } from '../utils/shortcuts'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
@@ -162,6 +162,13 @@ async function loadCurrentImage() {
       textError.value = String(e)
       isLoaded.value = true
     }
+    return
+  }
+
+  // 隐私模式：显示 app 图标，不加载真实图片
+  if (state.settings.privacyMode) {
+    imgSrc.value = await ensurePrivacyIcon()
+    isLoaded.value = true
     return
   }
 

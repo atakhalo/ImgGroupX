@@ -23,6 +23,8 @@ const props = withDefaults(defineProps<{
   hierarchyPath?: string
   /** 真实层级深度（不受压缩影响） */
   realDepth?: number
+  /** 隐私模式下的匿名节点名（如"节点1"），为空时显示真实名称 */
+  anonName?: string
 }>(), {
   collapsePrefix: '',
   hierarchyPath: '',
@@ -396,7 +398,7 @@ function getNodeGridContainerBg(depth: number): string {
   <!-- 层级压缩：跳过当前节点，子节点继承路径 -->
   <template v-if="shouldCollapse">
     <FolderGroup
-      v-for="child in node.children"
+      v-for="(child, childIdx) in node.children"
       :key="child.path"
       :node="child"
       :depth="depth"
@@ -408,6 +410,7 @@ function getNodeGridContainerBg(depth: number): string {
       :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
       :collapsePrefix="collapsePrefix + node.name + ' / '"
       :realDepth="realDepth + 1"
+      :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
       @toggle="(n: FolderNode) => emit('toggle', n)"
       @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
       @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
@@ -557,7 +560,7 @@ function getNodeGridContainerBg(depth: number): string {
         <span v-if="collapsePrefixSegments.length" class="collapse-prefix">
           <span v-for="(seg, i) in collapsePrefixSegments" :key="i" :style="{ color: getSegmentColor(seg.level) }">{{ seg.name }}</span>
         </span>
-        <span class="folder-name" :style="{ color: realDepth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ node.name }}</span>
+        <span class="folder-name" :style="{ color: realDepth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ state.settings.privacyMode && props.anonName ? props.anonName : node.name }}</span>
         <span v-if="totalCount(node)" class="folder-count" :class="{ 'all-selected': state.selectMode === 'select' && nodeSelectionState === 'all' }">
           <template v-if="state.selectMode === 'select' && nodeSelectionState !== 'none'">
             (<span :class="{ 'partial-selected': nodeSelectionState === 'partial' }">{{ countSelectedInNode(props.node) }}</span><span class="sep">/</span>{{ totalCount(node) }})
@@ -725,7 +728,7 @@ function getNodeGridContainerBg(depth: number): string {
       }"
     >
       <FolderGroup
-        v-for="child in node.children"
+        v-for="(child, childIdx) in node.children"
         :key="child.path"
         :node="child"
         :depth="depth + 1"
@@ -736,6 +739,7 @@ function getNodeGridContainerBg(depth: number): string {
         :isVirtualRoot="isVirtualRoot"
         :vgIndex="vgIndex"
         :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
+        :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
         @toggle="(n: FolderNode) => emit('toggle', n)"
         @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
         @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
@@ -766,7 +770,7 @@ function getNodeGridContainerBg(depth: number): string {
       >
         <div v-if="wrapChildren" class="folder-children-compact" :style="{ gap: state.settings.nodeGridGapH + 'px' }">
           <FolderGroup
-            v-for="child in node.children"
+            v-for="(child, childIdx) in node.children"
             :key="child.path"
             :node="child"
             :depth="depth + 1"
@@ -777,6 +781,7 @@ function getNodeGridContainerBg(depth: number): string {
             :isVirtualRoot="isVirtualRoot"
             :vgIndex="vgIndex"
             :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
+            :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
             @toggle="(n: FolderNode) => emit('toggle', n)"
             @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
             @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
@@ -789,7 +794,7 @@ function getNodeGridContainerBg(depth: number): string {
         </div>
         <template v-else>
           <FolderGroup
-            v-for="child in node.children"
+            v-for="(child, childIdx) in node.children"
             :key="child.path"
             :node="child"
             :depth="depth + 1"
@@ -800,6 +805,7 @@ function getNodeGridContainerBg(depth: number): string {
             :isVirtualRoot="isVirtualRoot"
             :vgIndex="vgIndex"
             :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
+            :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
             @toggle="(n: FolderNode) => emit('toggle', n)"
             @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
             @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { ImageItem } from '../types'
-import { state, loadImageBase64, showToast, applyFileChanges, setSuppressWatcher } from '../stores/imageStore'
+import { state, loadImageBase64, showToast, applyFileChanges, setSuppressWatcher, PRIVACY_ICON_SRC, ensurePrivacyIcon } from '../stores/imageStore'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
 import { matchShortcut } from '../utils/shortcuts'
@@ -192,6 +192,9 @@ onMounted(async () => {
   document.addEventListener('mousemove', onPanMove)
   document.addEventListener('mouseup', onPanUp)
 
+  // 预先确保隐私图标已加载
+  if (state.settings.privacyMode) await ensurePrivacyIcon()
+
   // 并行加载所有图片对（三角：i<j；矩阵：全量 i,j，含对角线 i=j）
   const loadPromises: Promise<PairData>[] = []
   for (let i = 0; i < props.images.length; i++) {
@@ -203,11 +206,16 @@ onMounted(async () => {
       loadPromises.push(
         (async () => {
           let leftSrc = '', rightSrc = ''
-          if (IMAGE_EXTENSIONS.has(left.ext)) {
-            try { leftSrc = await loadImageBase64(left, state.settings.loadSkippedOnView) } catch { /* */ }
-          }
-          if (IMAGE_EXTENSIONS.has(right.ext)) {
-            try { rightSrc = await loadImageBase64(right, state.settings.loadSkippedOnView) } catch { /* */ }
+          if (state.settings.privacyMode) {
+            leftSrc = PRIVACY_ICON_SRC
+            rightSrc = PRIVACY_ICON_SRC
+          } else {
+            if (IMAGE_EXTENSIONS.has(left.ext)) {
+              try { leftSrc = await loadImageBase64(left, state.settings.loadSkippedOnView) } catch { /* */ }
+            }
+            if (IMAGE_EXTENSIONS.has(right.ext)) {
+              try { rightSrc = await loadImageBase64(right, state.settings.loadSkippedOnView) } catch { /* */ }
+            }
           }
           return { i, j, left, right, leftSrc, rightSrc, leftIsImage: IMAGE_EXTENSIONS.has(left.ext), rightIsImage: IMAGE_EXTENSIONS.has(right.ext) } as PairData
         })()
@@ -229,11 +237,16 @@ onMounted(async () => {
         extraPromises.push(
           (async () => {
             let leftSrc = '', rightSrc = ''
-            if (IMAGE_EXTENSIONS.has(left.ext)) {
-              try { leftSrc = await loadImageBase64(left, state.settings.loadSkippedOnView) } catch { /* */ }
-            }
-            if (IMAGE_EXTENSIONS.has(right.ext)) {
-              try { rightSrc = await loadImageBase64(right, state.settings.loadSkippedOnView) } catch { /* */ }
+            if (state.settings.privacyMode) {
+              leftSrc = PRIVACY_ICON_SRC
+              rightSrc = PRIVACY_ICON_SRC
+            } else {
+              if (IMAGE_EXTENSIONS.has(left.ext)) {
+                try { leftSrc = await loadImageBase64(left, state.settings.loadSkippedOnView) } catch { /* */ }
+              }
+              if (IMAGE_EXTENSIONS.has(right.ext)) {
+                try { rightSrc = await loadImageBase64(right, state.settings.loadSkippedOnView) } catch { /* */ }
+              }
             }
             return { i, j, left, right, leftSrc, rightSrc, leftIsImage: IMAGE_EXTENSIONS.has(left.ext), rightIsImage: IMAGE_EXTENSIONS.has(right.ext) } as PairData
           })()

@@ -148,4 +148,6 @@ export interface AppSettings {
   keyBindings: Record<string, string>
   /** 自定义替代键映射 */
   keyAltBindings: Record<string, string>
+  /** 隐私模式：图片显示为占位图标，节点名匿名显示 */
+  privacyMode: boolean
 }

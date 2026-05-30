@@ -29,7 +29,7 @@ const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
-  advanced: ['scanAllFiles', 'folderGroup', 'showGroupTitle', 'showMarks'],
+  advanced: ['scanAllFiles', 'folderGroup', 'showGroupTitle', 'showMarks', 'privacyMode'],
 }
 
 const defaultSettings = {
@@ -49,7 +49,7 @@ const defaultSettings = {
   rainbowColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   language: 'zh' as const,
   viewerBgMode: 'overlay' as const, viewerBgColor: '#202020',
-  scanAllFiles: false, autoPan: true, autoCenter: true,
+  scanAllFiles: false, autoPan: true, autoCenter: true, privacyMode: false,
   maxLoadSizeMB: 0, loadSkippedOnView: true,
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   showMarks: true, showMarkBadge: true,
@@ -491,6 +491,17 @@ onUnmounted(() => {
               </label>
             </div>
             <div class="setting-hint">{{ $t('settings.scan_all_files_hint') }}</div>
+
+            <!-- 隐私模式 -->
+            <h4 style="margin-top: 24px;">{{ $t('control.privacy_mode') }}</h4>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.privacyMode" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('control.privacy_mode') }}
+              </label>
+            </div>
+            <div class="setting-hint">{{ $t('control.privacy_mode_hint') }}</div>
 
             <!-- GitHub -->
             <h4 style="margin-top: 24px;">GitHub</h4>

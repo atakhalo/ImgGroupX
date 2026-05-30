@@ -12,6 +12,16 @@ export const toastState = reactive({
   _timer: 0 as unknown as ReturnType<typeof setTimeout> | undefined,
 })
 
+/** 隐私模式占位图标（内联 SVG） */
+export const PRIVACY_ICON_SRC = 'data:image/svg+xml,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.5">' +
+  '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="11" r="3"/><path d="M7 20v-1a5 5 0 0 1 10 0v1"/></svg>'
+)
+
+export async function ensurePrivacyIcon(): Promise<string> {
+  return PRIVACY_ICON_SRC
+}
+
 export function showToast(text: string, duration = 3000) {
   if (toastState._timer) clearTimeout(toastState._timer)
   toastState.text = text
@@ -60,6 +70,7 @@ const defaultSettings: AppSettings = {
   loadSkippedOnView: true,
   keyBindings: getDefaultBindings(),
   keyAltBindings: getDefaultBindings(true),
+  privacyMode: false,
 }
 
 /** 全局状态 */

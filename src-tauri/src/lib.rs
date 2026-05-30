@@ -1229,6 +1229,18 @@ fn parse_svg_dimensions(svg: &str) -> Option<(u32, u32)> {
     None
 }
 
+/// 获取 app 图标 base64（嵌入编译，总能读取到）
+#[tauri::command]
+fn get_app_icon() -> Result<String, String> {
+    const ICON_PATHS: &[&[u8]] = &[
+        include_bytes!("../icons/32x32.png"),
+        include_bytes!("../icons/128x128.png"),
+    ];
+    let data = ICON_PATHS[0]; // 使用 32x32 图标
+    let b64 = base64::engine::general_purpose::STANDARD.encode(data);
+    Ok(format!("data:image/png;base64,{}", b64))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1260,6 +1272,7 @@ pub fn run() {
             cancel_scan,
             read_file_text,
             rename_file,
+            get_app_icon,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

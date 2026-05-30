@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ImageItem } from '../types'
-import { state, loadImageBase64, showToast, applyFileChanges, setSuppressWatcher, showRenameDialog, setImageMark } from '../stores/imageStore'
+import { state, loadImageBase64, showToast, applyFileChanges, setSuppressWatcher, showRenameDialog, setImageMark, ensurePrivacyIcon } from '../stores/imageStore'
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
@@ -64,6 +64,12 @@ let hasTriggered = false
 
 async function doLoad() {
   if (!isImage.value) return // 非图片不加载
+  // 隐私模式：跳过真实图片加载，显示 app 图标
+  if (state.settings.privacyMode) {
+    imgSrc.value = await ensurePrivacyIcon()
+    isLoaded.value = true
+    return
+  }
   if (hasError.value) return
   if (props.item.base64) {
     imgSrc.value = props.item.base64
@@ -116,11 +122,24 @@ watch(() => props.item.base64, (val) => {
     isLoaded.value = true
     hasError.value = false
   } else if (!val && imgSrc.value) {
-    // base64 被释放，清空显示并等待下次进入视口
     imgSrc.value = ''
     isLoaded.value = false
     hasTriggered = false
-    // 如果仍在视口内，立即重新加载
+    if (isInViewport()) doLoad()
+  }
+})
+
+/** 检查元素是否在视口内 */
+function isInViewport(): boolean {
+  if (!elRef.value) return false
+  const rect = elRef.value.getBoundingClientRect()
+  return rect.top < window.innerHeight + 300 && rect.bottom > -300
+}
+
+// 监听隐私模式切换：重新加载/恢复图片
+watch(() => state.settings.privacyMode, async () => {
+  if (hasTriggered || isLoaded.value) {
+    if (state.settings.privacyMode) await ensurePrivacyIcon()
     doLoad()
   }
 })
@@ -505,14 +524,14 @@ async function handleCtxCopyImage() {
           <span class="item-name">{{ item.name }}</span>
         </div>
       </template>
-      <div v-if="isSelected" class="select-check">
+      <div v-if="isSelected && !state.settings.privacyMode" class="select-check">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="white">
           <circle cx="12" cy="12" r="10" fill="rgba(0,120,255,0.8)" />
           <path d="M9 12l2 2 4-4" stroke="white" stroke-width="2" fill="none" />
         </svg>
       </div>
-      <!-- 标记等级徽标 -->
-      <div v-if="markLevel && markColor && state.settings.showMarks && state.settings.showMarkBadge" class="mark-badge" :style="{ backgroundColor: markColor, width: markBadgeSize + 'px', height: markBadgeSize + 'px' }">
+      <!-- 标记等级徽标（隐私模式隐藏） -->
+      <div v-if="!state.settings.privacyMode && markLevel && markColor && state.settings.showMarks && state.settings.showMarkBadge" class="mark-badge" :style="{ backgroundColor: markColor, width: markBadgeSize + 'px', height: markBadgeSize + 'px' }">
         <span class="mark-badge-text" :style="{ fontSize: markBadgeFontSize + 'px' }">{{ markLevel }}</span>
       </div>
     </div>
