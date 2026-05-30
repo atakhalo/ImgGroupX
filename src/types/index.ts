@@ -114,6 +114,8 @@ export interface AppSettings {
   nodeGridGapH: number
   /** 紧凑模式（非根节点自适应宽度排列） */
   compactMode: boolean
+  /** 根节点紧凑（紧凑模式时根节点和虚拟分组一级节点也参与） */
+  rootCompactMode: boolean
   /** 标题栏紧凑（紧凑模式时隐藏打开/移动/复制/移除按钮） */
   compactHeader: boolean
   /** 层级压缩（隐藏只有一个子节点的中间节点，路径合并到子节点标题） */

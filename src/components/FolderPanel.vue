@@ -298,8 +298,52 @@ defineExpose({ toggleAll, collapseLeaves })
 
 <template>
   <div class="folder-panel">
-    <!-- 虚拟分组节点 -->
-    <template v-for="(node, i) in allRootNodes" :key="node.path || `vg-${i}`">
+    <div v-if="state.settings.compactMode && state.settings.rootCompactMode" class="folder-panel-compact" :style="{ gap: state.settings.nodeGridGapH + 'px' }">
+      <template v-for="(node, i) in allRootNodes" :key="node.path || `vg-${i}`">
+        <FolderGroup
+          v-if="(node as any).isVirtualGroup"
+          :node="node"
+          :depth="0"
+          :rootPath="node.path"
+          :showTitle="state.showGroupTitle"
+          :getExpanded="isExpanded"
+          :isVirtualRoot="true"
+          :vgIndex="(node as any)._vgIndex"
+          collapsePrefix=""
+          :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (i + 1) : undefined"
+          @toggle="toggleNode"
+          @viewImage="handleViewImage"
+          @selectImage="handleSelectImage"
+          @removeRoot="() => handleDeleteVg((node as any)._vgIndex)"
+          @excludeNode="handleVirtualExcludeNode"
+          @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
+          @addToVirtualGroup="handleAddToVirtualGroup"
+          @removeFromVirtualGroup="handleRemoveFromVirtualGroup"
+          @copyToFolder="(p:string) => emit('copyToFolder', p)"
+          @moveToFolder="(p:string) => emit('moveToFolder', p)"
+        />
+        <!-- 文件夹树节点 -->
+        <FolderGroup
+          v-else
+          :node="node"
+          :depth="0"
+          :rootPath="node.path"
+          :showTitle="state.showGroupTitle"
+          :getExpanded="isExpanded"
+          collapsePrefix=""
+          :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (i + 1) : undefined"
+          @toggle="toggleNode"
+          @viewImage="handleViewImage"
+          @selectImage="handleSelectImage"
+          @removeRoot="(p:string) => emit('removeRoot', p)"
+          @excludeNode="handleExcludeNode"
+          @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
+          @copyToFolder="(p:string) => emit('copyToFolder', p)"
+          @moveToFolder="(p:string) => emit('moveToFolder', p)"
+        />
+      </template>
+    </div>
+    <template v-else v-for="(node, i) in allRootNodes" :key="node.path || `vg-${i}`">
       <FolderGroup
         v-if="(node as any).isVirtualGroup"
         :node="node"
@@ -352,6 +396,12 @@ defineExpose({ toggleAll, collapseLeaves })
 <style scoped>
 .folder-panel {
   width: 100%;
+}
+
+.folder-panel-compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .folder-count {

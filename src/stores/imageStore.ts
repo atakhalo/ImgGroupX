@@ -53,6 +53,7 @@ const defaultSettings: AppSettings = {
   nodeGridGapV: 4,
   nodeGridGapH: 4,
   compactMode: false,
+  rootCompactMode: false,
   compactHeader: false,
   collapseHierarchy: false,
   rainbowEnabled: false,

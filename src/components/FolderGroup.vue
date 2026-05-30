@@ -201,20 +201,30 @@ function getSegmentColor(level: number): string {
 }
 
 /** 此节点自身是否采用紧凑布局 */
+/** 根节点/虚拟分组一级节点是否参与紧凑模式 */
+const shouldCompactRoot = () => state.settings.compactMode && state.settings.rootCompactMode
+
 const isCompactNode = computed(() => {
   if (!state.settings.compactMode) return false
-  // 根节点不紧凑
+  if (shouldCompactRoot()) {
+    // 根节点紧凑模式下：深度 0 的根节点和虚拟分组一级子节点均参与紧凑
+    if (props.depth === 0) return true
+    if (props.isVirtualRoot && props.depth === 1) return true
+    return true
+  }
+  // 原逻辑：根节点和虚拟分组一级子节点不紧凑
   if (props.depth === 0) return false
-  // 虚拟分组的一级子节点不紧凑
   if (props.isVirtualRoot && props.depth === 1) return false
   return true
 })
 
-/** 内容区域是否使用统一网格（子节点+图片混合排列）
- *  与 isCompactNode 不同：根节点自身不紧凑，但内容区域也可使用统一网格 */
+/** 内容区域是否使用统一网格（子节点+图片混合排列） */
 const useUnifiedGrid = computed(() => {
   if (!state.settings.compactMode) return false
-  // 虚拟分组的一级子节点不紧凑，内容也不使用统一网格
+  if (shouldCompactRoot()) {
+    // 根节点紧凑模式下全部使用统一网格
+    return true
+  }
   if (props.isVirtualRoot && props.depth === 1) return false
   return true
 })
@@ -222,7 +232,10 @@ const useUnifiedGrid = computed(() => {
 /** 此节点的子节点是否需要放在 flex-wrap 容器中 */
 const wrapChildren = computed(() => {
   if (!state.settings.compactMode) return false
-  // 虚拟根节点的一级子节点不紧凑，不需要 wrap
+  if (shouldCompactRoot()) {
+    // 根节点紧凑模式下全部需要 wrap
+    return true
+  }
   if (props.isVirtualRoot && props.depth === 0) return false
   return true
 })
@@ -365,10 +378,32 @@ if (import.meta.env.DEV) {
   win.__debug = { state, hasAnySelection }
 }
 
-/** 是否应该显示路径（虚拟根的一级子节点 或 普通根节点） */
+/** 是否应该显示路径（虚拟根的一级子节点 或 普通根节点）
+ *  根节点紧凑模式下隐藏路径，改为悬浮显示 */
 const shouldShowPath = () => {
+  if (shouldCompactRoot()) {
+    // 根节点紧凑模式下不显示路径
+    return false
+  }
   if (props.isVirtualRoot) return props.depth === 1
   return props.depth === 0
+}
+
+/** 获取节点完整路径（用于悬浮提示；虚拟分组显示分组名而非 internal path） */
+function getNodeFullPath(): string {
+  // 虚拟分组根节点 → 显示分组名
+  if (props.isVirtualRoot && props.depth === 0) {
+    return state.virtualGroups[props.vgIndex ?? -1]?.name || props.node.name
+  }
+  // 虚拟分组子节点 → 显示分组名 + 节点名
+  if (props.isVirtualRoot) {
+    const vgName = state.virtualGroups[props.vgIndex ?? -1]?.name || ''
+    return vgName ? vgName + ' / ' + props.node.name : props.node.name
+  }
+  const root = props.rootPath.replace(/\\/g, '/').replace(/\/$/, '')
+  if (props.depth === 0) return root
+  const rel = props.node.path.replace(/\\/g, '/')
+  return root + '/' + rel
 }
 
 
@@ -494,7 +529,7 @@ function getNodeGridContainerBg(depth: number): string {
           </svg>
         </button>
         <button
-          v-if="depth === 0 && !isVirtualRoot && !(state.settings.compactHeader && isCompactNode)"
+          v-if="depth === 0 && !isVirtualRoot && !(state.settings.compactHeader && isCompactNode) && !state.settings.rootCompactMode"
           class="folder-up-btn"
           :title="$t('folder.up')"
           @click.stop="handleUp"
@@ -585,7 +620,7 @@ function getNodeGridContainerBg(depth: number): string {
         <span v-if="collapsePrefixSegments.length" class="collapse-prefix">
           <span v-for="(seg, i) in collapsePrefixSegments" :key="i" :style="{ color: getSegmentColor(seg.level) }">{{ seg.name }}</span>
         </span>
-        <span class="folder-name" :style="{ color: realDepth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ state.settings.privacyMode && props.anonName ? props.anonName : node.name }}</span>
+        <span class="folder-name" :title="shouldCompactRoot() ? getNodeFullPath() : undefined" :style="{ color: realDepth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ state.settings.privacyMode && props.anonName ? props.anonName : node.name }}</span>
         <span v-if="totalCount(node)" class="folder-count" :class="{ 'all-selected': state.selectMode === 'select' && nodeSelectionState === 'all' }">
           <template v-if="state.selectMode === 'select' && nodeSelectionState !== 'none'">
             (<span :class="{ 'partial-selected': nodeSelectionState === 'partial' }">{{ countSelectedInNode(props.node) }}</span><span class="sep">/</span>{{ totalCount(node) }})
@@ -732,6 +767,18 @@ function getNodeGridContainerBg(depth: number): string {
         </button>
         <div class="ctx-separator"></div>
         <!-- 文件夹操作 -->
+        <!-- 向上（仅根节点，紧凑模式时图标隐藏，放入右键菜单） -->
+        <button
+          v-if="depth === 0 && !isVirtualRoot"
+          class="ctx-menu-item"
+          @click="handleUp(), closeHeaderCtxMenu()"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 19V5M5 12l7-7 7 7" />
+            <line x1="5" y1="19" x2="19" y2="19" />
+          </svg>
+          <span>{{ $t('folder.up') }}</span>
+        </button>
         <button class="ctx-menu-item" @click="openInExplorer(getNodeAbsolutePath()), closeHeaderCtxMenu()">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -1294,10 +1341,10 @@ function getNodeGridContainerBg(depth: number): string {
   overflow: hidden;
 }
 
-/* 折叠状态：不可见，高度为 0，宽度保留 */
+/* 折叠状态：不可见，宽度保留（用 max-height 而非 height 避免影响 min-width 计算） */
 .folder-content-collapsed {
   visibility: hidden;
-  height: 0;
+  max-height: 0;
   overflow: hidden;
   padding: 0 !important;
   gap: 0 !important;
@@ -1314,14 +1361,14 @@ function getNodeGridContainerBg(depth: number): string {
 /* 折叠状态：图片网格不可见，高度为 0，宽度保留 */
 .folder-grid-collapsed {
   visibility: hidden;
-  height: 0;
+  max-height: 0;
   overflow: hidden;
 }
 
 /* 子文件夹区域折叠状态：不可见，高度为 0，宽度保留 */
 .folder-children-collapsed {
   visibility: hidden;
-  height: 0;
+  max-height: 0;
   overflow: hidden;
 }
 

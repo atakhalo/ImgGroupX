@@ -49,7 +49,7 @@ const defaultSettings = {
   rainbowColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   language: 'zh' as const,
   viewerBgMode: 'overlay' as const, viewerBgColor: '#202020',
-  scanAllFiles: false, autoPan: true, autoCenter: true, privacyMode: false,
+  scanAllFiles: false, autoPan: true, autoCenter: true, privacyMode: false, rootCompactMode: false,
   maxLoadSizeMB: 0, loadSkippedOnView: true,
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   showMarks: true, showMarkBadge: true,
@@ -273,6 +273,14 @@ onUnmounted(() => {
               </label>
             </div>
             <div class="setting-hint" v-if="localSettings.compactMode">{{ $t('settings.compact_header_hint') }}</div>
+            <div class="setting-row" v-if="localSettings.compactMode">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.rootCompactMode" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.root_compact_mode') }}
+              </label>
+            </div>
+            <div class="setting-hint" v-if="localSettings.compactMode">{{ $t('settings.root_compact_mode_hint') }}</div>
             <div class="setting-row">
               <label class="toggle-label">
                 <input type="checkbox" v-model="localSettings.collapseHierarchy" class="toggle-input" />
