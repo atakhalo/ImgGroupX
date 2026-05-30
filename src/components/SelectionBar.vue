@@ -118,6 +118,37 @@ onUnmounted(() => {
       <span>{{ $t('control.compare') }}</span>
     </button>
 
+    <!-- 全局全选/反选 -->
+    <button
+      class="ctrl-btn"
+      :title="$t('folder.select_all')"
+      @click="state.selectedPaths = new Set(state.allImages.map(i => i.path)); state.selectedFolderPaths.clear()"
+    >
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <polyline points="9 12 12 15 17 8"/>
+      </svg>
+      <span>{{ $t('folder.select_all') }}</span>
+    </button>
+    <button
+      class="ctrl-btn"
+      :title="$t('folder.invert_selection')"
+      @click="() => {
+        const current = new Set(state.selectedPaths)
+        state.selectedPaths.clear()
+        for (const img of state.allImages) {
+          if (!current.has(img.path)) state.selectedPaths.add(img.path)
+        }
+        state.selectedFolderPaths.clear()
+      }"
+    >
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <line x1="9" y1="12" x2="15" y2="12"/>
+      </svg>
+      <span>{{ $t('folder.invert_selection') }}</span>
+    </button>
+
     <!-- 标记菜单 -->
     <div class="op-menu-container" @click.stop>
       <button
