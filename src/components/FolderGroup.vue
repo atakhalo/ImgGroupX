@@ -31,7 +31,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   toggle: [node: FolderNode]
-  viewImage: [item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string]
+  viewImage: [item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number]
   selectImage: [item: ImageItem, ctrl: boolean]
   removeRoot: [path: string]
   excludeNode: [rootPath: string, subPath: string]
@@ -232,8 +232,20 @@ function isImageSelected(item: ImageItem): boolean {
   return state.selectedPaths.has(item.path)
 }
 
+function getNavKey(): string {
+  if (props.vgIndex !== undefined) {
+    const hierarchy = (props.isVirtualRoot && props.depth === 0)
+      ? ''
+      : (props.hierarchyPath || '') + props.node.name
+    return `vg:${props.vgIndex}:${hierarchy}`
+  }
+  return `tree:${props.node.path}`
+}
+
 function handleGridImageClick(item: ImageItem) {
-  emit('viewImage', item, processedImages.value, props.isVirtualRoot, props.vgIndex, (props.hierarchyPath || '') + props.node.name)
+  const key = getNavKey()
+  const imgIdx = processedImages.value.findIndex(i => i.path === item.path)
+  emit('viewImage', item, processedImages.value, key, imgIdx >= 0 ? imgIdx : 0)
 }
 
 function handleGridImageSelect(item: ImageItem, ctrl: boolean, shift: boolean) {
@@ -394,7 +406,7 @@ function getNodeGridContainerBg(depth: number): string {
       :collapsePrefix="collapsePrefix + node.name + ' / '"
       :realDepth="realDepth + 1"
       @toggle="(n: FolderNode) => emit('toggle', n)"
-      @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string) => emit('viewImage', item, scope, isVirtual, vgIndex, nodePath)"
+      @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
       @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
       @removeRoot="(p: string) => emit('removeRoot', p)"
       @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -721,7 +733,7 @@ function getNodeGridContainerBg(depth: number): string {
         :vgIndex="vgIndex"
         :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
         @toggle="(n: FolderNode) => emit('toggle', n)"
-        @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string) => emit('viewImage', item, scope, isVirtual, vgIndex, nodePath)"
+        @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
         @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
         @removeRoot="(p: string) => emit('removeRoot', p)"
         @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -762,7 +774,7 @@ function getNodeGridContainerBg(depth: number): string {
             :vgIndex="vgIndex"
             :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
             @toggle="(n: FolderNode) => emit('toggle', n)"
-            @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string) => emit('viewImage', item, scope, isVirtual, vgIndex, nodePath)"
+            @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
             @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
             @removeRoot="(p: string) => emit('removeRoot', p)"
             @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -785,7 +797,7 @@ function getNodeGridContainerBg(depth: number): string {
             :vgIndex="vgIndex"
             :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
             @toggle="(n: FolderNode) => emit('toggle', n)"
-            @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string) => emit('viewImage', item, scope, isVirtual, vgIndex, nodePath)"
+            @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
             @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
             @removeRoot="(p: string) => emit('removeRoot', p)"
             @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -807,7 +819,7 @@ function getNodeGridContainerBg(depth: number): string {
         <GridView
           :images="node.images"
           :bgColor="getNodeGridContainerBg(realDepth)"
-          @viewImage="(item: ImageItem, scope: ImageItem[]) => emit('viewImage', item, scope, props.isVirtualRoot, props.vgIndex, (props.hierarchyPath || '') + props.node.name)"
+          @viewImage="(item: ImageItem, scope: ImageItem[]) => { const _k = getNavKey(); const _ii = scope.findIndex(i => i.path === item.path); emit('viewImage', item, scope, _k, _ii >= 0 ? _ii : 0) }"
           @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
         />
       </div>

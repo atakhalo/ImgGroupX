@@ -1,5 +1,5 @@
-import { reactive } from 'vue'
-import type { ImageInfo, ImageItem, FolderNode, AppSettings, SortBy, SortOrder, FilterTarget } from '../types'
+import { reactive, computed } from 'vue'
+import type { ImageInfo, ImageItem, FolderNode, AppSettings, SortBy, SortOrder, FilterTarget, NavigableEntry } from '../types'
 import { getDefaultBindings } from '../utils/shortcuts'
 import { invoke } from '@tauri-apps/api/core'
 import { open, ask } from '@tauri-apps/plugin-dialog'
@@ -528,6 +528,62 @@ export function buildFullTree(): FolderNode[] {
   const folderTree = buildFolderTree(state.allImages, state.loadedRootPaths)
   return [...state.virtualGroups, ...folderTree]
 }
+
+/** 所有可导航节点的扁平有序列表（computed，响应式缓存） */
+export const navigableList = computed<NavigableEntry[]>(() => {
+  const list: NavigableEntry[] = []
+
+  // 1. 虚拟分组
+  for (let vi = 0; vi < state.virtualGroups.length; vi++) {
+    const vg = state.virtualGroups[vi]
+    const scopeId = `vg:${vi}`
+    // 子节点（后序遍历：子→父）
+    function walk(nodes: FolderNode[], parentHierarchy: string) {
+      for (const node of nodes) {
+        const hierarchy = parentHierarchy ? parentHierarchy + ' / ' + node.name : node.name
+        if (node.children.length > 0) walk(node.children, hierarchy)
+        if (node.images.length > 0) {
+          list.push({ images: getProcessedImages(node.images), path: node.path, displayPath: hierarchy, scopeId, groupName: vg.name })
+        }
+      }
+    }
+    walk(vg.children, '')
+    // 一级图片放在最后
+    if (vg.images.length > 0) {
+      list.push({ images: getProcessedImages(vg.images), path: vg.path, displayPath: '', scopeId, groupName: vg.name })
+    }
+  }
+
+  // 2. 真实目录树
+  if (state.loadedRootPaths.length > 0 && state.allImages.length > 0) {
+    const tree = buildFolderTree(state.allImages, state.loadedRootPaths)
+    function walkReal(nodes: FolderNode[], parentDisplay: string) {
+      for (const node of nodes) {
+        const display = parentDisplay ? parentDisplay + ' / ' + node.name : node.name
+        if (node.children.length > 0) walkReal(node.children, display)
+        if (node.images.length > 0) {
+          list.push({ images: getProcessedImages(node.images), path: node.path, displayPath: display, scopeId: 'tree', groupName: '' })
+        }
+      }
+    }
+    walkReal(tree, '')
+  }
+
+  return list
+})
+
+/** 导航索引 Map：key → index in navigableList */
+export const navIndexMap = computed(() => {
+  const map = new Map<string, number>()
+  navigableList.value.forEach((entry, idx) => {
+    if (entry.scopeId.startsWith('vg')) {
+      map.set(`${entry.scopeId}:${entry.displayPath}`, idx)
+    } else {
+      map.set(`tree:${entry.path}`, idx)
+    }
+  })
+  return map
+})
 
 /** 从文件夹树中递归查找并提取指定路径的节点子树（深拷贝） */
 export function findSubTreeInTree(tree: FolderNode[], targetPath: string): FolderNode | null {

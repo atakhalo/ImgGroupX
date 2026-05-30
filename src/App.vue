@@ -2,8 +2,8 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut } from './utils/shortcuts'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, getProcessedImages } from './stores/imageStore'
-import type { ImageItem, FolderNode } from './types'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap } from './stores/imageStore'
+import type { ImageItem, NavigableEntry } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
 import ControlBar from './components/ControlBar.vue'
@@ -22,9 +22,8 @@ const folderPanelRef = ref<InstanceType<typeof FolderPanel>>()
 const viewingIndex = ref(-1)
 const viewingImages = ref<ImageItem[]>([])
 const viewerKey = ref(0)
-const viewingIsVirtual = ref(false)
-const viewingVgIndex = ref(-1)
-const viewingNodePath = ref('')
+/** 当前在 navigableList 中的索引（-1 表示未使用索引导航） */
+const viewingNavIndex = ref(-1)
 const showControls = ref(true)
 const isDragOver = ref(false)
 const showSettingsPanel = ref(false)
@@ -292,24 +291,41 @@ async function handleOpenImages() {
   }
 }
 
-function viewImage(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string) {
+/** 根据 navigableList 中的 entry 构造显示路径 */
+function entryDisplayPath(entry: NavigableEntry): string {
+  if (entry.scopeId.startsWith('vg') && entry.groupName) {
+    if (!entry.displayPath) return entry.groupName
+    return entry.groupName + ' / ' + entry.displayPath
+  }
+  return entry.displayPath || entry.path
+}
+
+/** 大图查看器：打开图片，支持通过 navKey 定位到 navigableList */
+function viewImage(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) {
+  if (navKey !== undefined && navKey !== null) {
+    const idx = navIndexMap.value.get(navKey)
+    if (idx !== undefined && idx >= 0) {
+      const entry = navigableList.value[idx]
+      viewingImages.value = [...entry.images]
+      viewingIndex.value = imageIndex ?? 0
+      viewingNavIndex.value = idx
+      return
+    }
+  }
+  // 回退：无 navKey 时用 scope 或 allImages
   const images = (scope && state.folderGroup) ? scope : state.allImages
-  const idx = images.findIndex(i => i.path === item.path)
-  if (idx >= 0) {
+  const i = images.findIndex(i => i.path === item.path)
+  if (i >= 0) {
     viewingImages.value = [...images]
-    viewingIndex.value = idx
+    viewingIndex.value = i
   } else {
     viewingImages.value = [item]
     viewingIndex.value = 0
   }
-  viewingIsVirtual.value = !!(isVirtual && state.folderGroup && scope)
-  viewingVgIndex.value = viewingIsVirtual.value ? (vgIndex ?? -1) : -1
-  viewingNodePath.value = nodePath || ''
-  // 如果未提供 hierarchy（非虚拟节点），使用 nodePath 作为回退
+  viewingNavIndex.value = -1
 }
 
 function selectImage(item: ImageItem, _ctrl: boolean) {
-  // 选择模式：默认多选，点击切换选中/取消
   if (state.selectedPaths.has(item.path)) state.selectedPaths.delete(item.path)
   else state.selectedPaths.add(item.path)
 }
@@ -317,6 +333,7 @@ function selectImage(item: ImageItem, _ctrl: boolean) {
 function closeViewer() {
   viewingIndex.value = -1
   viewingImages.value = []
+  viewingNavIndex.value = -1
 }
 
 async function handleViewerDelete(path: string, index: number) {
@@ -328,178 +345,36 @@ async function handleViewerDelete(path: string, index: number) {
     return
   }
   viewingImages.value = updated
-  // 使用删除时的实际索引计算新位置，避免因查看器内导航导致索引不同步
   viewingIndex.value = Math.min(index, updated.length - 1)
 }
 
-/** 收集指定虚拟分组中所有节点的图片组（后序遍历）
- *  hierarchy 不包含虚拟分组名自身，避免与 getGroupDisplayPath 的 vgName 重复。 */
-function collectVirtualImageGroupsForVg(vgIndex: number): { images: ImageItem[]; path: string; hierarchy: string }[] {
-  const groups: { images: ImageItem[]; path: string; hierarchy: string }[] = []
-  const vg = state.virtualGroups[vgIndex]
-  if (!vg) return groups
-  // 子节点（后序遍历：子→父），与 UI 显示顺序一致：节点在前
-  function walk(nodes: FolderNode[], parentHierarchy: string) {
-    for (const node of nodes) {
-      const hierarchy = parentHierarchy ? parentHierarchy + ' / ' + node.name : node.name
-      if (node.children.length > 0) walk(node.children, hierarchy)
-      if (node.images.length > 0) groups.push({ images: getProcessedImages(node.images), path: node.path, hierarchy })
-    }
-  }
-  walk(vg.children, '')
-  // 虚拟分组自身的一级图片放在最后，与 UI 显示顺序一致
-  if (vg.images.length > 0) {
-    groups.push({ images: getProcessedImages(vg.images), path: vg.path, hierarchy: '' })
-  }
-  return groups
-}
-
-/** 收集所有虚拟分组中所有节点的图片组（后序遍历） */
-function collectVirtualImageGroups(): { images: ImageItem[]; path: string }[] {
-  const groups: { images: ImageItem[]; path: string }[] = []
-  function walk(nodes: FolderNode[]) {
-    for (const node of nodes) {
-      if (node.children.length > 0) {
-        walk(node.children)
-      }
-      if (node.images.length > 0) {
-        groups.push({ images: node.images, path: node.path })
-      }
-    }
-  }
-  walk(state.virtualGroups)
-  return groups
-}
-
-/** 收集树中所有节点的图片组（后序遍历：子节点→父节点） */
-function collectAllImageGroups(): { images: ImageItem[]; path: string }[] {
-  const groups: { images: ImageItem[]; path: string }[] = []
-  const tree = buildFolderTree(state.allImages, state.loadedRootPaths)
-  function walk(nodes: FolderNode[]) {
-    for (const node of nodes) {
-      if (node.children.length > 0) {
-        walk(node.children)
-      }
-      if (node.images.length > 0) {
-        groups.push({ images: getProcessedImages(node.images), path: node.path })
-      }
-    }
-  }
-  walk(tree)
-  return groups
-}
-
-/** 在树节点列表中递归查找目标路径的显示路径 */
-function findDisplayPathInNodes(nodes: FolderNode[], targetPath: string, prefix: string): string | null {
-  for (const node of nodes) {
-    const current = prefix + ' / ' + node.name
-    if (node.path === targetPath) return current
-    if (node.children.length > 0) {
-      const result = findDisplayPathInNodes(node.children, targetPath, current)
-      if (result) return result
-    }
-  }
-  return null
-}
-
-/** 获取节点组的显示路径（用于冒泡提示）
- *  优先使用 hierarchy（唯一标识），避免同路径节点搜索到错误的位置。
- *  针对虚拟分组，直接构造 "虚拟分组名 / hierarchy"。
- *  针对真实树，回退到基于 path 的搜索。 */
-function getGroupDisplayPath(groupPath: string, isVirtual: boolean, hierarchy?: string, vgName?: string): string {
-  if (isVirtual && hierarchy && vgName) {
-    return vgName + ' / ' + hierarchy
-  }
-  if (isVirtual) {
-    for (const vg of state.virtualGroups) {
-      if (vg.path === groupPath) return vg.name
-      const result = findDisplayPathInNodes(vg.children, groupPath, vg.name)
-      if (result) return result
-    }
-    return groupPath
-  } else {
-    const tree = buildFolderTree(state.allImages, state.loadedRootPaths)
-    for (const root of tree) {
-      if (root.path === groupPath) return root.name
-      const result = findDisplayPathInNodes(root.children, groupPath, root.name)
-      if (result) return result
-    }
-    return groupPath.split('/').pop() || groupPath
-  }
-}
-
-/** 查找当前图片所属的节点组索引（优先按 hierarchy 精确匹配，其次按 viewingImages 重叠度） */
-function findCurrentGroupIndex(groups: { images: ImageItem[]; path: string; hierarchy?: string }[], imagePath: string, scope?: ImageItem[], hierarchy?: string): number {
-  // 优先按 hierarchy 精确匹配（唯一标识，可区分同路径不同位置的节点）
-  if (hierarchy) {
-    const exactIdx = groups.findIndex(g => g.hierarchy === hierarchy)
-    if (exactIdx >= 0) return exactIdx
-  }
-  // 其次按 viewingImages 重叠度匹配
-  if (scope && scope.length > 0) {
-    const scopePaths = new Set(scope.map(i => i.path))
-    let bestIdx = -1
-    let bestRatio = 0
-    for (let i = 0; i < groups.length; i++) {
-      if (!groups[i].images.some(img => img.path === imagePath)) continue
-      const groupPaths = new Set(groups[i].images.map(i => i.path))
-      const overlap = [...scopePaths].filter(p => groupPaths.has(p)).length
-      const ratio = overlap / Math.max(scopePaths.size, groupPaths.size)
-      if (ratio > bestRatio) {
-        bestRatio = ratio
-        bestIdx = i
-      }
-    }
-    if (bestIdx >= 0) return bestIdx
-  }
-  return groups.findIndex(g => g.images.some(img => img.path === imagePath))
+/** 切到 navigableList 中的指定偏移位置，返回是否成功 */
+function navigateToOffset(offset: -1 | 1): boolean {
+  if (viewingNavIndex.value < 0) return false
+  const list = navigableList.value
+  const cur = viewingNavIndex.value
+  const target = cur + offset
+  if (target < 0 || target >= list.length) return false
+  // 不跨越 scope 边界
+  if (list[target].scopeId !== list[cur].scopeId) return false
+  const entry = list[target]
+  viewingImages.value = [...entry.images]
+  viewingIndex.value = offset === -1 ? entry.images.length - 1 : 0
+  viewingNavIndex.value = target
+  showToast(`切换至 ${entryDisplayPath(entry)}`, 1000)
+  return true
 }
 
 /** 大图查看器：切换到上一节点 */
 function handleViewerPrevNode() {
-  const currentItem = viewingImages.value[viewingIndex.value]
-  if (!currentItem) return
-  // 优先按具体虚拟分组导航，其次按所有虚拟分组，最后按真实树
-  let groups: { images: ImageItem[]; path: string }[]
-  if (viewingIsVirtual.value && viewingVgIndex.value >= 0) {
-    groups = collectVirtualImageGroupsForVg(viewingVgIndex.value)
-  } else if (viewingIsVirtual.value) {
-    groups = collectVirtualImageGroups()
-  } else {
-    groups = collectAllImageGroups()
-  }
-  const idx = findCurrentGroupIndex(groups, currentItem.path, viewingImages.value, viewingNodePath.value)
-  if (idx <= 0) return
-  const prevGroup = groups[idx - 1]
-  viewingImages.value = [...prevGroup.images]
-  viewingIndex.value = prevGroup.images.length - 1
-  const hierarchy = (prevGroup as any).hierarchy
-  viewingNodePath.value = hierarchy || prevGroup.path
-  const vgName = viewingIsVirtual.value && viewingVgIndex.value >= 0 ? state.virtualGroups[viewingVgIndex.value]?.name : undefined
-  showToast(`切换至 ${getGroupDisplayPath(prevGroup.path, viewingIsVirtual.value, hierarchy, vgName)}`, 1000)
+  if (viewingNavIndex.value < 0) return
+  navigateToOffset(-1)
 }
 
 /** 大图查看器：切换到下一节点 */
 function handleViewerNextNode() {
-  const currentItem = viewingImages.value[viewingIndex.value]
-  if (!currentItem) return
-  let groups: { images: ImageItem[]; path: string; hierarchy?: string }[]
-  if (viewingIsVirtual.value && viewingVgIndex.value >= 0) {
-    groups = collectVirtualImageGroupsForVg(viewingVgIndex.value)
-  } else if (viewingIsVirtual.value) {
-    groups = collectVirtualImageGroups()
-  } else {
-    groups = collectAllImageGroups()
-  }
-  const idx = findCurrentGroupIndex(groups, currentItem.path, viewingImages.value, viewingNodePath.value)
-  if (idx < 0 || idx >= groups.length - 1) return
-  const nextGroup = groups[idx + 1]
-  viewingImages.value = [...nextGroup.images]
-  viewingIndex.value = 0
-  const hierarchy = (nextGroup as any).hierarchy
-  viewingNodePath.value = hierarchy || nextGroup.path
-  const vgName = viewingIsVirtual.value && viewingVgIndex.value >= 0 ? state.virtualGroups[viewingVgIndex.value]?.name : undefined
-  showToast(`切换至 ${getGroupDisplayPath(nextGroup.path, viewingIsVirtual.value, hierarchy, vgName)}`, 1000)
+  if (viewingNavIndex.value < 0) return
+  navigateToOffset(1)
 }
 
 function toggleFolderGroup() { state.folderGroup = !state.folderGroup }
@@ -771,7 +646,7 @@ async function handleRefresh() {
             ref="folderPanelRef"
             :images="state.allImages"
             :virtualGroups="state.virtualGroups"
-            @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string) => viewImage(item, scope, isVirtual, vgIndex, nodePath)"
+            @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => viewImage(item, scope, navKey, imageIndex)"
             @selectImage="selectImage"
             @deleteVirtualGroup="handleDeleteVirtualGroup"
             @removeRoot="removeFolderRoot"

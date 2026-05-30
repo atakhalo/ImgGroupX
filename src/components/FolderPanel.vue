@@ -11,7 +11,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  viewImage: [item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string]
+  viewImage: [item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number]
   selectImage: [item: ImageItem, ctrl: boolean]
   deleteVirtualGroup: [index: number]
   removeRoot: [path: string]
@@ -176,8 +176,8 @@ watch(
   () => updateExpandedByFilter(),
 )
 
-function handleViewImage(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string) {
-  emit('viewImage', item, scope, isVirtual, vgIndex, nodePath)
+function handleViewImage(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) {
+  emit('viewImage', item, scope, navKey, imageIndex)
 }
 
 function handleSelectImage(item: ImageItem, ctrl: boolean) {

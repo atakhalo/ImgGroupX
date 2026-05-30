@@ -65,6 +65,15 @@ export type FilterTarget = 'name' | 'group' | 'path'
 /** 大图查看器背景模式 */
 export type ViewerBgMode = 'overlay' | 'color'
 
+/** 导航列表条目类型 */
+export interface NavigableEntry {
+  images: ImageItem[]
+  path: string
+  displayPath: string
+  scopeId: string
+  groupName: string
+}
+
 /** 应用设置 */
 export interface AppSettings {
   /** 格子圆角 */
