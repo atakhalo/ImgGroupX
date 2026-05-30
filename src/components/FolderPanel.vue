@@ -227,19 +227,26 @@ function handleAddToVirtualGroup(vgIndex: number) {
     }
   }
 
-  // 收集分组中已有子节点路径
-  const existingChildPaths = new Set<string>()
-  function collectChildPaths(n: FolderNode) {
-    existingChildPaths.add(n.path)
-    for (const c of n.children) collectChildPaths(c)
-  }
-  collectChildPaths(vg)
+  // 只检查一级子节点是否已存在（非一级节点即使已在深层子树中，也应允许添加为一级节点）
+  const existingChildPaths = new Set(vg.children.map(c => c.path))
 
   // 添加不重复的选中文件夹子树
   const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
+  const normRoots = state.loadedRootPaths.map(r => r.replace(/\\/g, '/').replace(/\/$/, ''))
   for (const fp of state.selectedFolderPaths) {
     if (existingChildPaths.has(fp)) continue
-    const found = findSubTreeInTree(fullTree, fp)
+    // 先按原路径（绝对/相对）查找，再尝试转为相对路径查找
+    let found = findSubTreeInTree(fullTree, fp)
+    if (!found) {
+      const normFp = fp.replace(/\\/g, '/').replace(/\/$/, '')
+      for (const root of normRoots) {
+        if (normFp.startsWith(root + '/')) {
+          const rel = normFp.substring(root.length + 1)
+          found = findSubTreeInTree(fullTree, rel)
+          if (found) break
+        }
+      }
+    }
     if (found) {
       makeNodePathsAbsolute(found)
       vg.children.push(found)
