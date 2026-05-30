@@ -19,16 +19,19 @@ const props = withDefaults(defineProps<{
   isVirtualRoot?: boolean
   vgIndex?: number
   collapsePrefix?: string
+  /** 节点层级路径（从虚拟分组根到当前节点的完整名称链，用于唯一标识节点位置） */
+  hierarchyPath?: string
   /** 真实层级深度（不受压缩影响） */
   realDepth?: number
 }>(), {
   collapsePrefix: '',
+  hierarchyPath: '',
   realDepth: 0,
 })
 
 const emit = defineEmits<{
   toggle: [node: FolderNode]
-  viewImage: [item: ImageItem, scope?: ImageItem[], isVirtual?: boolean]
+  viewImage: [item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string]
   selectImage: [item: ImageItem, ctrl: boolean]
   removeRoot: [path: string]
   excludeNode: [rootPath: string, subPath: string]
@@ -230,7 +233,7 @@ function isImageSelected(item: ImageItem): boolean {
 }
 
 function handleGridImageClick(item: ImageItem) {
-  emit('viewImage', item, processedImages.value, props.isVirtualRoot)
+  emit('viewImage', item, processedImages.value, props.isVirtualRoot, props.vgIndex, (props.hierarchyPath || '') + props.node.name)
 }
 
 function handleGridImageSelect(item: ImageItem, ctrl: boolean, shift: boolean) {
@@ -386,10 +389,12 @@ function getNodeGridContainerBg(depth: number): string {
       :showTitle="showTitle"
       :getExpanded="getExpanded"
       :isVirtualRoot="isVirtualRoot"
+      :vgIndex="vgIndex"
+      :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
       :collapsePrefix="collapsePrefix + node.name + ' / '"
       :realDepth="realDepth + 1"
       @toggle="(n: FolderNode) => emit('toggle', n)"
-      @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean) => emit('viewImage', item, scope, isVirtual)"
+      @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string) => emit('viewImage', item, scope, isVirtual, vgIndex, nodePath)"
       @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
       @removeRoot="(p: string) => emit('removeRoot', p)"
       @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -713,8 +718,10 @@ function getNodeGridContainerBg(depth: number): string {
         :showTitle="showTitle"
         :getExpanded="getExpanded"
         :isVirtualRoot="isVirtualRoot"
+        :vgIndex="vgIndex"
+        :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
         @toggle="(n: FolderNode) => emit('toggle', n)"
-        @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean) => emit('viewImage', item, scope, isVirtual)"
+        @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string) => emit('viewImage', item, scope, isVirtual, vgIndex, nodePath)"
         @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
         @removeRoot="(p: string) => emit('removeRoot', p)"
         @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -752,8 +759,10 @@ function getNodeGridContainerBg(depth: number): string {
             :showTitle="showTitle"
             :getExpanded="getExpanded"
             :isVirtualRoot="isVirtualRoot"
+            :vgIndex="vgIndex"
+            :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
             @toggle="(n: FolderNode) => emit('toggle', n)"
-            @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean) => emit('viewImage', item, scope, isVirtual)"
+            @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string) => emit('viewImage', item, scope, isVirtual, vgIndex, nodePath)"
             @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
             @removeRoot="(p: string) => emit('removeRoot', p)"
             @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -773,8 +782,10 @@ function getNodeGridContainerBg(depth: number): string {
             :showTitle="showTitle"
             :getExpanded="getExpanded"
             :isVirtualRoot="isVirtualRoot"
+            :vgIndex="vgIndex"
+            :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
             @toggle="(n: FolderNode) => emit('toggle', n)"
-            @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean) => emit('viewImage', item, scope, isVirtual)"
+            @viewImage="(item: ImageItem, scope?: ImageItem[], isVirtual?: boolean, vgIndex?: number, nodePath?: string) => emit('viewImage', item, scope, isVirtual, vgIndex, nodePath)"
             @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
             @removeRoot="(p: string) => emit('removeRoot', p)"
             @excludeNode="(rp: string, sp: string) => emit('excludeNode', rp, sp)"
@@ -796,7 +807,7 @@ function getNodeGridContainerBg(depth: number): string {
         <GridView
           :images="node.images"
           :bgColor="getNodeGridContainerBg(realDepth)"
-          @viewImage="(item: ImageItem, scope: ImageItem[]) => emit('viewImage', item, scope, props.isVirtualRoot)"
+          @viewImage="(item: ImageItem, scope: ImageItem[]) => emit('viewImage', item, scope, props.isVirtualRoot, props.vgIndex, (props.hierarchyPath || '') + props.node.name)"
           @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
         />
       </div>
