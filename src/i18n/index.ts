@@ -183,6 +183,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.display_limit': '已显示 {shown} / {total}',
     'hint.no_meta': '无元数据',
     'hint.copy_path': '复制路径',
+    'hint.copy_file': '复制为文件',
+    'hint.copy_file_tip': '可在资源管理器粘贴',
     // 快捷键
     'shortcuts.title': '快捷键设置',
     'shortcuts.hint': '点击编辑按钮，然后按下新按键即可自定义快捷键。按 Esc 取消编辑。',
@@ -451,6 +453,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.display_limit': 'Showing {shown} / {total}',
     'hint.no_meta': 'No metadata',
     'hint.copy_path': 'Copy Path',
+    'hint.copy_file': 'Copy as File',
+    'hint.copy_file_tip': 'Can paste in File Explorer',
     // Shortcuts
     'shortcuts.title': 'Keyboard Shortcuts',
     'shortcuts.hint': 'Click the edit button, then press a key to customize. Press Esc to cancel.',

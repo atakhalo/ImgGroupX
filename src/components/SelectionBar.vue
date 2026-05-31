@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { MarkLevel } from '../types'
-import { state, getTotalSelectedCount, setSelectedImagesMark, selectImagesByMark, deselectImagesByMark } from '../stores/imageStore'
+import { state, getTotalSelectedCount, setSelectedImagesMark, selectImagesByMark, deselectImagesByMark, collectAllSelectedPaths, showToast } from '../stores/imageStore'
+import { writeFiles } from 'tauri-plugin-clipboard-api'
+import { t } from '../i18n'
 
 const emit = defineEmits<{
   createGroup: []
@@ -54,6 +56,18 @@ function handleCopy() {
 function handleDelete() {
   showOpMenu.value = false
   emit('deleteSelection')
+}
+
+async function handleCopyToClipboard() {
+  showOpMenu.value = false
+  const paths = collectAllSelectedPaths()
+  if (paths.length === 0) return
+  try {
+    await writeFiles(paths)
+    showToast(t('hint.copy_file') + ' — ' + t('hint.copy_file_tip'))
+  } catch (e: any) {
+    showToast(t('hint.copy_file') + '失败: ' + (e.message || e))
+  }
 }
 
 function closeOpMenu() {
@@ -240,6 +254,12 @@ onUnmounted(() => {
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
           </svg>
           <span>{{ $t('control.copy') }}</span>
+        </button>
+        <button class="op-menu-item" @click="handleCopyToClipboard" :title="$t('hint.copy_file_tip')">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+          </svg>
+          <span>{{ $t('hint.copy_file') }}</span>
         </button>
         <div class="op-menu-divider"></div>
         <button class="op-menu-item op-menu-delete" @click="handleDelete">

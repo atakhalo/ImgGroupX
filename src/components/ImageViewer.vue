@@ -2,9 +2,11 @@
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import type { ImageItem, MarkLevel } from '../types'
 import { state, loadImageBase64, setImageMark, showToast, applyFileChanges, setSuppressWatcher, showRenameDialog, ensurePrivacyIcon } from '../stores/imageStore'
+import { t } from '../i18n'
 import { matchShortcut } from '../utils/shortcuts'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
+import { writeFiles } from 'tauri-plugin-clipboard-api'
 import OperationBar from './OperationBar.vue'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 
@@ -356,6 +358,18 @@ async function handleCtxCopyPath() {
   try { await navigator.clipboard.writeText(p); showToast('已复制路径') }
   catch { showToast('复制路径失败') }
 }
+async function handleCtxCopyFile() {
+  closeViewerCtx()
+  const p = currentItem.value?.path
+  if (!p) return
+  try {
+    await writeFiles([p])
+    showToast(t('hint.copy_file') + ' — ' + t('hint.copy_file_tip'))
+  } catch (e: any) {
+    showToast(t('hint.copy_file') + '失败: ' + (e.message || e))
+  }
+}
+
 async function handleCtxSaveAs() {
   closeViewerCtx()
   const item = currentItem.value
@@ -483,6 +497,12 @@ function handleClose() {
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
           </svg>
           <span>复制路径</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxCopyFile" :title="$t('hint.copy_file_tip')">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+          </svg>
+          <span>{{ $t('hint.copy_file') }}</span>
         </button>
         <div class="ctx-separator"></div>
         <button class="ctx-menu-item" @click="handleCtxRename">
