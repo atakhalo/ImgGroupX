@@ -1241,6 +1241,15 @@ fn get_app_icon() -> Result<String, String> {
     Ok(format!("data:image/png;base64,{}", b64))
 }
 
+/// 设置壁纸（crop 模式）
+#[tauri::command]
+fn set_wallpaper(path: String) -> Result<(), String> {
+    wallpaper::set_from_path(&path)
+        .map_err(|e| format!("设置壁纸失败: {}", e))?;
+    wallpaper::set_mode(wallpaper::Mode::Crop)
+        .map_err(|e| format!("设置壁纸模式失败: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1274,6 +1283,7 @@ pub fn run() {
             read_file_text,
             rename_file,
             get_app_icon,
+            set_wallpaper,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -370,6 +370,18 @@ async function handleCtxCopyFile() {
   }
 }
 
+async function handleCtxSetWallpaper() {
+  closeViewerCtx()
+  const item = currentItem.value
+  if (!item) return
+  try {
+    await invoke('set_wallpaper', { path: item.path })
+    showToast(t('hint.wallpaper_set'))
+  } catch (e: any) {
+    showToast(t('hint.wallpaper_set_failed', { msg: e.message || e }))
+  }
+}
+
 async function handleCtxSaveAs() {
   closeViewerCtx()
   const item = currentItem.value
@@ -516,6 +528,12 @@ function handleClose() {
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
           </svg>
           <span>另存为</span>
+        </button>
+        <button class="ctx-menu-item" @click="handleCtxSetWallpaper">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+          </svg>
+          <span>{{ $t('viewer.set_wallpaper') }}</span>
         </button>
         <div class="ctx-separator"></div>
         <button class="ctx-menu-item" @click="handleCtxMetadata">

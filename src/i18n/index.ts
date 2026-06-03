@@ -152,6 +152,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'viewer.explorer': '资源管理器',
     'viewer.default': '默认方式',
     'viewer.close': '关闭',
+    'viewer.set_wallpaper': '设置为壁纸',
     'viewer.metadata': '元信息',
     'viewer.mark': '标记',
     'viewer.mark_level': '标记 {n}',
@@ -185,6 +186,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.copy_path': '复制路径',
     'hint.copy_file': '复制为文件',
     'hint.copy_file_tip': '可在资源管理器粘贴',
+    'hint.wallpaper_set': '壁纸已设置',
+    'hint.wallpaper_set_failed': '设置壁纸失败: {msg}',
     // 快捷键
     'shortcuts.title': '快捷键设置',
     'shortcuts.hint': '点击编辑按钮，然后按下新按键即可自定义快捷键。按 Esc 取消编辑。',
@@ -425,6 +428,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'viewer.explorer': 'Explorer',
     'viewer.default': 'Default',
     'viewer.close': 'Close',
+    'viewer.set_wallpaper': 'Set as Wallpaper',
     'viewer.metadata': 'Metadata',
     'viewer.mark': 'Mark',
     'viewer.mark_level': 'Mark {n}',
@@ -453,6 +457,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.display_limit': 'Showing {shown} / {total}',
     'hint.no_meta': 'No metadata',
     'hint.copy_path': 'Copy Path',
+    'hint.wallpaper_set': 'Wallpaper set successfully',
+    'hint.wallpaper_set_failed': 'Failed to set wallpaper: {msg}',
     'hint.copy_file': 'Copy as File',
     'hint.copy_file_tip': 'Can paste in File Explorer',
     // Shortcuts
