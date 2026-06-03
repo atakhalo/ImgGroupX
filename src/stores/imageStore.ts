@@ -1393,22 +1393,25 @@ export function clearAll() {
   rootExclusions.clear()
 }
 
-/** 加载配置 */
+/** 加载配置（忽略已存盘的 filterRegex，始终从空值开始） */
 export async function loadConfig(): Promise<void> {
   try {
     const cfg = await invoke<Partial<AppSettings>>('load_config')
     if (cfg && typeof cfg === 'object') {
-      Object.assign(state.settings, cfg)
+      // 排除 filterRegex，避免旧配置残留导致筛选框为空但实际有筛选
+      const { filterRegex: _fr, ...safe } = cfg
+      Object.assign(state.settings, safe)
     }
   } catch {
     // 首次运行或文件不存在，使用默认配置
   }
 }
 
-/** 保存配置 */
+/** 保存配置（排除筛选正则等瞬态字段） */
 export async function saveConfig(): Promise<void> {
   try {
-    await invoke('save_config', { settings: { ...state.settings } })
+    const { filterRegex: _fr, ...persistent } = state.settings
+    await invoke('save_config', { settings: persistent })
   } catch (e) {
     console.error('保存配置失败:', e)
   }
