@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import type { ImageItem } from '../types'
-import { state, loadImageBase64, showToast, applyFileChanges, setSuppressWatcher, showRenameDialog, setImageMark, ensurePrivacyIcon } from '../stores/imageStore'
-import { t } from '../i18n'
+import { state, loadImageBase64, ensurePrivacyIcon } from '../stores/imageStore'
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { save } from '@tauri-apps/plugin-dialog'
-import { writeFiles } from 'tauri-plugin-clipboard-api'
+import ImageContextMenu from './ImageContextMenu.vue'
 
 
 /** 可渲染为图片的支持格式 */
@@ -165,82 +162,6 @@ function closeCtxMenu() {
   ctxMenu.value.show = false
 }
 
-function handleCtxView() {
-  closeCtxMenu()
-  emit('click', props.item)
-}
-
-function handleCtxOpenExplorer() {
-  closeCtxMenu()
-  revealItemInDir(props.item.path).catch(() => {})
-}
-
-function handleCtxOpenDefault() {
-  closeCtxMenu()
-  invoke('open_in_explorer', { path: props.item.path }).catch(() => {})
-}
-
-async function handleCtxCopyPath() {
-  closeCtxMenu()
-  try {
-    await navigator.clipboard.writeText(props.item.path)
-    showToast('已复制路径')
-  } catch {
-    const ta = document.createElement('textarea')
-    ta.value = props.item.path
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    document.body.removeChild(ta)
-  }
-}
-
-async function handleCtxCopyFile() {
-  closeCtxMenu()
-  try {
-    await writeFiles([props.item.path])
-    showToast(t('hint.copy_file') + ' — ' + t('hint.copy_file_tip'))
-  } catch (e: any) {
-    showToast(t('hint.copy_file') + '失败: ' + (e.message || e))
-  }
-}
-
-async function handleCtxSaveAs() {
-  closeCtxMenu()
-  const path = props.item.path
-  try {
-    const dest = await save({
-      defaultPath: props.item.name,
-      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff'] }],
-    })
-    if (!dest) return
-    const destStr = String(dest).replace(/\\/g, '/')
-    const lastSlash = destStr.lastIndexOf('/')
-    const destDir = lastSlash >= 0 ? destStr.substring(0, lastSlash) : ''
-    const fileName = lastSlash >= 0 ? destStr.substring(lastSlash + 1) : destStr
-    // 参考 copyImagesToFolder：抑制监听器 → 复制 → 恢复 → 用实际路径刷新
-    await setSuppressWatcher(true)
-    const created = await invoke<[string, string][]>('copy_files', { files: [[path, fileName]], destDir })
-    await setSuppressWatcher(false)
-    const createdPaths = created.map(([_, dest]) => dest)
-    // 如果保存在已加载的根路径下，增量刷新
-    const roots = state.loadedRootPaths.map(r => r.replace(/[\\/]/g, '/').replace(/\/$/, ''))
-    if (roots.some(r => destDir === r || destDir.startsWith(r + '/'))) {
-      await applyFileChanges(createdPaths)
-    }
-    showToast('已保存到 ' + destStr)
-  } catch (e: any) {
-    showToast('保存失败: ' + (e.message || e))
-  }
-}
-
-function handleCtxRename() {
-  closeCtxMenu()
-  const item = props.item
-  if (!item) return
-  showRenameDialog(item)
-}
-
 /** 元信息弹窗状态 */
 const showMetaDialog = ref(false)
 const metaFields = ref<[string, string][]>([])
@@ -305,51 +226,6 @@ watch(showMetaDialog, async (val) => {
     metaBackdropRef.value?.focus()
   }
 })
-
-function handleCtxMetadata() {
-  closeCtxMenu()
-  loadMetadata()
-}
-
-function handleCtxMark(level: number) {
-  closeCtxMenu()
-  setImageMark(props.item.path, level as any)
-}
-
-async function handleCtxCopyImage() {
-  closeCtxMenu()
-  const src = imgSrc.value
-  if (!src) { showToast('图片尚未加载'); return }
-  try {
-    const comma = src.indexOf(',')
-    const mime = src.slice(5, comma).match(/^(.*?);/)![1]
-    const raw = atob(src.slice(comma + 1))
-    const len = raw.length
-    const buf = new Uint8Array(len)
-    for (let i = 0; i < len; i++) buf[i] = raw.charCodeAt(i)
-
-    if (mime === 'image/png') {
-      // PNG 直接写入（浏览器剪贴板原生支持）
-      const blob = new Blob([buf], { type: 'image/png' })
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
-    } else {
-      // 非 PNG 格式（webp/jpeg 等）→ Canvas 解码后重新编码为 PNG
-      const blob = new Blob([buf], { type: mime })
-      const bitmap = await createImageBitmap(blob)
-      const canvas = document.createElement('canvas')
-      canvas.width = bitmap.width
-      canvas.height = bitmap.height
-      const ctx = canvas.getContext('2d')!
-      ctx.drawImage(bitmap, 0, 0)
-      bitmap.close()
-      const pngBlob = await new Promise<Blob>(resolve => canvas.toBlob(b => resolve(b!), 'image/png'))
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })])
-    }
-    showToast('已复制图片')
-  } catch (e: any) {
-    showToast('复制图片失败: ' + (e.message || e))
-  }
-}
 </script>
 
 <template>
@@ -368,98 +244,18 @@ async function handleCtxCopyImage() {
     @dblclick="state.selectMode === 'select' && emit('click', item)"
     @contextmenu.prevent="handleContextMenu"
   >
-    <!-- 右键菜单 -->
-    <Teleport to="body">
-      <div v-if="ctxMenu.show" class="ctx-backdrop" @click="closeCtxMenu"></div>
-      <div v-if="ctxMenu.show" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
-        <button class="ctx-menu-item" @click="handleCtxView">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-          </svg>
-          <span>{{ $t('viewer.view') }}</span>
-        </button>
-        <div class="ctx-separator"></div>
-        <div class="ctx-menu-item ctx-menu-hoverable">
-          <div class="ctx-menu-item-inner">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-            </svg>
-            <span>{{ $t('control.mark') }}</span>
-            <svg class="ctx-submenu-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
-          </div>
-          <div class="ctx-submenu">
-            <button
-              v-for="lv in 5" :key="lv"
-              class="ctx-submenu-item"
-              @click="handleCtxMark(lv)"
-            >
-              <span class="ctx-mark-dot" :style="{ background: state.settings.markColors[lv - 1] }"></span>
-              <span>{{ $t('viewer.mark_level', { n: lv }) }}</span>
-            </button>
-            <div class="ctx-separator"></div>
-            <button class="ctx-submenu-item" @click="handleCtxMark(0)">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-              <span>{{ $t('control.mark_clear') }}</span>
-            </button>
-          </div>
-        </div>
-        <div class="ctx-separator"></div>
-        <button class="ctx-menu-item" @click="handleCtxCopyImage">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
-          </svg>
-          <span>复制图片</span>
-        </button>
-        <button class="ctx-menu-item" @click="handleCtxCopyPath">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-          </svg>
-          <span>复制路径</span>
-        </button>
-        <button class="ctx-menu-item" @click="handleCtxCopyFile" :title="$t('hint.copy_file_tip')">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
-          </svg>
-          <span>{{ $t('hint.copy_file') }}</span>
-        </button>
-        <div class="ctx-separator"></div>
-        <button class="ctx-menu-item" @click="handleCtxRename">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
-          </svg>
-          <span>{{ $t('viewer.rename') }}</span>
-        </button>
-        <button class="ctx-menu-item" @click="handleCtxSaveAs">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-          </svg>
-          <span>另存为</span>
-        </button>
-        <div class="ctx-separator"></div>
-        <button class="ctx-menu-item" @click="handleCtxMetadata">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
-          </svg>
-          <span>{{ $t('viewer.metadata') }}</span>
-        </button>
-        <button class="ctx-menu-item" @click="handleCtxOpenExplorer">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-          </svg>
-          <span>{{ $t('folder.open_in_explorer') }}</span>
-        </button>
-        <button class="ctx-menu-item" @click="handleCtxOpenDefault">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-          </svg>
-          <span>{{ $t('viewer.default') }}</span>
-        </button>
-      </div>
-    </Teleport>
+    <!-- 右键菜单（共享组件） -->
+    <ImageContextMenu
+      :show="ctxMenu.show"
+      :x="ctxMenu.x"
+      :y="ctxMenu.y"
+      :item="item"
+      :imgSrc="imgSrc"
+      mode="grid"
+      @close="closeCtxMenu"
+      @view="emit('click', item)"
+      @show-metadata="loadMetadata"
+    />
     <!-- 元信息弹窗 -->
     <Teleport to="body">
       <div v-if="showMetaDialog" class="meta-backdrop" tabindex="-1" @click="showMetaDialog = false" @keydown.escape="handleMetaKeydown" ref="metaBackdropRef"></div>
@@ -719,131 +515,6 @@ async function handleCtxCopyImage() {
   font-weight: 700;
   line-height: 1;
   text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-}
-
-/* 右键菜单背板 */
-.ctx-backdrop {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 9998;
-}
-
-/* 右键菜单 */
-.ctx-menu {
-  position: fixed;
-  z-index: 9999;
-  background: rgba(30, 30, 50, 0.95);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 4px;
-  min-width: 120px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-}
-
-.ctx-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 12px;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.8);
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 13px;
-  white-space: nowrap;
-  transition: background 0.12s;
-}
-
-.ctx-menu-item:hover {
-  background: rgba(100, 108, 255, 0.2);
-  color: white;
-}
-
-.ctx-separator {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.08);
-  margin: 4px 8px;
-}
-
-/* 可展开菜单项 */
-.ctx-menu-hoverable {
-  position: relative;
-  padding: 0;
-}
-.ctx-menu-item-inner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 12px;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.8);
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 13px;
-  white-space: nowrap;
-  transition: background 0.12s;
-}
-.ctx-menu-hoverable:hover > .ctx-menu-item-inner {
-  background: rgba(100, 108, 255, 0.2);
-  color: white;
-}
-.ctx-submenu-arrow {
-  margin-left: auto;
-  flex-shrink: 0;
-  opacity: 0.5;
-}
-.ctx-menu-hoverable:hover .ctx-submenu-arrow {
-  opacity: 1;
-}
-
-/* 子菜单：默认隐藏，hover 时显示 */
-.ctx-submenu {
-  display: none;
-  position: absolute;
-  left: 100%;
-  top: -4px;
-  z-index: 10000;
-  background: rgba(30, 30, 50, 0.95);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 4px;
-  min-width: 130px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-}
-.ctx-menu-hoverable:hover > .ctx-submenu,
-.ctx-submenu:hover {
-  display: block;
-}
-.ctx-submenu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 5px 12px;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.8);
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 13px;
-  white-space: nowrap;
-  transition: background 0.12s;
-}
-.ctx-submenu-item:hover {
-  background: rgba(100, 108, 255, 0.2);
-  color: white;
-}
-.ctx-mark-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
 }
 
 /* 元信息弹窗样式 */
