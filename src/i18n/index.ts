@@ -287,6 +287,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.anonymous_node': '节点',
     'control.toggle_filename': '切换文件名常驻显示',
     'control.collapse_leaves': '折叠叶子',
+    'control.toggle_controls': '控制栏',
             'virtual_group_default': '临时图片分组',
   },
 
@@ -557,6 +558,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.anonymous_node': 'Node',
     'control.toggle_filename': 'Toggle always show file name',
     'control.collapse_leaves': 'Collapse Leaves',
+    'control.toggle_controls': 'Control Bar',
             'virtual_group_default': 'Temp Group',
   }
 }
