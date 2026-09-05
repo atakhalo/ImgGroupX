@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut } from './utils/shortcuts'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent } from './stores/imageStore'
 import type { ImageItem, NavigableEntry } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -90,6 +90,44 @@ async function handlePasteAsGroup() {
 // 命令行单图：待打开图片路径（加载完父文件夹后自动大图显示）
 const pendingOpenImagePath = ref('')
 
+// 最近打开下拉菜单
+const showRecentMenu = ref(false)
+const recentMenuRef = ref<HTMLElement | null>(null)
+
+function toggleRecentMenu() {
+  showRecentMenu.value = !showRecentMenu.value
+}
+
+function onRecentMenuClickOutside(e: MouseEvent) {
+  if (showRecentMenu.value && recentMenuRef.value && !recentMenuRef.value.contains(e.target as Node)) {
+    showRecentMenu.value = false
+  }
+}
+
+/** 点击最近记录：文件夹走扫描，图片走虚拟分组 */
+async function handleRecentOpen(kind: 'folder' | 'file', path: string) {
+  showRecentMenu.value = false
+  if (kind === 'folder') {
+    recordRecentFolder(path)
+    await startProgressiveScan([path])
+  } else {
+    recordRecentFile(path)
+    await scanFilesAsVirtualGroup([path])
+  }
+}
+
+/** 从最近记录中移除（不打开） */
+function handleRecentRemove(kind: 'folder' | 'file', path: string) {
+  removeRecent(kind === 'folder' ? 'folders' : 'files', path)
+}
+
+/** 清空最近记录 */
+async function clearRecent() {
+  state.recentFolders = []
+  state.recentFiles = []
+  await saveRecent()
+}
+
 let unlistenDragDrop: (() => void) | null = null
 let unlistenFsChange: (() => void) | null = null
 
@@ -136,9 +174,12 @@ onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
   // 全局取消浏览器默认右键菜单
   document.addEventListener('contextmenu', preventCtx)
+  document.addEventListener('click', onRecentMenuClickOutside)
   setupDragDrop()
   await loadConfig()
   settingsReady = true
+  // 加载最近访问记录
+  loadRecent()
   // 剪贴板文件状态（用于右键菜单"粘贴为临时分组"）
   refreshClipboardHasFiles()
 
@@ -210,6 +251,7 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('contextmenu', preventCtx)
+  document.removeEventListener('click', onRecentMenuClickOutside)
   if (unlistenDragDrop) unlistenDragDrop()
   if (unlistenFsChange) unlistenFsChange()
 })
@@ -261,10 +303,14 @@ async function handleDroppedPaths(paths: string[]) {
   }
   // 文件夹走渐进式扫描
   if (folders.length > 0) {
+    for (const p of folders) recordRecentFolder(p)
     await startProgressiveScan(folders)
   }
   // 文件走虚拟分组
-  if (files.length > 0) await scanFilesAsVirtualGroup(files)
+  if (files.length > 0) {
+    for (const p of files) recordRecentFile(p)
+    await scanFilesAsVirtualGroup(files)
+  }
 }
 
 /** 删除文件夹根节点及其图片（保留其他根路径仍覆盖的图片） */
@@ -298,6 +344,8 @@ async function handleOpenFolder() {
     })
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected]
+      // 记录最近打开的文件夹
+      for (const p of paths) recordRecentFolder(p)
       await startProgressiveScan(paths)
     }
   } catch (e) {
@@ -314,6 +362,8 @@ async function handleOpenImages() {
     })
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected]
+      // 记录最近打开的图片
+      for (const p of paths) recordRecentFile(p)
       await scanFilesAsVirtualGroup(paths)
     }
   } catch (e) {
@@ -603,6 +653,55 @@ async function handleRefresh() {
               </svg>
               <span>{{ $t('control.images') }}</span>
             </button>
+            <!-- 最近 -->
+            <div ref="recentMenuRef" class="recent-menu-container">
+              <button class="top-btn" :title="$t('control.recent')" @click.stop="toggleRecentMenu">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                <span>{{ $t('control.recent') }}</span>
+              </button>
+              <div v-if="showRecentMenu" class="recent-menu" @click.stop>
+                <template v-if="state.recentFolders.length > 0">
+                  <div class="recent-menu-title">{{ $t('recent.folders') }}</div>
+                  <div v-for="p in state.recentFolders" :key="'f:' + p" class="recent-item" @click="handleRecentOpen('folder', p)">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span class="recent-item-name" :title="p">{{ p }}</span>
+                    <button class="recent-item-del" :title="$t('recent.remove')" @click.stop="handleRecentRemove('folder', p)">
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  </div>
+                </template>
+                <template v-if="state.recentFiles.length > 0">
+                  <div class="recent-menu-title">{{ $t('recent.files') }}</div>
+                  <div v-for="p in state.recentFiles" :key="'i:' + p" class="recent-item" @click="handleRecentOpen('file', p)">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/>
+                      <circle cx="8.5" cy="8.5" r="1.5"/>
+                      <path d="M21 15l-5-5L5 21"/>
+                    </svg>
+                    <span class="recent-item-name" :title="p">{{ p }}</span>
+                    <button class="recent-item-del" :title="$t('recent.remove')" @click.stop="handleRecentRemove('file', p)">
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  </div>
+                </template>
+                <template v-if="state.recentFolders.length === 0 && state.recentFiles.length === 0">
+                  <div class="recent-empty">{{ $t('recent.empty') }}</div>
+                </template>
+                <template v-else>
+                  <div class="recent-menu-divider"></div>
+                  <button class="recent-clear" @click="clearRecent">{{ $t('recent.clear') }}</button>
+                </template>
+              </div>
+            </div>
             <!-- 刷新 -->
             <button class="top-btn refresh-btn" :class="{ 'has-update': state.refreshAvailable }" :title="$t('control.refresh')" @click="handleRefresh">
               <span class="refresh-icon-wrap">
@@ -914,6 +1013,78 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
 }
 .top-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.9); }
 .refresh-icon-wrap { position: relative; display: flex; }
+
+/* 最近打开下拉菜单 */
+.recent-menu-container { position: relative; flex-shrink: 0; }
+.recent-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 280px;
+  max-width: 420px;
+  max-height: 420px;
+  overflow-y: auto;
+  background: #23233d;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 6px;
+  z-index: 300;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  text-align: left;
+}
+.recent-menu-title {
+  font-size: 11px;
+  color: rgba(255,255,255,0.45);
+  padding: 6px 10px 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: rgba(255,255,255,0.85);
+  font-size: 12px;
+}
+.recent-item:hover { background: rgba(255,255,255,0.08); }
+.recent-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.recent-item-del {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.35);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.recent-item-del:hover { background: rgba(255,60,60,0.15); color: #ff6b6b; }
+.recent-empty { padding: 14px 10px; font-size: 12px; color: rgba(255,255,255,0.4); text-align: center; }
+.recent-menu-divider { height: 1px; background: rgba(255,255,255,0.1); margin: 4px 6px; }
+.recent-clear {
+  width: 100%;
+  padding: 7px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.6);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.recent-clear:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.9); }
 .refresh-dot {
   position: absolute; top: -2px; right: -2px;
   width: 6px; height: 6px; border-radius: 50%;

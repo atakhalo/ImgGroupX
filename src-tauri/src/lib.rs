@@ -976,6 +976,39 @@ fn config_path() -> PathBuf {
         .join("config-user.yaml")
 }
 
+/// 获取data-user.yaml的路径（软件exe所在目录，用于存储最近访问记录等用户数据）
+fn data_path() -> PathBuf {
+    let exe = env::current_exe().unwrap_or_default();
+    exe.parent()
+        .unwrap_or(Path::new("."))
+        .join("data-user.yaml")
+}
+
+/// 加载最近访问记录（文件夹和图片）
+#[tauri::command]
+fn load_recent() -> Result<serde_json::Value, String> {
+    let path = data_path();
+    if !path.exists() {
+        return Ok(serde_json::Value::Object(serde_json::Map::new()));
+    }
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let yaml_value: serde_yaml::Value =
+        serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
+    let json = serde_json::to_value(yaml_value).map_err(|e| e.to_string())?;
+    Ok(json)
+}
+
+/// 保存最近访问记录
+#[tauri::command]
+fn save_recent(data: serde_json::Value) -> Result<(), String> {
+    let path = data_path();
+    let yaml_value: serde_yaml::Value =
+        serde_json::from_value(data).map_err(|e| e.to_string())?;
+    let yaml_str = serde_yaml::to_string(&yaml_value).map_err(|e| e.to_string())?;
+    fs::write(&path, yaml_str).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 加载配置
 #[tauri::command]
 fn load_config() -> Result<serde_json::Value, String> {
@@ -1270,6 +1303,8 @@ pub fn run() {
             open_with_program,
             load_config,
             save_config,
+            load_recent,
+            save_recent,
             get_cli_args,
             delete_file,
             trash_paths,

@@ -114,6 +114,10 @@ export const state = reactive({
   cancelledRoots: new Set<string>(),
   /** Shift 连选：上次选中的图片路径（全局唯一，用于检测跨节点） */
   lastSelectedImagePath: null as string | null,
+  /** 最近打开的文件夹（最新在前） */
+  recentFolders: [] as string[],
+  /** 最近打开的图片（最新在前） */
+  recentFiles: [] as string[],
   /** 重命名对话框状态 */
   renameDialog: {
     show: false,
@@ -1450,4 +1454,52 @@ export async function saveConfig(): Promise<void> {
   } catch (e) {
     console.error('保存配置失败:', e)
   }
+}
+
+/** 最近记录最多保留条数 */
+const RECENT_LIMIT = 20
+
+/** 加载最近访问记录（来自 data-user.yaml） */
+export async function loadRecent(): Promise<void> {
+  try {
+    const data = await invoke<{ folders?: string[]; files?: string[] }>('load_recent')
+    state.recentFolders = Array.isArray(data?.folders) ? data.folders : []
+    state.recentFiles = Array.isArray(data?.files) ? data.files : []
+  } catch {
+    // 首次运行或文件不存在
+    state.recentFolders = []
+    state.recentFiles = []
+  }
+}
+
+/** 保存最近访问记录到 data-user.yaml */
+export async function saveRecent(): Promise<void> {
+  try {
+    await invoke('save_recent', {
+      data: { folders: state.recentFolders, files: state.recentFiles },
+    })
+  } catch (e) {
+    console.error('保存最近记录失败:', e)
+  }
+}
+
+/** 记录最近打开的文件夹（去重、最新在前、限制条数） */
+export function recordRecentFolder(path: string): void {
+  const norm = normPath(path)
+  state.recentFolders = [norm, ...state.recentFolders.filter(p => p !== norm)].slice(0, RECENT_LIMIT)
+  saveRecent()
+}
+
+/** 记录最近打开的图片（去重、最新在前、限制条数） */
+export function recordRecentFile(path: string): void {
+  const norm = normPath(path)
+  state.recentFiles = [norm, ...state.recentFiles.filter(p => p !== norm)].slice(0, RECENT_LIMIT)
+  saveRecent()
+}
+
+/** 移除最近记录（文件夹或图片） */
+export function removeRecent(kind: 'folders' | 'files', path: string): void {
+  if (kind === 'folders') state.recentFolders = state.recentFolders.filter(p => p !== path)
+  else state.recentFiles = state.recentFiles.filter(p => p !== path)
+  saveRecent()
 }

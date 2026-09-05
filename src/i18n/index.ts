@@ -189,6 +189,14 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.paste_as_group': '粘贴为临时分组',
     'hint.wallpaper_set': '壁纸已设置',
     'hint.wallpaper_set_failed': '设置壁纸失败: {msg}',
+
+    // 最近打开
+    'recent.folders': '文件夹',
+    'recent.files': '图片',
+    'recent.empty': '暂无最近记录',
+    'recent.remove': '移除',
+    'recent.clear': '清空最近记录',
+
     // 快捷键
     'shortcuts.title': '快捷键设置',
     'shortcuts.hint': '点击编辑按钮，然后按下新按键即可自定义快捷键。按 Esc 取消编辑。',
@@ -273,6 +281,7 @@ const messages: Record<Lang, Record<string, string>> = {
     // 控制栏标题
     'control.open_folder': '打开文件夹',
     'control.open_images': '打开图片',
+    'control.recent': '最近',
     'control.refresh': '刷新',
     'control.toggle_group': '切换为紧凑模式',
     'control.toggle_compact': '切换为分组模式',
@@ -464,6 +473,12 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.copy_file': 'Copy as File',
     'hint.copy_file_tip': 'Can paste in File Explorer',
     'hint.paste_as_group': 'Paste as Temporary Group',
+    // Recent
+    'recent.folders': 'Folders',
+    'recent.files': 'Images',
+    'recent.empty': 'No recent items',
+    'recent.remove': 'Remove',
+    'recent.clear': 'Clear recent',
     // Shortcuts
     'shortcuts.title': 'Keyboard Shortcuts',
     'shortcuts.hint': 'Click the edit button, then press a key to customize. Press Esc to cancel.',
@@ -544,6 +559,7 @@ const messages: Record<Lang, Record<string, string>> = {
 
     'control.open_folder': 'Open Folder',
     'control.open_images': 'Open Images',
+    'control.recent': 'Recent',
     'control.refresh': 'Refresh',
     'control.toggle_group': 'Switch to Compact Mode',
     'control.toggle_compact': 'Switch to Group Mode',
