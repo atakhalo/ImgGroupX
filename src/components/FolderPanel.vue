@@ -37,14 +37,26 @@ function totalNodeImages(node: FolderNode): number {
   return n
 }
 
-/** 在树中递归搜索指定路径的节点，返回其根节点 */
+/** 在树中递归搜索指定节点的根节点（基于对象引用判断归属，避免同名相对路径误判） */
 function findRootForNode(node: FolderNode, roots: FolderNode[]): FolderNode | undefined {
-  return roots.find(r => isNodeInTree(r, node))
+  return roots.find(r => containsNode(r, node))
 }
 
-function isNodeInTree(parent: FolderNode, target: FolderNode): boolean {
-  if (parent.path === target.path) return true
-  return parent.children.some(c => isNodeInTree(c, target))
+/** 判断 target 节点是否位于 parent 子树内（对象引用比较） */
+function containsNode(parent: FolderNode, target: FolderNode): boolean {
+  if (parent === target) return true
+  return parent.children.some(c => containsNode(c, target))
+}
+
+/** 真实目录树节点的绝对路径 key（子节点 node.path 为相对路径，需拼接根路径，避免多根同名子目录冲突） */
+function getNodeAbsKey(node: FolderNode): string {
+  const nodeNorm = node.path.replace(/\\/g, '/')
+  // 已是绝对路径（根节点或虚拟分组节点）直接返回
+  if (/^[A-Za-z]:\//.test(nodeNorm) || nodeNorm.startsWith('/')) return nodeNorm
+  const rootNode = folderTree.value.find(r => r.path === nodeNorm) ?? findRootForNode(node, folderTree.value)
+  if (!rootNode) return nodeNorm
+  const rootNorm = rootNode.path.replace(/\\/g, '/').replace(/\/$/, '')
+  return rootNorm + '/' + nodeNorm
 }
 
 /** 判断根节点是否已达到大型标准（>100张图 或 >5个子文件夹） */
@@ -53,38 +65,38 @@ function isRootLarge(rootNode: FolderNode): boolean {
   return totalNodeImages(rootNode) > 100
 }
 
-/** 获取节点展开状态：仅在首次构造时决定，之后不变 */
-function isExpanded(node: FolderNode, scopeKey?: string): boolean {
-  const key = scopeKey || node.path
-  if (expandedMap.has(key)) {
-    return expandedMap.get(key)!
+/** 获取节点展开状态：仅在首次构造时决定，之后不变（key 由调用方提供，真实树为绝对路径） */
+function isExpanded(node: FolderNode, key?: string): boolean {
+  const k = key || getNodeAbsKey(node)
+  if (expandedMap.has(k)) {
+    return expandedMap.get(k)!
   }
   // 首次构造：找到所属根节点
   const rootNode = folderTree.value.find(r => r.path === node.path) ?? findRootForNode(node, folderTree.value)
   const rootKey = rootNode?.path ?? node.path
   // 查该根路径的检测标志
   if (rootLargeDetected.get(rootKey)) {
-    expandedMap.set(key, false)
+    expandedMap.set(k, false)
     return false
   }
   // 默认为展开，然后检查根节点维度是否达到大型标准
-  expandedMap.set(key, true)
+  expandedMap.set(k, true)
   if (rootNode && isRootLarge(rootNode)) {
     rootLargeDetected.set(rootKey, true)
-    expandedMap.set(key, false) // 触发节点自身也折叠
+    expandedMap.set(k, false) // 触发节点自身也折叠
   }
-  return expandedMap.get(key)!
+  return expandedMap.get(k)!
 }
 
 /** 为虚拟分组创建作用域化的 isExpanded */
-function makeVgExpanded(vgIndex: number): (node: FolderNode) => boolean {
-  return (node: FolderNode) => {
-    const key = `vg:${vgIndex}:${node.path}`
-    if (expandedMap.has(key)) {
-      return expandedMap.get(key)!
+function makeVgExpanded(vgIndex: number): (node: FolderNode, key?: string) => boolean {
+  return (node: FolderNode, key?: string) => {
+    const k = key || `vg:${vgIndex}:${node.path}`
+    if (expandedMap.has(k)) {
+      return expandedMap.get(k)!
     }
     // 委托给 isExpanded 初始化，但使用作用域键
-    return isExpanded(node, key)
+    return isExpanded(node, k)
   }
 }
 
@@ -103,21 +115,29 @@ const allRootNodes = computed<(FolderNode & { isVirtualGroup?: boolean })[]>(() 
 })
 
 function toggleNode(node: FolderNode, scopeKey?: string) {
-  const key = scopeKey || node.path
+  const key = scopeKey || getNodeAbsKey(node)
   expandedMap.set(key, !(expandedMap.get(key) ?? true))
+}
+
+/** 根据根路径构造节点绝对 key（node.path 可能是相对或绝对路径） */
+function absKeyFor(rootPath: string, nodePath: string): string {
+  const rootNorm = rootPath.replace(/\\/g, '/').replace(/\/$/, '')
+  const nodeNorm = nodePath.replace(/\\/g, '/')
+  if (nodeNorm === rootNorm || nodeNorm.startsWith(rootNorm + '/')) return nodeNorm
+  return rootNorm + '/' + nodeNorm
 }
 
 function toggleAll(expand: boolean) {
   expandedMap.clear()
   rootLargeDetected.clear()
-  function setAll(node: FolderNode) {
-    expandedMap.set(node.path, expand)
+  function setAll(node: FolderNode, rootPath: string) {
+    expandedMap.set(absKeyFor(rootPath, node.path), expand)
     for (const child of node.children) {
-      setAll(child)
+      setAll(child, rootPath)
     }
   }
   for (const node of folderTree.value) {
-    setAll(node)
+    setAll(node, node.path)
   }
   for (let vi = 0; vi < props.virtualGroups.length; vi++) {
     setAllVg(props.virtualGroups[vi], vi, expand)
@@ -136,15 +156,15 @@ function setAllVg(vg: FolderNode, vi: number, expand: boolean) {
 function collapseLeaves() {
   expandedMap.clear()
   rootLargeDetected.clear()
-  function walk(node: FolderNode) {
+  function walk(node: FolderNode, rootPath: string) {
     const isLeaf = node.images.length > 0 && node.children.length === 0
-    expandedMap.set(node.path, !isLeaf) // 叶子折叠，非叶子展开
+    expandedMap.set(absKeyFor(rootPath, node.path), !isLeaf) // 叶子折叠，非叶子展开
     for (const child of node.children) {
-      walk(child)
+      walk(child, rootPath)
     }
   }
   for (const root of folderTree.value) {
-    walk(root)
+    walk(root, root.path)
   }
   for (let vi = 0; vi < props.virtualGroups.length; vi++) {
     collapseLeavesVg(props.virtualGroups[vi], vi)
@@ -178,18 +198,19 @@ function hasMatchingImages(node: FolderNode): boolean {
 
 function updateExpandedByFilter() {
   const regex = state.settings.filterRegex
-  function walk(node: FolderNode) {
+  function walk(node: FolderNode, rootPath: string) {
+    const key = absKeyFor(rootPath, node.path)
     if (!regex) {
-      expandedMap.set(node.path, true)
+      expandedMap.set(key, true)
     } else {
-      expandedMap.set(node.path, hasMatchingImages(node))
+      expandedMap.set(key, hasMatchingImages(node))
     }
     for (const child of node.children) {
-      walk(child)
+      walk(child, rootPath)
     }
   }
   for (const node of folderTree.value) {
-    walk(node)
+    walk(node, node.path)
   }
   for (let vi = 0; vi < state.virtualGroups.length; vi++) {
     const vg = state.virtualGroups[vi]

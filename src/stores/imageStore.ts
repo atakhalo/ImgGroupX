@@ -569,16 +569,23 @@ export const navigableList = computed<NavigableEntry[]>(() => {
   // 2. 真实目录树
   if (state.loadedRootPaths.length > 0 && state.allImages.length > 0) {
     const tree = buildFolderTree(state.allImages, state.loadedRootPaths)
-    function walkReal(nodes: FolderNode[], parentDisplay: string) {
+    /** 将节点路径转为绝对路径（根节点本身已是绝对，子节点为相对路径） */
+    function toAbsPath(rootPath: string, path: string): string {
+      if (path === rootPath || path.startsWith(rootPath + '/')) return path
+      return rootPath + '/' + path
+    }
+    function walkReal(nodes: FolderNode[], parentDisplay: string, rootPath: string) {
       for (const node of nodes) {
         const display = parentDisplay ? parentDisplay + ' / ' + node.name : node.name
-        if (node.children.length > 0) walkReal(node.children, display)
+        if (node.children.length > 0) walkReal(node.children, display, rootPath)
         if (node.images.length > 0) {
-          list.push({ images: getProcessedImages(node.images), path: node.path, displayPath: display, scopeId: 'tree', groupName: '' })
+          list.push({ images: getProcessedImages(node.images), path: toAbsPath(rootPath, node.path), displayPath: display, scopeId: 'tree', groupName: '' })
         }
       }
     }
-    walkReal(tree, '')
+    for (const rootNode of tree) {
+      walkReal([rootNode], '', rootNode.path)
+    }
   }
 
   return list
@@ -597,14 +604,33 @@ export const navIndexMap = computed(() => {
   return map
 })
 
-/** 从文件夹树中递归查找并提取指定路径的节点子树（深拷贝） */
+/** 从文件夹树中递归查找并提取指定路径的节点子树（深拷贝）
+ * 支持绝对路径或相对路径查找：根节点 path 为绝对路径，子节点为相对路径 */
 export function findSubTreeInTree(tree: FolderNode[], targetPath: string): FolderNode | null {
-  const norm = targetPath.replace(/\\/g, '/')
+  const norm = targetPath.replace(/\\/g, '/').replace(/\/$/, '')
   for (const node of tree) {
     if (node.path === norm) {
       return JSON.parse(JSON.stringify(node))
     }
-    const found = findSubTreeInTree(node.children, norm)
+    // 绝对路径：拼接根路径匹配；相对路径：直接匹配子节点
+    const rootNorm = node.path.replace(/\\/g, '/').replace(/\/$/, '')
+    const found = findSubTreeInAbs(node, norm, rootNorm)
+    if (found) return found
+  }
+  return null
+}
+
+/** 在子树中按绝对路径归一化匹配（根路径已知时拼接相对路径比较） */
+function findSubTreeInAbs(node: FolderNode, targetNorm: string, rootAbsNorm: string): FolderNode | null {
+  for (const child of node.children) {
+    const childNorm = child.path.replace(/\\/g, '/')
+    const childAbs = childNorm.startsWith(rootAbsNorm + '/') || childNorm === rootAbsNorm
+      ? childNorm
+      : rootAbsNorm + '/' + childNorm
+    if (childAbs === targetNorm || childNorm === targetNorm) {
+      return JSON.parse(JSON.stringify(child))
+    }
+    const found = findSubTreeInAbs(child, targetNorm, childAbs)
     if (found) return found
   }
   return null
@@ -982,6 +1008,12 @@ export function collectSelectedFolderAbsolutePaths(): string[] {
   const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
   const roots = state.loadedRootPaths.map(r => r.replace(/\\/g, '/').replace(/\/$/, ''))
   for (const fp of state.selectedFolderPaths) {
+    const normFp = fp.replace(/\\/g, '/').replace(/\/$/, '')
+    // 已是绝对路径（含盘符或以 / 开头）→ 直接使用
+    if (/^[A-Za-z]:\//.test(normFp) || normFp.startsWith('/')) {
+      raw.push(normFp)
+      continue
+    }
     const node = findSubTreeInTree(fullTree, fp)
     if (!node) continue
     if (roots.includes(node.path)) {
@@ -1101,13 +1133,12 @@ function collectNodeImagePathsInto(node: FolderNode, set: Set<string>) {
 function computeSelectedFolderAbsolutePaths(): string[] {
   if (state.selectedFolderPaths.size === 0) return []
   const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
-  const roots = state.loadedRootPaths.map(r => r.replace(/\\/g, '/').replace(/\/$/, ''))
   const result: string[] = []
 
   for (const fp of state.selectedFolderPaths) {
     const norm = fp.replace(/\\/g, '/').replace(/\/$/, '')
-    // 路径已在根列表中 → 直接使用
-    if (roots.includes(norm)) {
+    // 已是绝对路径（含盘符或以 / 开头）→ 直接使用
+    if (/^[A-Za-z]:\//.test(norm) || norm.startsWith('/')) {
       result.push(norm)
       continue
     }
@@ -1123,13 +1154,17 @@ function computeSelectedFolderAbsolutePaths(): string[] {
   return result
 }
 
-/** 在树中递归查找相对路径对应的绝对路径 */
-function resolveRelativePathInTree(node: FolderNode, targetRelPath: string, rootAbsPath: string): string | null {
+/** 在树中递归查找目标路径对应的绝对路径（支持相对/绝对路径目标） */
+function resolveRelativePathInTree(node: FolderNode, targetNorm: string, rootAbsPath: string): string | null {
   for (const child of node.children) {
-    if (child.path === targetRelPath) {
-      return rootAbsPath + '/' + child.path
+    const childNorm = child.path.replace(/\\/g, '/')
+    const childAbs = (childNorm.startsWith(rootAbsPath + '/') || childNorm === rootAbsPath)
+      ? childNorm
+      : rootAbsPath + '/' + childNorm
+    if (childAbs === targetNorm || childNorm === targetNorm) {
+      return childAbs
     }
-    const found = resolveRelativePathInTree(child, targetRelPath, rootAbsPath)
+    const found = resolveRelativePathInTree(child, targetNorm, childAbs)
     if (found) return found
   }
   return null

@@ -15,7 +15,7 @@ const props = withDefaults(defineProps<{
   depth: number
   rootPath: string
   showTitle: boolean
-  getExpanded: (node: FolderNode) => boolean
+  getExpanded: (node: FolderNode, key?: string) => boolean
   isVirtualRoot?: boolean
   vgIndex?: number
   collapsePrefix?: string
@@ -45,20 +45,27 @@ const emit = defineEmits<{
 }>()
 
 function handleToggle() {
-  emit('toggle', props.node, getScopeKey())
+  emit('toggle', props.node, getExpandKey())
 }
 
-function getScopeKey(): string | undefined {
+/** 展开状态全局唯一 key：真实树用绝对路径，虚拟分组用作用域前缀，避免多根同名子目录冲突 */
+function getExpandKey(): string {
   if (props.vgIndex !== undefined) return `vg:${props.vgIndex}:${props.node.path}`
-  return undefined
+  return getNodeAbsolutePath()
 }
 
 function handleSelectClick(e: MouseEvent) {
   e.stopPropagation()
   // 虚拟根节点（depth=0 且 isVirtualRoot）不可选，子节点可选
   if (!(props.isVirtualRoot && props.depth === 0) && state.selectMode === 'select') {
-    emit('toggleSelectFolder', props.node.path)
+    emit('toggleSelectFolder', getSelectKey())
   }
+}
+
+/** 选择状态全局唯一 key：真实树用绝对路径；虚拟分组子节点 path 本身已是绝对路径 */
+function getSelectKey(): string {
+  if (props.vgIndex !== undefined) return props.node.path
+  return getNodeAbsolutePath()
 }
 
 function parentPath(path: string): string {
@@ -93,7 +100,7 @@ function handleRemove() {
   }
 }
 
-const isSelected = () => state.selectedFolderPaths.has(props.node.path)
+const isSelected = () => state.selectedFolderPaths.has(getSelectKey())
 
 /** 递归收集节点下所有图片路径 */
 function collectAllImagePaths(node: FolderNode): string[] {
@@ -259,7 +266,7 @@ function getNavKey(): string {
       : (props.hierarchyPath || '') + props.node.name
     return `vg:${props.vgIndex}:${hierarchy}`
   }
-  return `tree:${props.node.path}`
+  return `tree:${getNodeAbsolutePath()}`
 }
 
 function handleGridImageClick(item: ImageItem) {
@@ -621,7 +628,7 @@ function getNodeGridContainerBg(depth: number): string {
         </span>
       </span>
       <span class="folder-label" :class="{ 'has-collapse': collapsePrefixSegments.length > 0, 'rainbow-bg': state.settings.rainbowEnabled && collapsePrefixSegments.length === 0 && realDepth > 0 }">
-        <span class="folder-arrow">{{ getExpanded(node) ? '▼' : '▶' }}</span>
+        <span class="folder-arrow">{{ getExpanded(node, getExpandKey()) ? '▼' : '▶' }}</span>
         <span v-if="collapsePrefixSegments.length" class="collapse-prefix">
           <span v-for="(seg, i) in collapsePrefixSegments" :key="i" :style="{ color: getSegmentColor(seg.level) }">{{ seg.name }}</span>
         </span>
@@ -831,9 +838,9 @@ function getNodeGridContainerBg(depth: number): string {
     <div
       v-if="useUnifiedGrid"
       class="folder-content-grid"
-      :class="{ 'folder-content-collapsed': !getExpanded(node) }"
+      :class="{ 'folder-content-collapsed': !getExpanded(node, getExpandKey()) }"
       :style="{
-        gap: getExpanded(node) ? state.settings.gap + 'px' : '0',
+        gap: getExpanded(node, getExpandKey()) ? state.settings.gap + 'px' : '0',
         backgroundColor: getNodeGridContainerBg(realDepth),
       }"
     >
@@ -877,7 +884,7 @@ function getNodeGridContainerBg(depth: number): string {
         <div
           v-if="node.children.length"
           class="folder-children-section"
-          :class="{ 'folder-children-collapsed': !getExpanded(node) }"
+          :class="{ 'folder-children-collapsed': !getExpanded(node, getExpandKey()) }"
         >
           <div v-if="wrapChildren" class="folder-children-compact" :style="{ gap: state.settings.nodeGridGapH + 'px' }">
             <FolderGroup
@@ -931,7 +938,7 @@ function getNodeGridContainerBg(depth: number): string {
         <div
           v-if="node.images.length"
           class="folder-grid-wrapper"
-          :class="{ 'folder-grid-collapsed': !getExpanded(node) }"
+          :class="{ 'folder-grid-collapsed': !getExpanded(node, getExpandKey()) }"
           :style="{ borderRadius: '20px', backgroundColor: getNodeGridWrapperBg(realDepth) }"
         >
           <GridView
