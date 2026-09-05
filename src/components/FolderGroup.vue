@@ -102,35 +102,35 @@ function handleRemove() {
 
 const isSelected = () => state.selectedFolderPaths.has(getSelectKey())
 
-/** 递归收集节点下所有图片路径 */
-function collectAllImagePaths(node: FolderNode): string[] {
-  const paths: string[] = node.images.map(img => img.path)
+/** 递归收集节点下所有图片（按筛选后可见） */
+function collectVisibleImagePaths(node: FolderNode): string[] {
+  const paths: string[] = getProcessedImages(node.images).map(img => img.path)
   for (const child of node.children) {
-    paths.push(...collectAllImagePaths(child))
+    paths.push(...collectVisibleImagePaths(child))
   }
   return paths
 }
 
-/** 全选：选中节点下所有图片（含子节点） */
+/** 全选：选中节点下所有图片（含子节点，仅筛选后可见） */
 function selectAll() {
-  const paths = collectAllImagePaths(props.node)
+  const paths = collectVisibleImagePaths(props.node)
   for (const p of paths) {
     state.selectedPaths.add(p)
   }
 }
 
-/** 反选：反转节点下所有图片的选中状态 */
+/** 反选：反转节点下所有图片的选中状态（仅筛选后可见） */
 function invertSelection() {
-  const paths = collectAllImagePaths(props.node)
+  const paths = collectVisibleImagePaths(props.node)
   for (const p of paths) {
     if (state.selectedPaths.has(p)) state.selectedPaths.delete(p)
     else state.selectedPaths.add(p)
   }
 }
 
-/** 一级图片：仅选中节点直接下的图片 */
+/** 一级图片：仅选中节点直接下的图片（仅筛选后可见） */
 function selectDirectImages() {
-  for (const img of props.node.images) {
+  for (const img of getProcessedImages(props.node.images)) {
     state.selectedPaths.add(img.path)
   }
 }

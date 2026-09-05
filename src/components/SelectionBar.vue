@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { MarkLevel } from '../types'
-import { state, getTotalSelectedCount, setSelectedImagesMark, selectImagesByMark, deselectImagesByMark, collectAllSelectedPaths, showToast } from '../stores/imageStore'
+import { state, getTotalSelectedCount, setSelectedImagesMark, selectImagesByMark, deselectImagesByMark, collectAllSelectedPaths, getProcessedImages, showToast } from '../stores/imageStore'
 import { writeFiles } from 'tauri-plugin-clipboard-api'
 import { t } from '../i18n'
 
@@ -70,6 +70,22 @@ async function handleCopyToClipboard() {
   }
 }
 
+/** 全选：仅选中当前筛选（搜索）后可见的图片 */
+function selectAllVisible() {
+  state.selectedPaths = new Set(getProcessedImages(state.allImages).map(i => i.path))
+  state.selectedFolderPaths.clear()
+}
+
+/** 反选：仅对当前筛选（搜索）后可见的图片取反 */
+function invertVisible() {
+  const current = new Set(state.selectedPaths)
+  state.selectedPaths.clear()
+  for (const img of getProcessedImages(state.allImages)) {
+    if (!current.has(img.path)) state.selectedPaths.add(img.path)
+  }
+  state.selectedFolderPaths.clear()
+}
+
 function closeOpMenu() {
   showOpMenu.value = false
 }
@@ -136,7 +152,7 @@ onUnmounted(() => {
     <button
       class="ctrl-btn"
       :title="$t('folder.select_all')"
-      @click="state.selectedPaths = new Set(state.allImages.map(i => i.path)); state.selectedFolderPaths.clear()"
+      @click="selectAllVisible"
     >
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -147,14 +163,7 @@ onUnmounted(() => {
     <button
       class="ctrl-btn"
       :title="$t('folder.invert_selection')"
-      @click="() => {
-        const current = new Set(state.selectedPaths)
-        state.selectedPaths.clear()
-        for (const img of state.allImages) {
-          if (!current.has(img.path)) state.selectedPaths.add(img.path)
-        }
-        state.selectedFolderPaths.clear()
-      }"
+      @click="invertVisible"
     >
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="3" width="18" height="18" rx="2"/>
