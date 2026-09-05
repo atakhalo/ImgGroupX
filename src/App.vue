@@ -16,6 +16,7 @@ import LoadPanel from './components/LoadPanel.vue'
 import { open, ask } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
+import { hasFiles, readFiles } from 'tauri-plugin-clipboard-api'
 
 const folderPanelRef = ref<InstanceType<typeof FolderPanel>>()
 
@@ -46,6 +47,8 @@ function handleContentCtxMenu(e: MouseEvent) {
   if (target.closest('.folder-header')) return
   e.preventDefault()
   contentCtx.value = { show: true, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 120) }
+  // 打开时刷新剪贴板文件状态（不阻塞菜单显示）
+  refreshClipboardHasFiles()
 }
 function closeContentCtx() { contentCtx.value.show = false }
 function ctxSwitchToViewMode() {
@@ -57,6 +60,31 @@ function ctxSwitchToViewMode() {
 function ctxSwitchToSelectMode() {
   closeContentCtx()
   state.selectMode = 'select'
+}
+
+/** 剪贴板中是否有文件（含"复制为文件"写入的内容） */
+const clipboardHasFiles = ref(false)
+async function refreshClipboardHasFiles() {
+  try {
+    clipboardHasFiles.value = await hasFiles()
+  } catch {
+    clipboardHasFiles.value = false
+  }
+}
+
+/** 粘贴为临时分组：读取剪贴板中的文件路径并创建临时分组 */
+async function handlePasteAsGroup() {
+  closeContentCtx()
+  try {
+    const paths = await readFiles()
+    if (paths.length === 0) {
+      showToast(t('hint.group_empty'))
+      return
+    }
+    await scanFilesAsVirtualGroup(paths)
+  } catch (e: any) {
+    showToast('粘贴为临时分组失败: ' + (e.message || e))
+  }
 }
 
 // 命令行单图：待打开图片路径（加载完父文件夹后自动大图显示）
@@ -111,6 +139,8 @@ onMounted(async () => {
   setupDragDrop()
   await loadConfig()
   settingsReady = true
+  // 剪贴板文件状态（用于右键菜单"粘贴为临时分组"）
+  refreshClipboardHasFiles()
 
   // 先注册事件监听器（确保 CLI 扫描时事件不丢失）
   try {
@@ -608,6 +638,18 @@ async function handleRefresh() {
                 <rect x="3" y="3" width="18" height="18" rx="2"/>
               </svg>
               <span>选择模式</span>
+            </button>
+            <!-- 粘贴为临时分组（分组模式且剪贴板含文件时显示） -->
+            <button
+              v-if="state.folderGroup && clipboardHasFiles"
+              class="content-ctx-item"
+              @click="handlePasteAsGroup"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 3h10l4 4v14H4z"/><polyline points="14 3 14 7 18 7"/>
+                <path d="M8 12h8M8 16h5"/>
+              </svg>
+              <span>{{ $t('hint.paste_as_group') }}</span>
             </button>
             <div class="content-ctx-separator"></div>
             <button class="content-ctx-item" :class="{ active: state.alwaysShowFileName }" @click="state.alwaysShowFileName = !state.alwaysShowFileName; closeContentCtx()">

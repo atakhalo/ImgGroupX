@@ -186,6 +186,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.copy_path': '复制路径',
     'hint.copy_file': '复制为文件',
     'hint.copy_file_tip': '可在资源管理器粘贴',
+    'hint.paste_as_group': '粘贴为临时分组',
     'hint.wallpaper_set': '壁纸已设置',
     'hint.wallpaper_set_failed': '设置壁纸失败: {msg}',
     // 快捷键
@@ -461,6 +462,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.wallpaper_set_failed': 'Failed to set wallpaper: {msg}',
     'hint.copy_file': 'Copy as File',
     'hint.copy_file_tip': 'Can paste in File Explorer',
+    'hint.paste_as_group': 'Paste as Temporary Group',
     // Shortcuts
     'shortcuts.title': 'Keyboard Shortcuts',
     'shortcuts.hint': 'Click the edit button, then press a key to customize. Press Esc to cancel.',

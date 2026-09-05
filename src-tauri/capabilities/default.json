@@ -9,6 +9,8 @@
     "opener:allow-open-path",
     "opener:allow-reveal-item-in-dir",
     "clipboard:allow-write-files",
+    "clipboard:allow-has-files",
+    "clipboard:allow-read-files",
     "dialog:default",
     "dialog:allow-open",
     "core:event:default",
