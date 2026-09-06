@@ -80,6 +80,8 @@ export interface AppSettings {
   borderRadius: number
   /** 格子间距 */
   gap: number
+  /** 内容展示区域两侧空白边距（px） */
+  contentMarginX: number
   /** 网格背景色 */
   bgColor: string
   /** 格子大小 */

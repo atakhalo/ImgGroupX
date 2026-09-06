@@ -25,7 +25,7 @@ const tabs = [
 /** 各标签页对应的设置字段 */
 const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   general: ['language', 'maxLoadSizeMB', 'loadSkippedOnView', 'filterPresets', 'filterRegex', 'filterTarget', 'sortBy', 'sortOrder'],
-  grid: ['borderRadius', 'gap', 'gridSize', 'bgColor', 'nodeGridGapV', 'nodeGridGapH', 'compactMode', 'compactHeader', 'collapseHierarchy'],
+  grid: ['borderRadius', 'gap', 'contentMarginX', 'gridSize', 'bgColor', 'nodeGridGapV', 'nodeGridGapH', 'compactMode', 'compactHeader', 'collapseHierarchy'],
   colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
@@ -33,7 +33,7 @@ const tabFields: Record<string, (keyof typeof state.settings)[]> = {
 }
 
 const defaultSettings = {
-  borderRadius: 4, gap: 8, bgColor: '#1a1a2e', gridSize: 200,
+  borderRadius: 4, gap: 8, contentMarginX: 16, bgColor: '#1a1a2e', gridSize: 200,
   folderGroup: true, showGroupTitle: true,
   filterRegex: '', filterTarget: 'name' as const, sortBy: 'name' as const, sortOrder: 'asc' as const,
   filterPresets: [] as string[],
@@ -235,6 +235,12 @@ onUnmounted(() => {
               <input type="range" v-model.number="localSettings.gap" min="0" max="32" step="1" />
               <span class="setting-value">{{ localSettings.gap }}px</span>
             </div>
+            <div class="setting-row">
+              <label>{{ $t('settings.content_margin_x') }}</label>
+              <input type="range" v-model.number="localSettings.contentMarginX" min="0" max="200" step="4" />
+              <span class="setting-value">{{ localSettings.contentMarginX }}px</span>
+            </div>
+            <div class="setting-hint">{{ $t('settings.content_margin_x_hint') }}</div>
             <div class="setting-row">
               <label>{{ $t('settings.grid_size') }}</label>
               <input type="range" v-model.number="localSettings.gridSize" min="10" max="400" step="10" />

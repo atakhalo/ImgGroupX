@@ -36,6 +36,7 @@ export function showToast(text: string, duration = 3000) {
 const defaultSettings: AppSettings = {
   borderRadius: 4,
   gap: 8,
+  contentMarginX: 16,
   bgColor: '#1a1a2e',
   gridSize: 200,
   folderGroup: true,

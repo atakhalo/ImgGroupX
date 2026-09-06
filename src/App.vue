@@ -721,7 +721,12 @@ async function handleRefresh() {
         </FilterSortBar>
       </div>
 
-      <div class="content-area" @wheel="handleContentWheel" @contextmenu="handleContentCtxMenu">
+      <div
+        class="content-area"
+        :style="{ marginLeft: state.settings.contentMarginX + 'px', marginRight: state.settings.contentMarginX + 'px' }"
+        @wheel="handleContentWheel"
+        @contextmenu="handleContentCtxMenu"
+      >
         <!-- 内容区右键菜单（模式切换） -->
         <Teleport to="body">
           <div v-if="contentCtx.show" class="content-ctx-backdrop" @click="closeContentCtx"></div>
