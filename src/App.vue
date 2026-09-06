@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut } from './utils/shortcuts'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages } from './stores/imageStore'
 import type { ImageItem, NavigableEntry } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -392,8 +392,8 @@ function viewImage(item: ImageItem, scope?: ImageItem[], navKey?: string, imageI
       return
     }
   }
-  // 回退：无 navKey 时用 scope 或 allImages
-  const images = (scope && state.folderGroup) ? scope : state.allImages
+  // 回退：无 navKey 时用 scope（分组模式传入的当前分组已排序列表）；非分组模式或未传 scope 时用整体排序后的 allImages
+  const images = (scope && state.folderGroup) ? scope : getProcessedImages(state.allImages)
   const i = images.findIndex(i => i.path === item.path)
   if (i >= 0) {
     viewingImages.value = [...images]
