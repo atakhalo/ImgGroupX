@@ -61,7 +61,7 @@
 ### 🔍 Filter & Sort
 - Filter by filename / folder name / full path using regex
 - Save filters as presets for quick switching
-- Sort by name / date / size, ascending or descending
+- Multi-dimension sorting — File: name / modified date / size; Group: name / modified date / count
 
 ### 🖼️ Image Viewer
 - Zoom with mouse wheel, pan mode, fit to window, fullscreen

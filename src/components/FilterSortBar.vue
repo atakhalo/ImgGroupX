@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { state } from '../stores/imageStore'
-import type { SortBy } from '../types'
+import type { SortBy, GroupSortBy } from '../types'
 
 const regexInput = ref(state.settings.filterRegex)
 const showPresets = ref(false)
 const presetsRef = ref<HTMLElement | null>(null)
+
+/** 当前排序作用域：'image' 图片排序 | 'group' 分组排序 */
+const sortScope = ref<'image' | 'group'>('image')
 
 function applyFilter() {
   state.settings.filterRegex = regexInput.value
@@ -22,12 +25,20 @@ function usePreset(pattern: string) {
   showPresets.value = false
 }
 
-function setSortBy(by: SortBy) {
-  state.settings.sortBy = by
+function setSortBy(by: SortBy | GroupSortBy) {
+  if (sortScope.value === 'image') {
+    state.settings.sortBy = by as SortBy
+  } else {
+    state.settings.groupSortBy = by as GroupSortBy
+  }
 }
 
 function toggleOrder() {
-  state.settings.sortOrder = state.settings.sortOrder === 'asc' ? 'desc' : 'asc'
+  if (sortScope.value === 'image') {
+    state.settings.sortOrder = state.settings.sortOrder === 'asc' ? 'desc' : 'asc'
+  } else {
+    state.settings.groupSortOrder = state.settings.groupSortOrder === 'asc' ? 'desc' : 'asc'
+  }
 }
 
 import { t } from '../i18n'
@@ -39,10 +50,18 @@ function toggleFilterTarget() {
   state.settings.filterTarget = filterTargetOrder[(idx + 1) % 3]
 }
 
+/** 图片排序选项 */
 const sortOptions = computed(() => [
   { label: t('filter.sort_name'), value: 'name' as SortBy },
   { label: t('filter.sort_modified'), value: 'modified' as SortBy },
   { label: t('filter.sort_size'), value: 'size' as SortBy },
+])
+
+/** 分组排序选项 */
+const groupSortOptions = computed(() => [
+  { label: t('filter.sort_name'), value: 'name' as GroupSortBy },
+  { label: t('filter.sort_modified_date'), value: 'modified' as GroupSortBy },
+  { label: t('filter.sort_count'), value: 'count' as GroupSortBy },
 ])
 
 const hasPresets = computed(() => state.settings.filterPresets.length > 0)
@@ -67,17 +86,29 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
     <!-- 排序 -->
     <div class="sort-group">
       <span class="sort-label">{{ $t('filter.sort') }}</span>
+      <!-- 文件/分组 切换 -->
       <button
-        v-for="opt in sortOptions"
+        class="sort-btn"
+        :class="{ active: sortScope === 'image' }"
+        @click="sortScope = 'image'"
+      >{{ $t('filter.sort_image') }}</button>
+      <button
+        class="sort-btn"
+        :class="{ active: sortScope === 'group' }"
+        @click="sortScope = 'group'"
+      >{{ $t('filter.sort_group') }}</button>
+      <span class="sort-sep"></span>
+      <button
+        v-for="opt in (sortScope === 'image' ? sortOptions : groupSortOptions)"
         :key="opt.value"
         class="sort-btn"
-        :class="{ active: state.settings.sortBy === opt.value }"
+        :class="{ active: (sortScope === 'image' ? state.settings.sortBy : state.settings.groupSortBy) === opt.value }"
         @click="setSortBy(opt.value)"
       >
         {{ opt.label }}
       </button>
-      <button class="sort-order-btn" @click="toggleOrder" :title="state.settings.sortOrder === 'asc' ? $t('filter.asc_title') : $t('filter.desc_title')">
-        <svg v-if="state.settings.sortOrder === 'asc'" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+      <button class="sort-order-btn" @click="toggleOrder" :title="(sortScope === 'image' ? state.settings.sortOrder : state.settings.groupSortOrder) === 'asc' ? $t('filter.asc_title') : $t('filter.desc_title')">
+        <svg v-if="(sortScope === 'image' ? state.settings.sortOrder : state.settings.groupSortOrder) === 'asc'" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M12 5v14M8 9l4-4 4 4" />
         </svg>
         <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -161,6 +192,13 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
   color: rgba(255, 255, 255, 0.4);
   font-size: 12px;
   margin-right: 4px;
+}
+
+.sort-sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 0 4px;
 }
 
 .sort-btn {

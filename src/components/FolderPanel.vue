@@ -2,7 +2,7 @@
 import { computed, reactive, watch } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
 import { t } from '../i18n'
-import { state, buildFolderTree, filterImages, findSubTreeInTree, showToast } from '../stores/imageStore'
+import { state, buildFolderTree, filterImages, findSubTreeInTree, showToast, sortFolderTree } from '../stores/imageStore'
 import FolderGroup from './FolderGroup.vue'
 
 const props = defineProps<{
@@ -101,10 +101,10 @@ function makeVgExpanded(vgIndex: number): (node: FolderNode, key?: string) => bo
 }
 
 const folderTree = computed(() => {
-  return buildFolderTree(props.images, state.loadedRootPaths)
+  return sortFolderTree(buildFolderTree(props.images, state.loadedRootPaths))
 })
 
-/** 完整节点列表：虚拟分组（根层） + 文件夹树 */
+/** 完整节点列表：虚拟分组（原始顺序）+ 排序后的文件夹树 */
 const allRootNodes = computed<(FolderNode & { isVirtualGroup?: boolean })[]>(() => {
   const virtualRoots = props.virtualGroups.map((vg, i) => ({
     ...vg,

@@ -56,6 +56,9 @@ export type SelectMode = 'select' | 'view'
 /** 排序方式 */
 export type SortBy = 'name' | 'modified' | 'size'
 
+/** 分组排序方式 */
+export type GroupSortBy = 'name' | 'modified' | 'count'
+
 /** 排序方向 */
 export type SortOrder = 'asc' | 'desc'
 
@@ -96,8 +99,12 @@ export interface AppSettings {
   filterTarget: FilterTarget
   /** 排序方式 */
   sortBy: SortBy
+  /** 分组排序方式 */
+  groupSortBy: GroupSortBy
   /** 排序方向 */
   sortOrder: SortOrder
+  /** 分组排序方向 */
+  groupSortOrder: SortOrder
   /** 筛选预设列表 */
   filterPresets: string[]
   /** 外部程序打开方式列表 */

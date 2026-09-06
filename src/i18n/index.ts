@@ -107,8 +107,12 @@ const messages: Record<Lang, Record<string, string>> = {
 
     // 筛选排序栏
     'filter.sort': '排序',
-    'filter.sort_name': '文件名',
+    'filter.sort_image': '文件',
+    'filter.sort_group': '分组',
+    'filter.sort_name': '名称',
     'filter.sort_modified': '修改日期',
+    'filter.sort_modified_date': '修改日期',
+    'filter.sort_count': '数量',
     'filter.sort_size': '文件大小',
     'filter.asc': '升序',
     'filter.asc_title': '升序',
@@ -400,8 +404,12 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.mark_clear': 'Clear Mark',
 
     'filter.sort': 'Sort',
+    'filter.sort_image': 'File',
+    'filter.sort_group': 'Group',
     'filter.sort_name': 'Name',
     'filter.sort_modified': 'Modified',
+    'filter.sort_modified_date': 'Modified',
+    'filter.sort_count': 'Count',
     'filter.sort_size': 'Size',
     'filter.asc': 'Asc',
     'filter.asc_title': 'Ascending',

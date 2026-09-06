@@ -24,7 +24,7 @@ const tabs = [
 
 /** 各标签页对应的设置字段 */
 const tabFields: Record<string, (keyof typeof state.settings)[]> = {
-  general: ['language', 'maxLoadSizeMB', 'loadSkippedOnView', 'filterPresets', 'filterRegex', 'filterTarget', 'sortBy', 'sortOrder'],
+  general: ['language', 'maxLoadSizeMB', 'loadSkippedOnView', 'filterPresets', 'filterRegex', 'filterTarget', 'sortBy', 'sortOrder', 'groupSortBy', 'groupSortOrder'],
   grid: ['borderRadius', 'gap', 'contentMarginX', 'gridSize', 'bgColor', 'nodeGridGapV', 'nodeGridGapH', 'compactMode', 'compactHeader', 'collapseHierarchy'],
   colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
@@ -35,7 +35,7 @@ const tabFields: Record<string, (keyof typeof state.settings)[]> = {
 const defaultSettings = {
   borderRadius: 4, gap: 8, contentMarginX: 16, bgColor: '#1a1a2e', gridSize: 200,
   folderGroup: true, showGroupTitle: true,
-  filterRegex: '', filterTarget: 'name' as const, sortBy: 'name' as const, sortOrder: 'asc' as const,
+  filterRegex: '', filterTarget: 'name' as const, sortBy: 'name' as const, sortOrder: 'asc' as const, groupSortBy: 'name' as const, groupSortOrder: 'asc' as const,
   filterPresets: [] as string[],
   openWithPrograms: [] as string[],
   rootTitleColor: '#ffffff', childTitleColor: '#c0c0e0',

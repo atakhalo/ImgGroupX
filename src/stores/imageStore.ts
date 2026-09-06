@@ -44,7 +44,9 @@ const defaultSettings: AppSettings = {
   filterRegex: '',
   filterTarget: 'name',
   sortBy: 'name',
+  groupSortBy: 'name',
   sortOrder: 'asc',
+  groupSortOrder: 'asc',
   filterPresets: [],
   openWithPrograms: [],
   rootTitleColor: '#ffffff',
@@ -139,7 +141,7 @@ export function sortImages(images: ImageItem[], sortBy: SortBy, sortOrder: SortO
   return [...images].sort((a, b) => {
     let cmp = 0
     if (sortBy === 'name') {
-      cmp = a.name.localeCompare(b.name)
+      cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
     } else if (sortBy === 'modified') {
       cmp = a.modified.localeCompare(b.modified)
     } else if (sortBy === 'size') {
@@ -147,6 +149,69 @@ export function sortImages(images: ImageItem[], sortBy: SortBy, sortOrder: SortO
     }
     return sortOrder === 'asc' ? cmp : -cmp
   })
+}
+
+/** 递归统计节点图片总数 */
+function totalImagesOf(node: FolderNode): number {
+  let n = node.images.length
+  for (const child of node.children) {
+    n += totalImagesOf(child)
+  }
+  return n
+}
+
+/** 递归取节点子树中图片的最大修改时间（字符串可比较） */
+function maxModifiedOf(node: FolderNode): string {
+  let m = ''
+  for (const img of node.images) if (img.modified > m) m = img.modified
+  for (const child of node.children) {
+    const cm = maxModifiedOf(child)
+    if (cm > m) m = cm
+  }
+  return m
+}
+
+/** 根据分组排序设置排序节点数组（原地排序，保持对象引用不变） */
+export function sortFolderNodes(nodes: FolderNode[]): FolderNode[] {
+  const by = state.settings.groupSortBy
+  const order = state.settings.groupSortOrder
+  nodes.sort((a, b) => {
+    let cmp = 0
+    if (by === 'name') {
+      cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    } else if (by === 'modified') {
+      // 节点修改日期 = 其子树中图片的最大修改时间
+      cmp = maxModifiedOf(a).localeCompare(maxModifiedOf(b))
+        || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    } else if (by === 'count') {
+      cmp = totalImagesOf(a) - totalImagesOf(b)
+        || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    }
+    return order === 'asc' ? cmp : -cmp
+  })
+  return nodes
+}
+
+/** 递归原地分组排序整棵树（不改变节点对象引用，返回同一数组） */
+export function sortFolderTree(nodes: FolderNode[]): FolderNode[] {
+  sortFolderNodes(nodes)
+  for (const node of nodes) {
+    sortFolderTree(node.children)
+  }
+  return nodes
+}
+
+/** 深拷贝节点树（images 共享引用，仅用于只读消费） */
+function cloneFolderNode(node: FolderNode): FolderNode {
+  return {
+    ...node,
+    children: node.children.map(cloneFolderNode),
+  }
+}
+
+/** 分组排序后的树副本（不修改原树，用于导航列表等只读消费） */
+export function sortFolderTreeCopy(nodes: FolderNode[]): FolderNode[] {
+  return sortFolderTree(nodes.map(cloneFolderNode))
 }
 
 /** 应用正则筛选 */
@@ -540,21 +605,21 @@ function buildSubTree(relPaths: string[], relDirMap: Map<string, ImageItem[]>): 
   return roots
 }
 
-/** 构建完整树（目录树 + 虚拟分组） */
+/** 构建完整树（目录树 + 虚拟分组，按分组排序，返回副本） */
 export function buildFullTree(): FolderNode[] {
   const folderTree = buildFolderTree(state.allImages, state.loadedRootPaths)
-  return [...state.virtualGroups, ...folderTree]
+  return sortFolderTreeCopy([...state.virtualGroups, ...folderTree])
 }
 
 /** 所有可导航节点的扁平有序列表（computed，响应式缓存） */
 export const navigableList = computed<NavigableEntry[]>(() => {
   const list: NavigableEntry[] = []
 
-  // 1. 虚拟分组
+  // 1. 虚拟分组（保持原始顺序，navKey 与 FolderGroup 的 vgIndex 一致）
   for (let vi = 0; vi < state.virtualGroups.length; vi++) {
     const vg = state.virtualGroups[vi]
     const scopeId = `vg:${vi}`
-    // 子节点（后序遍历：子→父）
+    // 子节点（后序遍历：子→父；保持虚拟分组原始顺序，与 FolderPanel 展示一致）
     function walk(nodes: FolderNode[], parentHierarchy: string) {
       for (const node of nodes) {
         const hierarchy = parentHierarchy ? parentHierarchy + ' / ' + node.name : node.name
@@ -580,7 +645,7 @@ export const navigableList = computed<NavigableEntry[]>(() => {
       return rootPath + '/' + path
     }
     function walkReal(nodes: FolderNode[], parentDisplay: string, rootPath: string) {
-      for (const node of nodes) {
+      for (const node of sortFolderTreeCopy(nodes)) {
         const display = parentDisplay ? parentDisplay + ' / ' + node.name : node.name
         if (node.children.length > 0) walkReal(node.children, display, rootPath)
         if (node.images.length > 0) {
@@ -588,7 +653,7 @@ export const navigableList = computed<NavigableEntry[]>(() => {
         }
       }
     }
-    for (const rootNode of tree) {
+    for (const rootNode of sortFolderTreeCopy(tree)) {
       walkReal([rootNode], '', rootNode.path)
     }
   }
