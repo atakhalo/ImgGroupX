@@ -45,6 +45,8 @@ function handleContentCtxMenu(e: MouseEvent) {
   if (target.closest('.grid-item')) return
   // 标题栏有自己的右键菜单，不重复弹出
   if (target.closest('.folder-header')) return
+  // 顶栏/底栏有自己的交互，不弹出内容区菜单
+  if (target.closest('.top-bar') || target.closest('.bottom-bar')) return
   e.preventDefault()
   contentCtx.value = { show: true, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 120) }
   // 打开时刷新剪贴板文件状态（不阻塞菜单显示）
@@ -633,7 +635,7 @@ async function handleRefresh() {
     class="app-root"
     :class="{ 'drag-over': isDragOver }"
   >
-    <div class="main-area">
+    <div class="main-area" @contextmenu="handleContentCtxMenu">
       <div class="top-bar">
         <FilterSortBar @openSettings="openSettings">
           <template #left-prepend>
@@ -725,7 +727,6 @@ async function handleRefresh() {
         class="content-area"
         :style="{ marginLeft: state.settings.contentMarginX + 'px', marginRight: state.settings.contentMarginX + 'px' }"
         @wheel="handleContentWheel"
-        @contextmenu="handleContentCtxMenu"
       >
         <!-- 内容区右键菜单（模式切换） -->
         <Teleport to="body">
