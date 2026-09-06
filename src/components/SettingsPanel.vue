@@ -237,8 +237,8 @@ onUnmounted(() => {
             </div>
             <div class="setting-row">
               <label>{{ $t('settings.content_margin_x') }}</label>
-              <input type="range" v-model.number="localSettings.contentMarginX" min="0" max="200" step="4" />
-              <span class="setting-value">{{ localSettings.contentMarginX }}px</span>
+              <input type="number" min="0" max="1000" v-model.number="localSettings.contentMarginX" class="number-input" style="width:100px;" />
+              <span class="setting-unit">px</span>
             </div>
             <div class="setting-hint">{{ $t('settings.content_margin_x_hint') }}</div>
             <div class="setting-row">
