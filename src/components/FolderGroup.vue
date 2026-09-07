@@ -25,10 +25,13 @@ const props = withDefaults(defineProps<{
   realDepth?: number
   /** 隐私模式下的匿名节点名（如"节点1"），为空时显示真实名称 */
   anonName?: string
+  /** 同级兄弟节点列表（用于 Shift 连选） */
+  siblingNodes?: FolderNode[]
 }>(), {
   collapsePrefix: '',
   hierarchyPath: '',
   realDepth: 0,
+  siblingNodes: () => [],
 })
 
 const emit = defineEmits<{
@@ -58,8 +61,51 @@ function handleSelectClick(e: MouseEvent) {
   e.stopPropagation()
   // 虚拟根节点（depth=0 且 isVirtualRoot）不可选，子节点可选
   if (!(props.isVirtualRoot && props.depth === 0) && state.selectMode === 'select') {
-    emit('toggleSelectFolder', getSelectKey())
+    const shift = e.shiftKey
+    const key = getSelectKey()
+    if (shift && state.lastSelectedFolderPath) {
+      // 同级兄弟列表（含当前节点自身）
+      const siblings = props.siblingNodes || []
+      const siblingKeys = siblings.map(s => {
+        // 虚拟分组根节点：直接使用内部 path（不可选，范围中跳过）
+        if (s.path.startsWith('__virtual__')) return s.path
+        // 虚拟分组子节点 path 已是绝对路径；真实树节点需转绝对路径
+        return props.vgIndex !== undefined ? s.path : absKeyOfNode(s)
+      })
+      const lastIdx = siblingKeys.indexOf(state.lastSelectedFolderPath)
+      const curIdx = siblingKeys.indexOf(key)
+      if (lastIdx >= 0 && curIdx >= 0 && lastIdx !== curIdx) {
+        // 范围选择：与图片 Shift 连选一致，依据当前节点是否已选中决定选中/取消
+        const isSelecting = !state.selectedFolderPaths.has(key)
+        const start = Math.min(lastIdx, curIdx)
+        const end = Math.max(lastIdx, curIdx)
+        for (let i = start; i <= end; i++) {
+          const p = siblingKeys[i]
+          // 跳过虚拟分组根节点（不可选）
+          if (p.startsWith('__virtual__')) continue
+          if (isSelecting) state.selectedFolderPaths.add(p)
+          else state.selectedFolderPaths.delete(p)
+        }
+        state.lastSelectedFolderPath = key
+        return
+      }
+    }
+    // 普通点击或锚点跨层级：切换当前节点并更新锚点
+    if (state.selectedFolderPaths.has(key)) {
+      state.selectedFolderPaths.delete(key)
+    } else {
+      state.selectedFolderPaths.add(key)
+    }
+    state.lastSelectedFolderPath = key
   }
+}
+
+/** 获取节点的绝对路径 key（同级列表中调用，根节点为绝对路径，子节点为相对路径） */
+function absKeyOfNode(node: FolderNode): string {
+  const nodeNorm = node.path.replace(/\\/g, '/')
+  if (/^[A-Za-z]:\//.test(nodeNorm) || nodeNorm.startsWith('/')) return nodeNorm
+  const root = props.rootPath.replace(/\\/g, '/').replace(/\/$/, '')
+  return root + '/' + nodeNorm
 }
 
 /** 选择状态全局唯一 key：真实树用绝对路径；虚拟分组子节点 path 本身已是绝对路径 */
@@ -487,6 +533,7 @@ function getNodeGridContainerBg(depth: number): string {
       :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
       :collapsePrefix="collapsePrefix + node.name + ' / '"
       :realDepth="realDepth + 1"
+      :siblingNodes="node.children"
       :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
       @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
       @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
@@ -861,6 +908,7 @@ function getNodeGridContainerBg(depth: number): string {
         :isVirtualRoot="isVirtualRoot"
         :vgIndex="vgIndex"
         :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
+        :siblingNodes="node.children"
         :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
         @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
         @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
@@ -904,6 +952,7 @@ function getNodeGridContainerBg(depth: number): string {
               :isVirtualRoot="isVirtualRoot"
               :vgIndex="vgIndex"
               :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
+              :siblingNodes="node.children"
               :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
               @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
               @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
@@ -928,6 +977,7 @@ function getNodeGridContainerBg(depth: number): string {
               :isVirtualRoot="isVirtualRoot"
               :vgIndex="vgIndex"
               :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
+              :siblingNodes="node.children"
               :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
               @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
               @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"

@@ -120,6 +120,8 @@ export const state = reactive({
   cancelledRoots: new Set<string>(),
   /** Shift 连选：上次选中的图片路径（全局唯一，用于检测跨节点） */
   lastSelectedImagePath: null as string | null,
+  /** Shift 连选：上次选中的文件夹路径（全局唯一，用于检测跨层级） */
+  lastSelectedFolderPath: null as string | null,
   /** 最近打开的文件夹（最新在前） */
   recentFolders: [] as string[],
   /** 最近打开的图片（最新在前） */
