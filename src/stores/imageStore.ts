@@ -1171,7 +1171,8 @@ function collectNodeImagePathsList(node: FolderNode): string[] {
 /** 删除选中内容（图片 + 文件夹），返回移除的图片路径列表 */
 export async function deleteSelectedContents(): Promise<string[]> {
   const allRemoved: string[] = []
-
+  await setSuppressWatcher(true)
+  try {
   // 1. 删除选中文件夹（整个目录到回收站）
   const folderPaths = collectSelectedFolderAbsolutePaths()
   if (folderPaths.length > 0) {
@@ -1186,6 +1187,13 @@ export async function deleteSelectedContents(): Promise<string[]> {
         allRemoved.push(...collectNodeImagePathsList(node))
       }
     }
+    // 清理被删除文件夹的扫描目录记录（含其子目录），避免空文件夹节点残留
+    for (const fp of folderPaths) {
+      const normFp = fp.replace(/\\/g, '/').replace(/\/$/, '')
+      for (const d of [...state.scannedDirs]) {
+        if (d === normFp || d.startsWith(normFp + '/')) state.scannedDirs.delete(d)
+      }
+    }
   }
 
   // 2. 删除直接选中的图片（排除已在文件夹内的）
@@ -1193,13 +1201,8 @@ export async function deleteSelectedContents(): Promise<string[]> {
     const folderImageSet = new Set(allRemoved)
     const standalonePaths = Array.from(state.selectedPaths).filter(p => !folderImageSet.has(p))
     if (standalonePaths.length > 0) {
-      await setSuppressWatcher(true)
-      try {
-        for (const p of standalonePaths) {
-          try { await invoke('delete_file', { path: p }) } catch { /* */ }
-        }
-      } finally {
-        await setSuppressWatcher(false)
+      for (const p of standalonePaths) {
+        try { await invoke('delete_file', { path: p }) } catch { /* */ }
       }
       allRemoved.push(...standalonePaths)
     }
@@ -1231,6 +1234,9 @@ export async function deleteSelectedContents(): Promise<string[]> {
   // 更新文件监听器
   setupFolderWatcher()
 
+  } finally {
+    await setSuppressWatcher(false)
+  }
   return allRemoved
 }
 
