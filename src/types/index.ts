@@ -14,6 +14,8 @@ export interface ImageInfo {
 export interface ScanResult {
   images: ImageInfo[]
   total: number
+  /** 扫描到的所有子目录（含空目录） */
+  dirs: string[]
 }
 
 /** 标记等级：0 无标记，1-5 为标记等级 */
@@ -151,6 +153,8 @@ export interface AppSettings {
   showMarks: boolean
   /** 是否显示标记角标 */
   showMarkBadge: boolean
+  /** 扫描文件夹时是否跳过空文件夹（勾选后空文件夹不创建为子节点） */
+  skipEmptyFolders: boolean
   /** 图片加载大小阈值（MB），超过则跳过加载仅显示文件名，0=不限 */
   maxLoadSizeMB: number
   /** 大小跳过的图片在查看/对比时是否尝试加载 */

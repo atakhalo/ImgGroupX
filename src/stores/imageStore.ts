@@ -70,6 +70,7 @@ const defaultSettings: AppSettings = {
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   showMarks: true,
   showMarkBadge: true,
+  skipEmptyFolders: false,
   maxLoadSizeMB: 0,
   loadSkippedOnView: true,
   keyBindings: getDefaultBindings(),
@@ -113,6 +114,8 @@ export const state = reactive({
   refreshAvailable: false,
   /** 待处理的变更路径列表 */
   pendingChanges: [] as string[],
+  /** 扫描到的所有子目录（含空目录，用于构建目录树） */
+  scannedDirs: new Set<string>(),
   /** 用户取消扫描的根路径集合（忽略其后续事件） */
   cancelledRoots: new Set<string>(),
   /** Shift 连选：上次选中的图片路径（全局唯一，用于检测跨节点） */
@@ -259,12 +262,16 @@ export function getProcessedImages(images: ImageItem[]): ImageItem[] {
 export async function scanFolder(path: string): Promise<void> {
   state.loading = true
   try {
-    const result = await invoke<{ images: ImageInfo[]; total: number }>('scan_folder', { path, scanAllFiles: state.settings.scanAllFiles })
+    const result = await invoke<{ images: ImageInfo[]; total: number; dirs: string[] }>('scan_folder', { path, scanAllFiles: state.settings.scanAllFiles })
     const items: ImageItem[] = result.images.map(img => ({
       ...img,
       loading: false,
     }))
     addImagesUnique(items)
+    // 记录扫描到的子目录（含空目录）
+    for (const d of result.dirs || []) {
+      state.scannedDirs.add(d.replace(/\\/g, '/'))
+    }
     // 记录加载的根路径
     const norm = path.replace(/\\/g, '/').replace(/\/$/, '')
     if (!state.loadedRootPaths.includes(norm)) {
@@ -282,7 +289,7 @@ export async function scanFolder(path: string): Promise<void> {
 export async function scanFolders(paths: string[]): Promise<void> {
   state.loading = true
   try {
-    const results = await invoke<{ images: ImageInfo[]; total: number }[]>('scan_folders', { paths, scanAllFiles: state.settings.scanAllFiles })
+    const results = await invoke<{ images: ImageInfo[]; total: number; dirs: string[] }[]>('scan_folders', { paths, scanAllFiles: state.settings.scanAllFiles })
     for (let i = 0; i < results.length; i++) {
       const result = results[i]
       const items: ImageItem[] = result.images.map(img => ({
@@ -290,6 +297,10 @@ export async function scanFolders(paths: string[]): Promise<void> {
         loading: false,
       }))
       addImagesUnique(items)
+      // 记录扫描到的子目录（含空目录）
+      for (const d of result.dirs || []) {
+        state.scannedDirs.add(d.replace(/\\/g, '/'))
+      }
       // 记录加载的根路径
       if (paths[i]) {
         const norm = paths[i].replace(/\\/g, '/').replace(/\/$/, '')
@@ -345,6 +356,20 @@ export function handleDirProgress(payload: { dir: string; images: ImageInfo[]; r
     loading: false,
   }))
   addImagesUnique(items)
+  // 记录该目录（含空目录，可能只有目录没有图片）
+  state.scannedDirs.add(payload.dir.replace(/\\/g, '/'))
+}
+
+/** 处理根目录扫描结果（由 scan-dirs 事件触发，包含所有子目录含空目录） */
+export function handleScanDirs(payload: { dirs: string[]; root: string }): void {
+  const norm = payload.root.replace(/\\/g, '/').replace(/\/$/, '')
+  if (state.cancelledRoots.has(norm)) return
+  if (!state.loadedRootPaths.includes(norm)) {
+    state.loadedRootPaths.push(norm)
+  }
+  for (const d of payload.dirs || []) {
+    state.scannedDirs.add(d.replace(/\\/g, '/'))
+  }
 }
 
 /** 渐进扫描完成（由 scan-all-complete 事件触发） */
@@ -450,6 +475,7 @@ export async function refreshFolders(): Promise<void> {
   const paths = [...state.loadedRootPaths]
   // 清除所有图片（保留根路径记录）
   state.allImages = []
+  state.scannedDirs.clear()
   state.selectedPaths.clear()
   for (const vg of state.virtualGroups) {
     vg.images = []
@@ -483,6 +509,9 @@ export function buildFolderTree(images: ImageItem[], rootPaths: string[]): Folde
     return []
   }
 
+  // 有图片的目录集合（用于判断目录是否为空）
+  const imageDirs = new Set(dirMap.keys())
+
   const roots: FolderNode[] = []
 
   for (const rootPath of normalizedRoots) {
@@ -497,6 +526,7 @@ export function buildFolderTree(images: ImageItem[], rootPaths: string[]): Folde
 
     // 收集该根目录下的相对子目录路径（排除已标记的子路径）
     const relativeDirs: string[] = []
+    const seen = new Set<string>()
     const exclusions = rootExclusions.get(rootPath)
 
     for (const [dirPath, dirImages] of dirMap.entries()) {
@@ -508,6 +538,29 @@ export function buildFolderTree(images: ImageItem[], rootPaths: string[]): Folde
         const relative = dirPath.substring(rootPath.length + 1)
         // 检查是否被排除（relative 或其上级路径被排除）
         if (exclusions && isExcluded(relative, exclusions)) continue
+        seen.add(relative)
+        relativeDirs.push(relative)
+      }
+    }
+
+    // 补充扫描到的空目录（scannedDirs 来自 Rust 端，包含无图片的子目录）
+    if (state.scannedDirs.size > 0) {
+      /** 目录是否为空：自身及子孙目录均无图片 */
+      const isEmptyDir = (dirPath: string): boolean => {
+        const prefix = dirPath + '/'
+        for (const d of imageDirs) {
+          if (d === dirPath || d.startsWith(prefix)) return false
+        }
+        return true
+      }
+      for (const dirPath of state.scannedDirs) {
+        if (!dirPath.startsWith(rootPath + '/')) continue
+        const relative = dirPath.substring(rootPath.length + 1)
+        if (exclusions && isExcluded(relative, exclusions)) continue
+        if (seen.has(relative)) continue
+        // 勾选"空文件夹不扫描为子节点"时跳过完全无图片的目录
+        if (state.settings.skipEmptyFolders && isEmptyDir(dirPath)) continue
+        seen.add(relative)
         relativeDirs.push(relative)
       }
     }
@@ -1167,6 +1220,11 @@ export async function deleteSelectedContents(): Promise<string[]> {
   state.loadedRootPaths = state.loadedRootPaths.filter(r => !removedRootSet.has(r))
   for (const root of removedRoots) {
     rootExclusions.delete(root)
+    // 清理该根路径下的扫描目录记录
+    const norm = root.replace(/\\/g, '/')
+    for (const d of [...state.scannedDirs]) {
+      if (d.startsWith(norm)) state.scannedDirs.delete(d)
+    }
   }
   // 更新文件监听器
   setupFolderWatcher()
@@ -1490,12 +1548,8 @@ export function clearAll() {
   // 取消正在进行的扫描
   if (state.loading) { invoke('cancel_scan') }
   state.allImages = []
+  state.scannedDirs.clear()
   state.loadedRootPaths = []
-  state.folderTree = []
-  state.selectedPaths.clear()
-  state.selectedFolderPaths.clear()
-  state.virtualGroups = []
-  rootExclusions.clear()
 }
 
 /** 加载配置（忽略已存盘的 filterRegex，始终从空值开始） */

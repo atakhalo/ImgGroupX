@@ -34,12 +34,15 @@ pub struct ImageInfo {
 pub struct ScanResult {
     pub images: Vec<ImageInfo>,
     pub total: usize,
+    /// 扫描到的所有子目录（含空目录），用于前端构建目录树
+    pub dirs: Vec<String>,
 }
 
 /// 扫描文件夹，递归获取所有图片文件信息
 #[tauri::command]
 fn scan_folder(path: String, scan_all_files: bool) -> Result<ScanResult, String> {
     let mut images = Vec::new();
+    let mut dirs = Vec::new();
     let path = Path::new(&path);
 
     if !path.exists() {
@@ -48,6 +51,11 @@ fn scan_folder(path: String, scan_all_files: bool) -> Result<ScanResult, String>
 
     for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
         let entry_path = entry.path();
+        // 收集所有子目录（含空目录），根目录本身除外
+        if entry_path.is_dir() && entry.depth() != 0 {
+            dirs.push(entry_path.to_string_lossy().to_string());
+            continue;
+        }
         if !entry_path.is_file() {
             continue;
         }
@@ -103,7 +111,7 @@ fn scan_folder(path: String, scan_all_files: bool) -> Result<ScanResult, String>
     }
 
     let total = images.len();
-    Ok(ScanResult { images, total })
+    Ok(ScanResult { images, total, dirs })
 }
 
 /// 扫描多个文件夹
@@ -121,6 +129,12 @@ fn scan_folders(paths: Vec<String>, scan_all_files: bool) -> Result<Vec<ScanResu
 struct DirProgress {
     dir: String,
     images: Vec<ImageInfo>,
+    root: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct DirList {
+    dirs: Vec<String>,
     root: String,
 }
 
@@ -143,6 +157,8 @@ fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>, scan_all_
             // 缓存当前正在收集的目录及其图片
             let mut current_dir: Option<String> = None;
             let mut current_images: Vec<ImageInfo> = Vec::new();
+            // 收集所有子目录（含空目录）
+            let mut all_dirs: Vec<String> = Vec::new();
 
             // 发送已收集的目录批次
             let flush = |dir: &str, images: &mut Vec<ImageInfo>| {
@@ -165,6 +181,11 @@ fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>, scan_all_
                 if SCAN_CANCELLED.load(Ordering::Relaxed) { break; }
 
                 let entry_path = entry.path();
+                // 收集所有子目录（含空目录），根目录本身除外
+                if entry_path.is_dir() && entry.depth() != 0 {
+                    all_dirs.push(entry_path.to_string_lossy().to_string());
+                    continue;
+                }
                 if !entry_path.is_file() {
                     continue;
                 }
@@ -228,6 +249,17 @@ fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>, scan_all_
             }
 
             if SCAN_CANCELLED.load(Ordering::Relaxed) { break; }
+
+            // 发送所有目录（含空目录）
+            if !all_dirs.is_empty() {
+                let _ = app_handle.emit(
+                    "scan-dirs",
+                    DirList {
+                        dirs: all_dirs.clone(),
+                        root: root_path.clone(),
+                    },
+                );
+            }
 
             // 发送最后一个目录
             if let Some(ref dir) = current_dir {

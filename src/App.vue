@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut } from './utils/shortcuts'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages } from './stores/imageStore'
 import type { ImageItem, NavigableEntry } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -203,6 +203,9 @@ onMounted(async () => {
     await listen<{ dir: string; images: any[]; root: string }>('scan-dir-progress', (event) => {
       handleDirProgress(event.payload)
     })
+    await listen<{ dirs: string[]; root: string }>('scan-dirs', (event) => {
+      handleScanDirs(event.payload)
+    })
     await listen('scan-all-complete', () => {
       handleScanComplete()
       setupFolderWatcher()
@@ -332,6 +335,10 @@ function removeFolderRoot(path: string) {
     if (!imgDir.startsWith(norm)) return true
     return remainingRoots.some(r => imgDir.startsWith(r))
   })
+  // 清理该根路径下的扫描目录记录
+  for (const d of [...state.scannedDirs]) {
+    if (d.startsWith(norm)) state.scannedDirs.delete(d)
+  }
   state.selectedPaths.clear()
   // 更新文件监听器
   setupFolderWatcher()

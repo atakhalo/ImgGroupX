@@ -29,7 +29,7 @@ const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
-  advanced: ['scanAllFiles', 'folderGroup', 'showGroupTitle', 'showMarks', 'privacyMode'],
+  advanced: ['scanAllFiles', 'skipEmptyFolders', 'folderGroup', 'showGroupTitle', 'showMarks', 'privacyMode'],
 }
 
 const defaultSettings = {
@@ -50,6 +50,7 @@ const defaultSettings = {
   language: 'zh' as const,
   viewerBgMode: 'overlay' as const, viewerBgColor: '#202020',
   scanAllFiles: false, autoPan: true, autoCenter: true, privacyMode: false, rootCompactMode: false,
+  skipEmptyFolders: false,
   maxLoadSizeMB: 0, loadSkippedOnView: true,
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   showMarks: true, showMarkBadge: true,
@@ -505,6 +506,17 @@ onUnmounted(() => {
               </label>
             </div>
             <div class="setting-hint">{{ $t('settings.scan_all_files_hint') }}</div>
+
+            <!-- 空文件夹扫描设置 -->
+            <h4 style="margin-top: 24px;">{{ $t('settings.skip_empty_folders') }}</h4>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.skipEmptyFolders" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.skip_empty_folders') }}
+              </label>
+            </div>
+            <div class="setting-hint">{{ $t('settings.skip_empty_folders_hint') }}</div>
 
             <!-- 隐私模式 -->
             <h4 style="margin-top: 24px;">{{ $t('control.privacy_mode') }}</h4>

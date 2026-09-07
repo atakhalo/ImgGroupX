@@ -162,6 +162,11 @@ const hasBothChildrenAndImages = computed(() =>
   props.node.children.length > 0 && props.node.images.length > 0
 )
 
+/** 节点是否为空文件夹（无子节点且无图片，仅显示标题） */
+const isEmptyFolder = computed(() =>
+  props.node.children.length === 0 && props.node.images.length === 0
+)
+
 /** 检查虚拟分组中是否有一级选中项（用于显示移除按钮） */
 const hasFirstLevelSelection = () => {
   if (!props.isVirtualRoot || props.depth !== 0) return false
@@ -633,7 +638,7 @@ function getNodeGridContainerBg(depth: number): string {
           <span v-for="(seg, i) in collapsePrefixSegments" :key="i" :style="{ color: getSegmentColor(seg.level) }">{{ seg.name }}</span>
         </span>
         <span class="folder-name" :title="shouldCompactRoot() ? getNodeFullPath() : undefined" :style="{ color: realDepth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ state.settings.privacyMode && props.anonName ? props.anonName : node.name }}</span>
-        <span v-if="totalCount(node)" class="folder-count" :class="{ 'all-selected': state.selectMode === 'select' && nodeSelectionState === 'all' }">
+        <span v-if="totalCount(node) || isEmptyFolder" class="folder-count" :class="{ 'all-selected': state.selectMode === 'select' && nodeSelectionState === 'all' }">
           <template v-if="state.selectMode === 'select' && nodeSelectionState !== 'none'">
             (<span :class="{ 'partial-selected': nodeSelectionState === 'partial' }">{{ countSelectedInNode(props.node) }}</span><span class="sep">/</span>{{ totalCount(node) }})
           </template>
@@ -836,7 +841,7 @@ function getNodeGridContainerBg(depth: number): string {
 
     <!-- 紧凑模式：统一内容网格（子节点 + 图片作为同级网格项混合排列） -->
     <div
-      v-if="useUnifiedGrid"
+      v-if="useUnifiedGrid && !isEmptyFolder"
       class="folder-content-grid"
       :class="{ 'folder-content-collapsed': !getExpanded(node, getExpandKey()) }"
       :style="{
@@ -880,7 +885,7 @@ function getNodeGridContainerBg(depth: number): string {
 
     <!-- 非紧凑模式：子节点 + 图片分区域布局 -->
     <template v-if="!useUnifiedGrid">
-      <div class="folder-noncompact-body" :style="{ borderRadius: '20px', background: getNodeGridContainerBg(realDepth) }">
+      <div v-if="!isEmptyFolder" class="folder-noncompact-body" :style="{ borderRadius: '20px', background: getNodeGridContainerBg(realDepth) }">
         <div
           v-if="node.children.length"
           class="folder-children-section"
