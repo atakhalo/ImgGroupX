@@ -990,6 +990,28 @@ fn check_is_dir(path: String) -> bool {
     Path::new(&path).is_dir()
 }
 
+/// 在指定目录下新建子文件夹，返回新文件夹的绝对路径
+#[tauri::command]
+fn create_folder(parent: String, name: String) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("文件夹名称不能为空".into());
+    }
+    if name.chars().any(|c| matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')) {
+        return Err("文件夹名称包含非法字符".into());
+    }
+    let parent_path = Path::new(&parent);
+    if !parent_path.is_dir() {
+        return Err("父目录不存在".into());
+    }
+    let target = parent_path.join(name);
+    if target.exists() {
+        return Err("FOLDER_EXISTS".into());
+    }
+    fs::create_dir(&target).map_err(|e| format!("新建文件夹失败: {}", e))?;
+    Ok(target.to_string_lossy().to_string())
+}
+
 /// 用指定程序打开文件
 #[tauri::command]
 fn open_with_program(path: String, program: String) -> Result<(), String> {
@@ -1332,6 +1354,7 @@ pub fn run() {
             get_file_times,
             open_in_explorer,
             check_is_dir,
+            create_folder,
             open_with_program,
             load_config,
             save_config,

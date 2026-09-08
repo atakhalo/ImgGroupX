@@ -337,7 +337,10 @@ function removeFolderRoot(path: string) {
   })
   // 清理该根路径下的扫描目录记录
   for (const d of [...state.scannedDirs]) {
-    if (d.startsWith(norm)) state.scannedDirs.delete(d)
+    if (d.startsWith(norm)) {
+      state.scannedDirs.delete(d)
+      state.explicitDirs.delete(d)
+    }
   }
   state.selectedPaths.clear()
   // 更新文件监听器

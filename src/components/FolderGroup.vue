@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { state, openInExplorer, saveVirtualGroup, getProcessedImages, startProgressiveScan, renameVirtualGroup } from '../stores/imageStore'
+import { state, openInExplorer, saveVirtualGroup, getProcessedImages, startProgressiveScan, renameVirtualGroup, createSubFolder } from '../stores/imageStore'
 import GridView from './GridView.vue'
 import GridItem from './GridItem.vue'
 import FolderGroup from './FolderGroup.vue'
@@ -45,6 +45,7 @@ const emit = defineEmits<{
   removeFromVirtualGroup: [vgIndex: number]
   copyToFolder: [targetPath: string]
   moveToFolder: [targetPath: string]
+  expandNode: [key: string]
 }>()
 
 function handleToggle() {
@@ -399,6 +400,38 @@ async function handleCopyFolderPath() {
   }
 }
 
+/** 新建子目录弹窗状态 */
+const newFolderDialogShow = ref(false)
+const newFolderInput = ref('')
+
+/** 节点对应的真实文件夹绝对路径（虚拟分组树为静态副本，新建后不会自动更新，故不提供新建） */
+const realFolderPath = computed(() => {
+  if (props.vgIndex !== undefined) return ''
+  const p = props.node.path.replace(/\\/g, '/')
+  if (p.startsWith('__virtual__')) return ''
+  if (/^[A-Za-z]:\//.test(p) || p.startsWith('/')) return p
+  return getNodeAbsolutePath()
+})
+
+function handleNewSubFolder() {
+  newFolderInput.value = ''
+  newFolderDialogShow.value = true
+}
+
+async function confirmNewFolder() {
+  const name = newFolderInput.value.trim()
+  newFolderDialogShow.value = false
+  newFolderInput.value = ''
+  if (!name || !realFolderPath.value) return
+  const ok = await createSubFolder(realFolderPath.value, name)
+  if (ok) emit('expandNode', getExpandKey())
+}
+
+function cancelNewFolder() {
+  newFolderDialogShow.value = false
+  newFolderInput.value = ''
+}
+
 /** 虚拟分组重命名弹窗状态 */
 const renameDialogShow = ref(false)
 const renameInput = ref('')
@@ -543,6 +576,7 @@ function getNodeGridContainerBg(depth: number): string {
       @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
       @copyToFolder="(p: string) => emit('copyToFolder', p)"
       @moveToFolder="(p: string) => emit('moveToFolder', p)"
+      @expandNode="(k: string) => emit('expandNode', k)"
     />
   </template>
   <!-- 正常渲染 -->
@@ -855,6 +889,17 @@ function getNodeGridContainerBg(depth: number): string {
           </svg>
           <span>{{ $t('hint.copy_path') }}</span>
         </button>
+        <button
+          v-if="realFolderPath"
+          class="ctx-menu-item"
+          @click="handleNewSubFolder(), closeHeaderCtxMenu()"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            <line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
+          </svg>
+          <span>{{ $t('folder.new_subfolder') }}</span>
+        </button>
         <div class="ctx-separator"></div>
         <button class="ctx-menu-item ctx-danger" @click="handleRemove(), closeHeaderCtxMenu()">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -862,6 +907,27 @@ function getNodeGridContainerBg(depth: number): string {
           </svg>
           <span>{{ $t('folder.remove') }}</span>
         </button>
+      </div>
+    </Teleport>
+
+    <!-- 新建子目录弹窗 -->
+    <Teleport to="body">
+      <div v-if="newFolderDialogShow" class="name-input-overlay" @click.self="cancelNewFolder">
+        <div class="name-input-dialog">
+          <h4>{{ $t('folder.new_subfolder') }}</h4>
+          <input
+            v-model="newFolderInput"
+            type="text"
+            class="name-input"
+            :placeholder="$t('folder.new_subfolder_hint')"
+            @keyup.enter="confirmNewFolder"
+            @keyup.escape="cancelNewFolder"
+          />
+          <div class="name-input-actions">
+            <button class="name-btn secondary" @click="cancelNewFolder">{{ $t('settings.reset') }}</button>
+            <button class="name-btn primary" @click="confirmNewFolder">{{ $t('settings.apply') }}</button>
+          </div>
+        </div>
       </div>
     </Teleport>
 
@@ -918,6 +984,7 @@ function getNodeGridContainerBg(depth: number): string {
         @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
         @copyToFolder="(p: string) => emit('copyToFolder', p)"
         @moveToFolder="(p: string) => emit('moveToFolder', p)"
+        @expandNode="(k: string) => emit('expandNode', k)"
       />
       <GridItem
         v-for="item in processedImages"
@@ -962,6 +1029,7 @@ function getNodeGridContainerBg(depth: number): string {
               @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
               @copyToFolder="(p: string) => emit('copyToFolder', p)"
               @moveToFolder="(p: string) => emit('moveToFolder', p)"
+              @expandNode="(k: string) => emit('expandNode', k)"
             />
           </div>
           <template v-else>
@@ -987,6 +1055,7 @@ function getNodeGridContainerBg(depth: number): string {
               @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
               @copyToFolder="(p: string) => emit('copyToFolder', p)"
               @moveToFolder="(p: string) => emit('moveToFolder', p)"
+              @expandNode="(k: string) => emit('expandNode', k)"
             />
           </template>
         </div>

@@ -144,6 +144,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.save_to_folder': '保存到文件夹',
     'folder.move_here': '移动至此',
     'folder.copy_here': '复制至此',
+    'folder.new_subfolder': '新建子目录',
+    'folder.new_subfolder_hint': '输入新文件夹名称',
+    'folder.new_subfolder_exists': '同名文件夹已存在',
 
     // 空状态
     'empty.drop_hint': '拖入图片或文件夹到此处',
@@ -189,6 +192,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.moved_to_folder': '已移动 {n} 张图片到 {path}',
     'hint.save_failed': '保存失败: {msg}',
     'hint.remove_first_level_only': '移除只支持一级节点和一级图片',
+    'hint.folder_created': '已新建文件夹「{name}」',
+    'hint.folder_create_failed': '新建文件夹失败: {msg}',
     'hint.display_limit': '已显示 {shown} / {total}',
     'hint.no_meta': '无元数据',
     'hint.copy_path': '复制路径',
@@ -441,6 +446,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.save_to_folder': 'Save to Folder',
     'folder.move_here': 'Move Here',
     'folder.copy_here': 'Copy Here',
+    'folder.new_subfolder': 'New Subfolder',
+    'folder.new_subfolder_hint': 'Enter new folder name',
+    'folder.new_subfolder_exists': 'A folder with the same name already exists',
 
     'empty.drop_hint': 'Drop images or folders here',
     'empty.format_hint': 'Supports JPG, PNG, WebP formats',
@@ -481,6 +489,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.moved_to_folder': 'Moved {n} images to {path}',
     'hint.save_failed': 'Save failed: {msg}',
     'hint.remove_first_level_only': 'Removal only supports first-level nodes and images',
+    'hint.folder_created': 'Created folder "{name}"',
+    'hint.folder_create_failed': 'Failed to create folder: {msg}',
     'hint.display_limit': 'Showing {shown} / {total}',
     'hint.no_meta': 'No metadata',
     'hint.copy_path': 'Copy Path',

@@ -116,6 +116,8 @@ export const state = reactive({
   pendingChanges: [] as string[],
   /** 扫描到的所有子目录（含空目录，用于构建目录树） */
   scannedDirs: new Set<string>(),
+  /** 用户显式新建的目录（即使为空也显示在树中，不受"空文件夹不扫描"设置影响） */
+  explicitDirs: new Set<string>(),
   /** 用户取消扫描的根路径集合（忽略其后续事件） */
   cancelledRoots: new Set<string>(),
   /** Shift 连选：上次选中的图片路径（全局唯一，用于检测跨节点） */
@@ -485,6 +487,10 @@ export async function refreshFolders(): Promise<void> {
   try {
     await scanFolders(paths)
     await setupFolderWatcher()
+    // 清理已被外部删除的显式新建目录记录
+    for (const d of [...state.explicitDirs]) {
+      if (!state.scannedDirs.has(d)) state.explicitDirs.delete(d)
+    }
   } catch (e) {
     console.error('刷新失败:', e)
   } finally {
@@ -560,8 +566,8 @@ export function buildFolderTree(images: ImageItem[], rootPaths: string[]): Folde
         const relative = dirPath.substring(rootPath.length + 1)
         if (exclusions && isExcluded(relative, exclusions)) continue
         if (seen.has(relative)) continue
-        // 勾选"空文件夹不扫描为子节点"时跳过完全无图片的目录
-        if (state.settings.skipEmptyFolders && isEmptyDir(dirPath)) continue
+        // 勾选"空文件夹不扫描为子节点"时跳过完全无图片的目录（用户手动新建的目录除外）
+        if (state.settings.skipEmptyFolders && !state.explicitDirs.has(dirPath) && isEmptyDir(dirPath)) continue
         seen.add(relative)
         relativeDirs.push(relative)
       }
@@ -954,6 +960,27 @@ export async function openInExplorer(path: string): Promise<void> {
   await invoke('open_in_explorer', { path })
 }
 
+/** 在指定目录下新建子文件夹并显示在目录树中 */
+export async function createSubFolder(parentPath: string, name: string): Promise<boolean> {
+  const parent = parentPath.replace(/\\/g, '/').replace(/\/$/, '')
+  try {
+    const created = await invoke<string>('create_folder', { parent, name })
+    const norm = created.replace(/\\/g, '/')
+    state.explicitDirs.add(norm)
+    state.scannedDirs.add(norm)
+    showToast(t('hint.folder_created', { name }))
+    return true
+  } catch (e: any) {
+    const msg = String(e?.message ?? e)
+    if (msg.includes('FOLDER_EXISTS')) {
+      showToast(t('folder.new_subfolder_exists'))
+    } else {
+      showToast(t('hint.folder_create_failed', { msg }))
+    }
+    return false
+  }
+}
+
 /** 删除图片（从磁盘和所有分组中移除） */
 export async function deleteImages(paths: string[]): Promise<void> {
   await setSuppressWatcher(true)
@@ -1191,7 +1218,10 @@ export async function deleteSelectedContents(): Promise<string[]> {
     for (const fp of folderPaths) {
       const normFp = fp.replace(/\\/g, '/').replace(/\/$/, '')
       for (const d of [...state.scannedDirs]) {
-        if (d === normFp || d.startsWith(normFp + '/')) state.scannedDirs.delete(d)
+        if (d === normFp || d.startsWith(normFp + '/')) {
+          state.scannedDirs.delete(d)
+          state.explicitDirs.delete(d)
+        }
       }
     }
   }
@@ -1228,7 +1258,10 @@ export async function deleteSelectedContents(): Promise<string[]> {
     // 清理该根路径下的扫描目录记录
     const norm = root.replace(/\\/g, '/')
     for (const d of [...state.scannedDirs]) {
-      if (d.startsWith(norm)) state.scannedDirs.delete(d)
+      if (d.startsWith(norm)) {
+        state.scannedDirs.delete(d)
+        state.explicitDirs.delete(d)
+      }
     }
   }
   // 更新文件监听器
@@ -1557,6 +1590,7 @@ export function clearAll() {
   if (state.loading) { invoke('cancel_scan') }
   state.allImages = []
   state.scannedDirs.clear()
+  state.explicitDirs.clear()
   state.loadedRootPaths = []
 }
 

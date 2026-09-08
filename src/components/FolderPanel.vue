@@ -119,6 +119,11 @@ function toggleNode(node: FolderNode, scopeKey?: string) {
   expandedMap.set(key, !(expandedMap.get(key) ?? true))
 }
 
+/** 展开指定节点（新建子目录后调用，确保新目录可见） */
+function expandNode(key: string) {
+  expandedMap.set(key, true)
+}
+
 /** 根据根路径构造节点绝对 key（node.path 可能是相对或绝对路径） */
 function absKeyFor(rootPath: string, nodePath: string): string {
   const rootNorm = rootPath.replace(/\\/g, '/').replace(/\/$/, '')
@@ -395,6 +400,7 @@ defineExpose({ toggleAll, collapseLeaves })
           @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
           @copyToFolder="(p:string) => emit('copyToFolder', p)"
           @moveToFolder="(p:string) => emit('moveToFolder', p)"
+          @expandNode="expandNode"
         />
       </template>
     </div>
@@ -441,6 +447,7 @@ defineExpose({ toggleAll, collapseLeaves })
         @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
         @copyToFolder="(p:string) => emit('copyToFolder', p)"
         @moveToFolder="(p:string) => emit('moveToFolder', p)"
+        @expandNode="expandNode"
       />
     </template>
     <div v-if="allRootNodes.length === 0" class="empty-hint">
