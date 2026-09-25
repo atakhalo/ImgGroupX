@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { state, openInExplorer, saveVirtualGroup, getProcessedImages, startProgressiveScan, renameVirtualGroup, createSubFolder } from '../stores/imageStore'
+import { state, openInExplorer, saveVirtualGroup, getProcessedImages, startProgressiveScan, renameVirtualGroup, createSubFolder, openRandomExtractDialog, showToast } from '../stores/imageStore'
+import { t } from '../i18n'
 import GridView from './GridView.vue'
 import GridItem from './GridItem.vue'
 import FolderGroup from './FolderGroup.vue'
@@ -468,6 +469,23 @@ function handleMoveToFolder() {
   emit('moveToFolder', p)
 }
 
+/** 节点（含子节点）内全部图片（不受筛选影响） */
+function collectAllImages(node: FolderNode): ImageItem[] {
+  const items = [...node.images]
+  for (const child of node.children) items.push(...collectAllImages(child))
+  return items
+}
+
+/** 随机抽取为新分组 */
+function handleRandomExtract() {
+  const images = collectAllImages(props.node)
+  if (images.length === 0) {
+    showToast(t('hint.random_extract_empty'))
+    return
+  }
+  openRandomExtractDialog(images)
+}
+
 // 调试：暴露 hasAnySelection 到 window
 if (import.meta.env.DEV) {
   const win = window as any
@@ -848,6 +866,21 @@ function getNodeGridContainerBg(depth: number): string {
             <rect x="3" y="3" width="18" height="18" rx="2"/>
           </svg>
           <span>{{ $t('control.select_mode') }}</span>
+        </button>
+        <!-- 随机抽取为新分组（设置中开启随机分组后显示） -->
+        <button
+          v-if="state.settings.randomGroupEnabled"
+          class="ctx-menu-item"
+          @click="handleRandomExtract(), closeHeaderCtxMenu()"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 3h5v5" />
+            <path d="M4 20 21 3" />
+            <path d="M21 16v5h-5" />
+            <path d="m15 15 6 6" />
+            <path d="M4 4l5 5" />
+          </svg>
+          <span>{{ $t('folder.random_extract') }}</span>
         </button>
         <div class="ctx-separator"></div>
         <!-- 文件名显隐 -->

@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut } from './utils/shortcuts'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog } from './stores/imageStore'
 import type { ImageItem, NavigableEntry } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -868,6 +868,39 @@ async function handleRefresh() {
       </div>
     </Teleport>
 
+    <!-- 随机抽取为新分组弹窗 -->
+    <Teleport to="body">
+      <div v-if="state.randomExtractDialog.show" class="name-input-overlay" @click.self="closeRandomExtractDialog">
+        <div class="name-input-dialog">
+          <h4>{{ $t('hint.random_extract_title') }}</h4>
+          <p class="name-input-hint">{{ $t('hint.random_extract_total', { n: state.randomExtractDialog.total }) }}</p>
+          <input
+            v-model="state.randomExtractDialog.name"
+            type="text"
+            class="name-input"
+            :placeholder="$t('hint.group_name')"
+            @keyup.enter="confirmRandomExtract"
+          />
+          <div class="extract-row">
+            <label for="random-extract-count">{{ $t('hint.random_extract_count') }}</label>
+            <input
+              id="random-extract-count"
+              v-model.number="state.randomExtractDialog.count"
+              type="number"
+              min="0"
+              :max="state.randomExtractDialog.total"
+              class="name-input extract-count-input"
+            />
+            <span class="extract-total">/ {{ state.randomExtractDialog.total }}</span>
+          </div>
+          <div class="name-input-actions">
+            <button class="name-btn secondary" @click="closeRandomExtractDialog">{{ $t('settings.reset') }}</button>
+            <button class="name-btn primary" @click="confirmRandomExtract">{{ $t('settings.apply') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- 重命名弹窗 -->
     <Teleport to="body">
       <div v-if="state.renameDialog.show" class="name-input-overlay" @click.self="closeRenameDialog">
@@ -1187,4 +1220,9 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
 .name-btn.primary:hover { background: rgba(100,108,255,0.3); }
 .name-btn.secondary { background: transparent; border-color: rgba(255,255,255,0.1); color: rgba(255,255,255,0.5); }
 .name-btn.secondary:hover { background: rgba(255,255,255,0.06); color: white; }
+
+/* 随机抽取弹窗 */
+.extract-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: rgba(255,255,255,0.75); }
+.extract-count-input { width: 90px; }
+.extract-total { font-size: 12px; color: rgba(255,255,255,0.4); }
 </style>

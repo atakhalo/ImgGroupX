@@ -76,6 +76,8 @@ const defaultSettings: AppSettings = {
   keyBindings: getDefaultBindings(),
   keyAltBindings: getDefaultBindings(true),
   privacyMode: false,
+  randomGroupEnabled: false,
+  randomGroupCount: 20,
 }
 
 /** 全局状态 */
@@ -133,6 +135,18 @@ export const state = reactive({
     show: false,
     item: null as ImageItem | null,
     name: '',
+  },
+  /** 随机抽取对话框状态 */
+  randomExtractDialog: {
+    show: false,
+    /** 分组名称 */
+    name: '',
+    /** 抽取数量 */
+    count: 0,
+    /** 节点内图片总数 */
+    total: 0,
+    /** 节点内全部图片（含子节点，不受筛选影响） */
+    images: [] as ImageItem[],
   },
 })
 
@@ -816,6 +830,48 @@ export function removeVirtualGroup(index: number) {
 export function renameVirtualGroup(index: number, newName: string) {
   const vg = state.virtualGroups[index]
   if (vg) vg.name = newName
+}
+
+/** 打开随机抽取对话框（images 为节点内全部图片） */
+export function openRandomExtractDialog(images: ImageItem[]) {
+  const d = state.randomExtractDialog
+  d.show = true
+  d.images = images
+  d.total = images.length
+  d.count = Math.max(0, Math.min(Math.floor(state.settings.randomGroupCount) || 0, images.length))
+  d.name = ''
+}
+
+/** 关闭随机抽取对话框 */
+export function closeRandomExtractDialog() {
+  const d = state.randomExtractDialog
+  d.show = false
+  d.images = []
+}
+
+/** 从数组中随机取 n 项（部分洗牌，不修改原数组） */
+function pickRandom<T>(arr: T[], n: number): T[] {
+  const copy = [...arr]
+  const take = Math.max(0, Math.min(n, copy.length))
+  for (let i = 0; i < take; i++) {
+    const j = i + Math.floor(Math.random() * (copy.length - i))
+    const tmp = copy[i]
+    copy[i] = copy[j]
+    copy[j] = tmp
+  }
+  return copy.slice(0, take)
+}
+
+/** 执行随机抽取：创建为新虚拟分组 */
+export function confirmRandomExtract() {
+  const d = state.randomExtractDialog
+  if (!d.show) return
+  const count = Math.max(0, Math.min(Math.floor(d.count) || 0, d.images.length))
+  const picked = pickRandom(d.images, count)
+  const name = d.name.trim() || `${t('virtual_group_default')}-${state.virtualGroups.length + 1}`
+  closeRandomExtractDialog()
+  addVirtualGroup(name, picked)
+  showToast(t('hint.random_extracted', { n: picked.length, name }))
 }
 
 /** 设置指定图片的标记等级 */

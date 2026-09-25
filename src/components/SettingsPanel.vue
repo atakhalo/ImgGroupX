@@ -24,7 +24,7 @@ const tabs = [
 
 /** 各标签页对应的设置字段 */
 const tabFields: Record<string, (keyof typeof state.settings)[]> = {
-  general: ['language', 'maxLoadSizeMB', 'loadSkippedOnView', 'filterPresets', 'filterRegex', 'filterTarget', 'sortBy', 'sortOrder', 'groupSortBy', 'groupSortOrder'],
+  general: ['language', 'maxLoadSizeMB', 'loadSkippedOnView', 'randomGroupEnabled', 'randomGroupCount', 'filterPresets', 'filterRegex', 'filterTarget', 'sortBy', 'sortOrder', 'groupSortBy', 'groupSortOrder'],
   grid: ['borderRadius', 'gap', 'contentMarginX', 'gridSize', 'bgColor', 'nodeGridGapV', 'nodeGridGapH', 'compactMode', 'compactHeader', 'collapseHierarchy'],
   colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
@@ -52,6 +52,7 @@ const defaultSettings = {
   scanAllFiles: false, autoPan: true, autoCenter: true, privacyMode: false, rootCompactMode: false,
   skipEmptyFolders: false,
   maxLoadSizeMB: 0, loadSkippedOnView: true,
+  randomGroupEnabled: false, randomGroupCount: 20,
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   showMarks: true, showMarkBadge: true,
   keyBindings: getDefaultBindings(),
@@ -195,6 +196,25 @@ onUnmounted(() => {
                 </label>
               </div>
               <div class="setting-hint">{{ $t('settings.load_skipped_on_view_hint') }}</div>
+            </template>
+
+            <!-- 随机分组 -->
+            <h4 style="margin-top: 20px;">{{ $t('settings.random_group') }}</h4>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.randomGroupEnabled" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.random_group_enable') }}
+              </label>
+            </div>
+            <div class="setting-hint">{{ $t('settings.random_group_hint') }}</div>
+
+            <template v-if="localSettings.randomGroupEnabled">
+              <h4 style="margin-top: 16px;">{{ $t('settings.random_group_count') }}</h4>
+              <div class="setting-row">
+                <input type="number" min="0" max="99999" v-model.number="localSettings.randomGroupCount" class="number-input" style="width:100px;" />
+              </div>
+              <div class="setting-hint">{{ $t('settings.random_group_count_hint') }}</div>
             </template>
 
             <!-- 筛选预设 -->

@@ -165,4 +165,8 @@ export interface AppSettings {
   keyAltBindings: Record<string, string>
   /** 隐私模式：图片显示为占位图标，节点名匿名显示 */
   privacyMode: boolean
+  /** 随机分组开关（开启后节点右键菜单显示「随机抽取为新分组」） */
+  randomGroupEnabled: boolean
+  /** 随机分组默认抽取文件数 */
+  randomGroupCount: number
 }
