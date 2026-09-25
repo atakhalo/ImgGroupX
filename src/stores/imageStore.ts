@@ -1,9 +1,12 @@
 import { reactive, computed } from 'vue'
 import type { ImageInfo, ImageItem, FolderNode, AppSettings, SortBy, SortOrder, FilterTarget, NavigableEntry } from '../types'
 import { getDefaultBindings } from '../utils/shortcuts'
+import { findSubTreeInTree, resolveRelativePathInTree } from '../utils/treePath'
 import { invoke } from '@tauri-apps/api/core'
 import { open, ask } from '@tauri-apps/plugin-dialog'
 import { t } from '../i18n'
+
+export { findSubTreeInTree }
 
 /** 冒泡提示 */
 export const toastState = reactive({
@@ -749,38 +752,6 @@ export const navIndexMap = computed(() => {
   return map
 })
 
-/** 从文件夹树中递归查找并提取指定路径的节点子树（深拷贝）
- * 支持绝对路径或相对路径查找：根节点 path 为绝对路径，子节点为相对路径 */
-export function findSubTreeInTree(tree: FolderNode[], targetPath: string): FolderNode | null {
-  const norm = targetPath.replace(/\\/g, '/').replace(/\/$/, '')
-  for (const node of tree) {
-    if (node.path === norm) {
-      return JSON.parse(JSON.stringify(node))
-    }
-    // 绝对路径：拼接根路径匹配；相对路径：直接匹配子节点
-    const rootNorm = node.path.replace(/\\/g, '/').replace(/\/$/, '')
-    const found = findSubTreeInAbs(node, norm, rootNorm)
-    if (found) return found
-  }
-  return null
-}
-
-/** 在子树中按绝对路径归一化匹配（根路径已知时拼接相对路径比较） */
-function findSubTreeInAbs(node: FolderNode, targetNorm: string, rootAbsNorm: string): FolderNode | null {
-  for (const child of node.children) {
-    const childNorm = child.path.replace(/\\/g, '/')
-    const childAbs = childNorm.startsWith(rootAbsNorm + '/') || childNorm === rootAbsNorm
-      ? childNorm
-      : rootAbsNorm + '/' + childNorm
-    if (childAbs === targetNorm || childNorm === targetNorm) {
-      return JSON.parse(JSON.stringify(child))
-    }
-    const found = findSubTreeInAbs(child, targetNorm, childAbs)
-    if (found) return found
-  }
-  return null
-}
-
 /** 扫描单个文件并创建虚拟分组 */
 export async function scanFilesAsVirtualGroup(filePaths: string[], groupName?: string): Promise<void> {
   state.loading = true
@@ -1377,22 +1348,6 @@ function computeSelectedFolderAbsolutePaths(): string[] {
     }
   }
   return result
-}
-
-/** 在树中递归查找目标路径对应的绝对路径（支持相对/绝对路径目标） */
-function resolveRelativePathInTree(node: FolderNode, targetNorm: string, rootAbsPath: string): string | null {
-  for (const child of node.children) {
-    const childNorm = child.path.replace(/\\/g, '/')
-    const childAbs = (childNorm.startsWith(rootAbsPath + '/') || childNorm === rootAbsPath)
-      ? childNorm
-      : rootAbsPath + '/' + childNorm
-    if (childAbs === targetNorm || childNorm === targetNorm) {
-      return childAbs
-    }
-    const found = resolveRelativePathInTree(child, targetNorm, childAbs)
-    if (found) return found
-  }
-  return null
 }
 
 /** 收集选中图片 + 选中文件夹下所有图片的 [sourcePath, relativePath] 列表
