@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ImageItem } from '../types'
 import { state, loadImageBase64, ensurePrivacyIcon } from '../stores/imageStore'
+import { observeOnce, unobserveElement } from '../utils/lazyObserver'
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import ImageContextMenu from './ImageContextMenu.vue'
@@ -58,7 +59,6 @@ const itemWidth = computed(() => {
 })
 
 let loadingPromise: Promise<string> | null = null
-let visObserver: IntersectionObserver | null = null
 let hasTriggered = false
 
 async function doLoad() {
@@ -92,25 +92,17 @@ async function doLoad() {
 }
 
 onMounted(() => {
-  // 使用 IntersectionObserver：进入视口才加载
+  // 进入视口才加载（共享 observer，避免每个元素各建一个）
   if (!elRef.value) return
-  visObserver = new IntersectionObserver(
-    (entries) => {
-      if (entries[0]?.isIntersecting && !hasTriggered) {
-        hasTriggered = true
-        doLoad()
-        // 加载一次后断开观察
-        visObserver?.disconnect()
-        visObserver = null
-      }
-    },
-    { rootMargin: '300px' } // 提前 300px 开始加载
-  )
-  visObserver.observe(elRef.value)
+  observeOnce(elRef.value, () => {
+    if (hasTriggered) return
+    hasTriggered = true
+    doLoad()
+  })
 })
 
 onUnmounted(() => {
-  visObserver?.disconnect()
+  unobserveElement(elRef.value)
   imgSrc.value = ''
 })
 

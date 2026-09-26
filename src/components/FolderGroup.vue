@@ -985,9 +985,9 @@ function getNodeGridContainerBg(depth: number): string {
       </div>
     </Teleport>
 
-    <!-- 紧凑模式：统一内容网格（子节点 + 图片作为同级网格项混合排列） -->
+    <!-- 紧凑模式：统一内容网格（子节点 + 图片作为同级网格项混合排列）；折叠时不渲染，避免挂载大量图片组件 -->
     <div
-      v-if="useUnifiedGrid && !isEmptyFolder"
+      v-if="useUnifiedGrid && !isEmptyFolder && getExpanded(node, getExpandKey())"
       class="folder-content-grid"
       :class="{ 'folder-content-collapsed': !getExpanded(node, getExpandKey()) }"
       :style="{
@@ -1093,7 +1093,7 @@ function getNodeGridContainerBg(depth: number): string {
           </template>
         </div>
         <div
-          v-if="node.images.length"
+          v-if="node.images.length && getExpanded(node, getExpandKey())"
           class="folder-grid-wrapper"
           :class="{ 'folder-grid-collapsed': !getExpanded(node, getExpandKey()) }"
           :style="{ borderRadius: '20px', backgroundColor: getNodeGridWrapperBg(realDepth) }"

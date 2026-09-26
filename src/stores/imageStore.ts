@@ -160,14 +160,18 @@ function addImagesUnique(newItems: ImageItem[]) {
   state.allImages.push(...toAdd)
 }
 
+/** 复用的排序器：带选项的 localeCompare 每次调用都会重建 collator，大列表排序时是主要瓶颈 */
+const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+
 /** 根据设置排序图片 */
 export function sortImages(images: ImageItem[], sortBy: SortBy, sortOrder: SortOrder): ImageItem[] {
   return [...images].sort((a, b) => {
     let cmp = 0
     if (sortBy === 'name') {
-      cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      cmp = nameCollator.compare(a.name, b.name)
     } else if (sortBy === 'modified') {
-      cmp = a.modified.localeCompare(b.modified)
+      // modified 为 "YYYY-MM-DD HH:MM:SS"，字典序即时间序
+      cmp = a.modified < b.modified ? -1 : a.modified > b.modified ? 1 : 0
     } else if (sortBy === 'size') {
       cmp = a.size_bytes - b.size_bytes
     }
@@ -175,23 +179,31 @@ export function sortImages(images: ImageItem[], sortBy: SortBy, sortOrder: SortO
   })
 }
 
-/** 递归统计节点图片总数 */
+/** 递归统计节点图片总数（WeakMap 缓存，避免排序比较时反复递归子树） */
+const nodeImageCountCache = new WeakMap<FolderNode, number>()
 function totalImagesOf(node: FolderNode): number {
+  const cached = nodeImageCountCache.get(node)
+  if (cached !== undefined) return cached
   let n = node.images.length
   for (const child of node.children) {
     n += totalImagesOf(child)
   }
+  nodeImageCountCache.set(node, n)
   return n
 }
 
-/** 递归取节点子树中图片的最大修改时间（字符串可比较） */
+/** 递归取节点子树中图片的最大修改时间（字符串可比较，WeakMap 缓存同上） */
+const nodeMaxModifiedCache = new WeakMap<FolderNode, string>()
 function maxModifiedOf(node: FolderNode): string {
+  const cached = nodeMaxModifiedCache.get(node)
+  if (cached !== undefined) return cached
   let m = ''
   for (const img of node.images) if (img.modified > m) m = img.modified
   for (const child of node.children) {
     const cm = maxModifiedOf(child)
     if (cm > m) m = cm
   }
+  nodeMaxModifiedCache.set(node, m)
   return m
 }
 
@@ -202,14 +214,16 @@ export function sortFolderNodes(nodes: FolderNode[]): FolderNode[] {
   nodes.sort((a, b) => {
     let cmp = 0
     if (by === 'name') {
-      cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      cmp = nameCollator.compare(a.name, b.name)
     } else if (by === 'modified') {
       // 节点修改日期 = 其子树中图片的最大修改时间
-      cmp = maxModifiedOf(a).localeCompare(maxModifiedOf(b))
-        || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      const ma = maxModifiedOf(a)
+      const mb = maxModifiedOf(b)
+      cmp = ma < mb ? -1 : ma > mb ? 1 : 0
+      if (cmp === 0) cmp = nameCollator.compare(a.name, b.name)
     } else if (by === 'count') {
       cmp = totalImagesOf(a) - totalImagesOf(b)
-        || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+        || nameCollator.compare(a.name, b.name)
     }
     return order === 'asc' ? cmp : -cmp
   })
@@ -363,22 +377,52 @@ export async function startProgressiveScan(paths: string[]): Promise<void> {
   }
 }
 
-/** 处理单目录扫描结果（由 scan-dir-progress 事件触发） */
+/** 渐进扫描事件缓冲：把高频目录事件合并成批处理，避免每来一批就重建目录树、重排序、重渲染 */
+const scanEventBuffer: { dir: string; images: ImageInfo[]; root: string }[] = []
+let scanFlushTimer: ReturnType<typeof setTimeout> | null = null
+/** 批处理间隔（毫秒） */
+const SCAN_FLUSH_INTERVAL = 80
+
+/** 处理单目录扫描结果（由 scan-dir-progress 事件触发）：先入缓冲，定时批量提交 */
 export function handleDirProgress(payload: { dir: string; images: ImageInfo[]; root: string }): void {
-  const norm = payload.root.replace(/\\/g, '/').replace(/\/$/, '')
-  // 根路径已被用户取消扫描（点击了 x），忽略后续事件
-  if (state.cancelledRoots.has(norm)) return
-  // 确保根路径已登记（startProgressiveScan 会预登记，但兼容手动调用场景）
-  if (!state.loadedRootPaths.includes(norm)) {
-    state.loadedRootPaths.push(norm)
+  scanEventBuffer.push(payload)
+  if (scanFlushTimer) return
+  scanFlushTimer = setTimeout(() => {
+    scanFlushTimer = null
+    flushDirProgress()
+  }, SCAN_FLUSH_INTERVAL)
+}
+
+/** 提交缓冲中的扫描结果（批量去重 + 批量登记目录） */
+export function flushDirProgress(): void {
+  if (scanEventBuffer.length === 0) return
+  const batches = scanEventBuffer.splice(0, scanEventBuffer.length)
+
+  const items: ImageItem[] = []
+  for (const batch of batches) {
+    const norm = batch.root.replace(/\\/g, '/').replace(/\/$/, '')
+    // 根路径已被用户取消扫描（点击了 x），忽略后续事件
+    if (state.cancelledRoots.has(norm)) continue
+    // 确保根路径已登记（startProgressiveScan 会预登记，但兼容手动调用场景）
+    if (!state.loadedRootPaths.includes(norm)) {
+      state.loadedRootPaths.push(norm)
+    }
+    for (const img of batch.images) {
+      items.push({ ...img, loading: false })
+    }
+    // 记录该目录（含空目录，可能只有目录没有图片）
+    state.scannedDirs.add(batch.dir.replace(/\\/g, '/'))
   }
-  const items: ImageItem[] = payload.images.map(img => ({
-    ...img,
-    loading: false,
-  }))
-  addImagesUnique(items)
-  // 记录该目录（含空目录，可能只有目录没有图片）
-  state.scannedDirs.add(payload.dir.replace(/\\/g, '/'))
+  if (items.length > 0) addImagesUnique(items)
+}
+
+/** 丢弃尚未提交的扫描缓冲（refreshFolders 重置数据集时调用） */
+function discardScanBuffer(): void {
+  scanEventBuffer.length = 0
+  if (scanFlushTimer) {
+    clearTimeout(scanFlushTimer)
+    scanFlushTimer = null
+  }
 }
 
 /** 处理根目录扫描结果（由 scan-dirs 事件触发，包含所有子目录含空目录） */
@@ -395,6 +439,12 @@ export function handleScanDirs(payload: { dirs: string[]; root: string }): void 
 
 /** 渐进扫描完成（由 scan-all-complete 事件触发） */
 export function handleScanComplete(): void {
+  // 先落地缓冲中的最后一批结果
+  if (scanFlushTimer) {
+    clearTimeout(scanFlushTimer)
+    scanFlushTimer = null
+  }
+  flushDirProgress()
   state.loading = false
   state.cancelledRoots.clear()
 }
@@ -495,6 +545,7 @@ export async function refreshFolders(): Promise<void> {
   // 记录旧路径，防止重复添加
   const paths = [...state.loadedRootPaths]
   // 清除所有图片（保留根路径记录）
+  discardScanBuffer()
   state.allImages = []
   state.scannedDirs.clear()
   state.selectedPaths.clear()
@@ -534,8 +585,17 @@ export function buildFolderTree(images: ImageItem[], rootPaths: string[]): Folde
     return []
   }
 
-  // 有图片的目录集合（用于判断目录是否为空）
-  const imageDirs = new Set(dirMap.keys())
+  // 含图片或子孙含图片的目录集合（一次性预计算，避免对每个目录重复扫描全部目录）
+  const nonEmptyDirs = new Set<string>()
+  for (const d of dirMap.keys()) {
+    let cur = d
+    while (cur) {
+      nonEmptyDirs.add(cur)
+      const idx = cur.lastIndexOf('/')
+      if (idx <= 0) break
+      cur = cur.slice(0, idx)
+    }
+  }
 
   const roots: FolderNode[] = []
 
@@ -570,21 +630,13 @@ export function buildFolderTree(images: ImageItem[], rootPaths: string[]): Folde
 
     // 补充扫描到的空目录（scannedDirs 来自 Rust 端，包含无图片的子目录）
     if (state.scannedDirs.size > 0) {
-      /** 目录是否为空：自身及子孙目录均无图片 */
-      const isEmptyDir = (dirPath: string): boolean => {
-        const prefix = dirPath + '/'
-        for (const d of imageDirs) {
-          if (d === dirPath || d.startsWith(prefix)) return false
-        }
-        return true
-      }
       for (const dirPath of state.scannedDirs) {
         if (!dirPath.startsWith(rootPath + '/')) continue
         const relative = dirPath.substring(rootPath.length + 1)
         if (exclusions && isExcluded(relative, exclusions)) continue
         if (seen.has(relative)) continue
         // 勾选"空文件夹不扫描为子节点"时跳过完全无图片的目录（用户手动新建的目录除外）
-        if (state.settings.skipEmptyFolders && !state.explicitDirs.has(dirPath) && isEmptyDir(dirPath)) continue
+        if (state.settings.skipEmptyFolders && !state.explicitDirs.has(dirPath) && !nonEmptyDirs.has(dirPath)) continue
         seen.add(relative)
         relativeDirs.push(relative)
       }

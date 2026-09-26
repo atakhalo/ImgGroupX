@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
 import { t } from '../i18n'
 import { state, buildFolderTree, filterImages, findSubTreeInTree, showToast, sortFolderTree } from '../stores/imageStore'
@@ -112,6 +112,55 @@ const allRootNodes = computed<(FolderNode & { isVirtualGroup?: boolean })[]>(() 
     _vgIndex: i,
   }))
   return [...virtualRoots, ...folderTree.value]
+})
+
+/**
+ * 分组渐进渲染：首屏只挂载少量分组，其余分组在后续帧中分批追加。
+ * 分组多了以后（如数百个子目录、数万张图片），一次性挂载全部网格组件
+ * 会长时间阻塞主线程，表现为图片"一张一张地冒出来"。
+ */
+const GROUP_RENDER_STEP = 12
+/** 每帧最多新增的图片数（预算），避免单帧渲染时间过长 */
+const GROUP_RENDER_IMAGE_BUDGET = 400
+
+const renderedGroupCount = ref(GROUP_RENDER_STEP)
+const visibleRootNodes = computed(() => allRootNodes.value.slice(0, renderedGroupCount.value))
+const hasMoreGroups = computed(() => renderedGroupCount.value < allRootNodes.value.length)
+
+const nodeImageCountCache = new WeakMap<FolderNode, number>()
+function countNodeImages(node: FolderNode): number {
+  const cached = nodeImageCountCache.get(node)
+  if (cached !== undefined) return cached
+  let n = node.images.length
+  for (const child of node.children) {
+    n += countNodeImages(child)
+  }
+  nodeImageCountCache.set(node, n)
+  return n
+}
+
+let renderRafId = 0
+function scheduleMoreGroups() {
+  if (!hasMoreGroups.value || renderRafId) return
+  renderRafId = requestAnimationFrame(() => {
+    renderRafId = 0
+    let budget = GROUP_RENDER_IMAGE_BUDGET
+    while (hasMoreGroups.value && budget > 0) {
+      const node = allRootNodes.value[renderedGroupCount.value]
+      budget -= Math.max(node ? countNodeImages(node) : 1, 1)
+      renderedGroupCount.value += 1
+    }
+    scheduleMoreGroups()
+  })
+}
+
+onMounted(() => scheduleMoreGroups())
+onUnmounted(() => {
+  if (renderRafId) cancelAnimationFrame(renderRafId)
+})
+
+watch(hasMoreGroups, (more) => {
+  if (more) scheduleMoreGroups()
 })
 
 function toggleNode(node: FolderNode, scopeKey?: string) {
@@ -357,7 +406,7 @@ defineExpose({ toggleAll, collapseLeaves })
 <template>
   <div class="folder-panel">
     <div v-if="state.settings.compactMode && state.settings.rootCompactMode" class="folder-panel-compact" :style="{ gap: state.settings.nodeGridGapH + 'px' }">
-      <template v-for="(node, i) in allRootNodes" :key="node.path || `vg-${i}`">
+      <template v-for="(node, i) in visibleRootNodes" :key="node.path || `vg-${i}`">
         <FolderGroup
           v-if="(node as any).isVirtualGroup"
           :node="node"
@@ -404,7 +453,7 @@ defineExpose({ toggleAll, collapseLeaves })
         />
       </template>
     </div>
-    <template v-else v-for="(node, i) in allRootNodes" :key="node.path || `vg-${i}`">
+    <template v-else v-for="(node, i) in visibleRootNodes" :key="node.path || `vg-${i}`">
       <FolderGroup
         v-if="(node as any).isVirtualGroup"
         :node="node"
