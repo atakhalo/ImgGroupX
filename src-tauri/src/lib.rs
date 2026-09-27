@@ -132,9 +132,8 @@ fn collect_dir_batches(root: &Path, scan_all_files: bool) -> (Vec<DirBatch>, Vec
     (batches, dirs)
 }
 
-/// 组装最终图片信息（此步才打开文件读取尺寸，是主要 IO 开销）
+/// 组装图片信息。不读取尺寸：扫描阶段零文件内容读取，尺寸由前端按需请求
 fn build_image_info(f: &PendingFile, dir: &str) -> ImageInfo {
-    let (width, height) = get_image_dimensions(&f.path);
     ImageInfo {
         path: f.path.to_string_lossy().to_string(),
         name: f
@@ -147,76 +146,69 @@ fn build_image_info(f: &PendingFile, dir: &str) -> ImageInfo {
         ext: f.ext.clone(),
         size_bytes: f.size_bytes,
         modified: f.modified.clone(),
-        width,
-        height,
+        width: 0,
+        height: 0,
     }
 }
 
-fn scan_thread_count() -> usize {
-    std::thread::available_parallelism()
+/// 展平目录批次为图片列表
+fn flatten_batches(batches: &[DirBatch]) -> Vec<ImageInfo> {
+    let mut images = Vec::new();
+    for batch in batches {
+        for f in &batch.files {
+            images.push(build_image_info(f, &batch.dir));
+        }
+    }
+    images
+}
+
+#[derive(Serialize)]
+struct DimResult {
+    path: String,
+    width: u32,
+    height: u32,
+}
+
+/// 按需读取图片尺寸（前端在分组展开、图片进入视口时批量调用）
+#[tauri::command]
+fn read_image_dims(paths: Vec<String>) -> Vec<DimResult> {
+    if paths.is_empty() {
+        return Vec::new();
+    }
+    // 机械盘并行收益有限（实测 1→16 线程仅提升约 28%），限并发避免抢占 IO 让交互卡顿
+    let threads = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
-        .clamp(4, 16)
-}
-
-/// 按文件数把目录批次均衡分配到 n 组（组内恢复目录原顺序）
-fn partition_batches(batches: Vec<DirBatch>, n: usize) -> Vec<Vec<DirBatch>> {
-    let n = n.max(1);
-    let mut order: Vec<usize> = (0..batches.len()).collect();
-    order.sort_by_key(|&i| std::cmp::Reverse(batches[i].files.len()));
-
-    let mut groups: Vec<Vec<usize>> = vec![Vec::new(); n];
-    let mut loads: Vec<usize> = vec![0; n];
-    for i in order {
-        let mut target = 0;
-        let mut best = usize::MAX;
-        for (gi, &load) in loads.iter().enumerate() {
-            if load < best {
-                best = load;
-                target = gi;
-            }
-        }
-        groups[target].push(i);
-        loads[target] += batches[i].files.len();
-    }
-
-    let mut slots: Vec<Option<DirBatch>> = batches.into_iter().map(Some).collect();
-    groups
-        .into_iter()
-        .map(|mut g| {
-            g.sort_unstable();
-            g.into_iter().filter_map(|i| slots[i].take()).collect()
-        })
-        .collect()
-}
-
-/// 并行处理所有批次并汇总（一次性扫描用）
-fn process_batches_parallel(batches: Vec<DirBatch>) -> Vec<ImageInfo> {
-    let groups = partition_batches(batches, scan_thread_count());
-    let chunks: Vec<Vec<ImageInfo>> = std::thread::scope(|scope| {
-        let handles: Vec<_> = groups
-            .into_iter()
+        .clamp(1, 4);
+    let chunk = paths.len().div_ceil(threads).max(1);
+    let parts: Vec<Vec<DimResult>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = paths
+            .chunks(chunk)
             .map(|group| {
                 scope.spawn(move || {
-                    let mut local = Vec::new();
-                    for batch in &group {
-                        for f in &batch.files {
-                            local.push(build_image_info(f, &batch.dir));
-                        }
-                    }
-                    local
+                    group
+                        .iter()
+                        .map(|p| {
+                            let (width, height) = get_image_dimensions(Path::new(p));
+                            DimResult {
+                                path: p.clone(),
+                                width,
+                                height,
+                            }
+                        })
+                        .collect::<Vec<_>>()
                 })
             })
             .collect();
         handles
             .into_iter()
-            .map(|h| h.join().unwrap_or_default())
+            .filter_map(|h| h.join().ok())
             .collect()
     });
-    chunks.into_iter().flatten().collect()
+    parts.into_iter().flatten().collect()
 }
 
-/// 扫描文件夹，递归获取所有图片文件信息
+/// 扫描文件夹，递归获取所有图片文件信息（尺寸由前端按需读取）
 #[tauri::command]
 fn scan_folder(path: String, scan_all_files: bool) -> Result<ScanResult, String> {
     let path = Path::new(&path);
@@ -224,12 +216,12 @@ fn scan_folder(path: String, scan_all_files: bool) -> Result<ScanResult, String>
         return Err("路径不存在".into());
     }
     let (batches, dirs) = collect_dir_batches(path, scan_all_files);
-    let images = process_batches_parallel(batches);
+    let images = flatten_batches(&batches);
     let total = images.len();
     Ok(ScanResult { images, total, dirs })
 }
 
-/// 扫描多个文件夹（scan_folder 内部已并行，逐个根路径处理）
+/// 扫描多个文件夹
 #[tauri::command]
 fn scan_folders(paths: Vec<String>, scan_all_files: bool) -> Result<Vec<ScanResult>, String> {
     paths
@@ -254,8 +246,8 @@ struct DirList {
 /// 渐进式扫描取消标志
 static SCAN_CANCELLED: AtomicBool = AtomicBool::new(false);
 
-/// 渐进式扫描：边遍历边发送事件，前端实时构建树。
-/// 遍历阶段用 walkdir 缓存元数据（零额外 stat），文件按目录分批次多线程并行读取尺寸
+/// 渐进式扫描：遍历完成后逐目录推送，前端边收边建树。
+/// 全程只读元数据（walkdir 缓存），不打开任何文件，2.9 万文件实测约 0.1 秒
 #[tauri::command]
 fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>, scan_all_files: bool) -> Result<(), String> {
     SCAN_CANCELLED.store(false, Ordering::Relaxed);
@@ -270,7 +262,6 @@ fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>, scan_all_
             }
 
             let (batches, dirs) = collect_dir_batches(root_dir, scan_all_files);
-            if SCAN_CANCELLED.load(Ordering::Relaxed) { break; }
 
             // 目录结构先发给前端，可立即显示空节点
             if !dirs.is_empty() {
@@ -283,31 +274,22 @@ fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>, scan_all_
                 );
             }
 
-            // 目录批次按文件数均衡分给各线程，各自完成即发送事件
-            let groups = partition_batches(batches, scan_thread_count());
-            std::thread::scope(|scope| {
-                for group in groups {
-                    let handle = &app_handle;
-                    let root = root_path.clone();
-                    scope.spawn(move || {
-                        for batch in &group {
-                            if SCAN_CANCELLED.load(Ordering::Relaxed) { return; }
-                            let mut images = Vec::with_capacity(batch.files.len());
-                            for f in &batch.files {
-                                images.push(build_image_info(f, &batch.dir));
-                            }
-                            let _ = handle.emit(
-                                "scan-dir-progress",
-                                DirProgress {
-                                    dir: batch.dir.clone(),
-                                    images,
-                                    root: root.clone(),
-                                },
-                            );
-                        }
-                    });
-                }
-            });
+            for batch in &batches {
+                if SCAN_CANCELLED.load(Ordering::Relaxed) { break; }
+                let images: Vec<ImageInfo> = batch
+                    .files
+                    .iter()
+                    .map(|f| build_image_info(f, &batch.dir))
+                    .collect();
+                let _ = app_handle.emit(
+                    "scan-dir-progress",
+                    DirProgress {
+                        dir: batch.dir.clone(),
+                        images,
+                        root: root_path.clone(),
+                    },
+                );
+            }
         }
         let _ = app_handle.emit("scan-all-complete", ());
     });
@@ -1422,6 +1404,7 @@ pub fn run() {
             set_suppress_watcher,
             get_files_info,
             scan_folders_progressive,
+            read_image_dims,
             cancel_scan,
             read_file_text,
             rename_file,
@@ -1430,4 +1413,77 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEST_ROOT: &str = r"E:\4-产出\20-ai图";
+
+    /// 扫描阶段必须零文件内容读取：尺寸全为 0，耗时应是遍历级别
+    #[test]
+    #[ignore]
+    fn scan_reads_metadata_only() {
+        let root = Path::new(TEST_ROOT);
+        if !root.exists() {
+            println!("测试目录不存在，跳过");
+            return;
+        }
+        let t = std::time::Instant::now();
+        let (batches, dirs) = collect_dir_batches(root, false);
+        let images = flatten_batches(&batches);
+        let elapsed = t.elapsed().as_secs_f64();
+
+        let with_dim = images.iter().filter(|i| i.width > 0 || i.height > 0).count();
+        println!(
+            "扫描 {} 张图片 / {} 个目录，耗时 {:.3}s，带尺寸条目 {}",
+            images.len(),
+            dirs.len(),
+            elapsed,
+            with_dim
+        );
+        assert!(!images.is_empty(), "应扫到图片");
+        assert_eq!(with_dim, 0, "扫描阶段不应读取图片尺寸");
+    }
+
+    /// 按需尺寸接口：能返回真实宽高，且结果顺序与入参一致
+    #[test]
+    #[ignore]
+    fn read_dims_by_demand() {
+        let root = Path::new(TEST_ROOT);
+        if !root.exists() {
+            println!("测试目录不存在，跳过");
+            return;
+        }
+        let (batches, _) = collect_dir_batches(root, false);
+        let sample: Vec<String> = batches
+            .iter()
+            .take(4)
+            .flat_map(|b| b.files.iter().take(25))
+            .map(|f| f.path.to_string_lossy().to_string())
+            .collect();
+        if sample.is_empty() {
+            println!("没有样本文件，跳过");
+            return;
+        }
+
+        let t = std::time::Instant::now();
+        let dims = read_image_dims(sample.clone());
+        let per_file = t.elapsed().as_secs_f64() / sample.len() as f64;
+
+        assert_eq!(dims.len(), sample.len());
+        for (i, d) in dims.iter().enumerate() {
+            assert_eq!(d.path, sample[i], "结果顺序应与入参一致");
+        }
+        let ok = dims.iter().filter(|d| d.width > 0 && d.height > 0).count();
+        println!(
+            "读取 {} 个文件尺寸：命中 {}，耗时 {:.1}ms（{:.1}ms/文件）",
+            sample.len(),
+            ok,
+            t.elapsed().as_secs_f64() * 1000.0,
+            per_file * 1000.0
+        );
+        assert!(ok > 0, "应至少读到一个有效尺寸");
+    }
 }

@@ -158,6 +158,10 @@ function addImagesUnique(newItems: ImageItem[]) {
   const existingPaths = new Set(state.allImages.map(i => normPath(i.path)))
   const toAdd = newItems.filter(i => !existingPaths.has(normPath(i.path)))
   state.allImages.push(...toAdd)
+  // 重新扫描到的图片一律无尺寸，允许重新读取（文件可能已被替换）
+  for (const item of toAdd) {
+    if (!item.width && dimRequested.has(item.path)) dimRequested.delete(item.path)
+  }
 }
 
 /** 复用的排序器：带选项的 localeCompare 每次调用都会重建 collator，大列表排序时是主要瓶颈 */
@@ -967,6 +971,67 @@ export function deselectImagesByMark(level: import('../types').MarkLevel) {
       }
     }
   }
+}
+
+/** 已请求过尺寸的路径（避免重复请求；文件变更后由 applyFileChanges 覆盖） */
+const dimRequested = new Set<string>()
+/** 尺寸请求串行化：避免同时展开多个分组时并发抢占磁盘 IO（机械盘上并行几乎无收益） */
+let dimChain: Promise<void> = Promise.resolve()
+
+/**
+ * 按需读取图片尺寸：扫描阶段不读文件，分组展开 / 图片进入视口时再批量补上。
+ * 尺寸是响应式的，回填后网格宽度按真实宽高比自动修正。
+ */
+export function requestImageDims(items: ImageItem[]): void {
+  // 隐私模式不展示真实图片，无需读取任何文件
+  if (state.settings.privacyMode) return
+  const need: ImageItem[] = []
+  for (const item of items) {
+    if (item.width || item.height) continue
+    if (dimRequested.has(item.path)) continue
+    dimRequested.add(item.path)
+    need.push(item)
+  }
+  if (need.length === 0) return
+
+  // 小批次排队，先到的先读；后展开的分组排在队尾，不会抢占
+  const BATCH = 50
+  for (let i = 0; i < need.length; i += BATCH) {
+    const batch = need.slice(i, i + BATCH)
+    dimChain = dimChain.then(() => readDimsBatch(batch))
+  }
+}
+
+async function readDimsBatch(batch: ImageItem[]): Promise<void> {
+  try {
+    const dims = await invoke<{ path: string; width: number; height: number }[]>(
+      'read_image_dims',
+      { paths: batch.map(b => b.path) }
+    )
+    const byPath = new Map(dims.map(d => [d.path, d]))
+    for (const item of batch) {
+      const d = byPath.get(item.path)
+      if (d && d.width > 0 && d.height > 0) {
+        item.width = d.width
+        item.height = d.height
+      }
+    }
+  } catch {
+    // 整批失败时允许下次重试
+    for (const item of batch) dimRequested.delete(item.path)
+  }
+}
+
+/**
+ * 立即读取尺寸（跳过排队）：用于查看器、元信息弹窗等"用户当前正在看"的图片。
+ * 与排队请求并行进行，重复读取同一文件无副作用。
+ */
+export async function requestImageDimsUrgent(items: ImageItem[]): Promise<void> {
+  if (state.settings.privacyMode) return
+  const need = items.filter(i => !i.width && !i.height)
+  if (need.length === 0) return
+  for (const item of need) dimRequested.add(item.path)
+  await readDimsBatch(need)
 }
 
 /** 加载图片base64（按需加载） */

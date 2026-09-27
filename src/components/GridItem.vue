@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ImageItem } from '../types'
-import { state, loadImageBase64, ensurePrivacyIcon } from '../stores/imageStore'
+import { state, loadImageBase64, ensurePrivacyIcon, requestImageDimsUrgent } from '../stores/imageStore'
 import { observeOnce, unobserveElement } from '../utils/lazyObserver'
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
@@ -180,6 +180,8 @@ async function loadMetadata() {
     if (times[0]) merged.push(['创建时间', times[0]])
     if (times[1]) merged.push(['修改时间', times[1]])
     if (merged.length === 0) {
+      // 分辨率按需读取（扫描阶段不再预读）
+      await requestImageDimsUrgent([item])
       merged = [['文件大小', formatSize(item.size_bytes)], ['分辨率', `${item.width}×${item.height}`]]
     }
     metaFields.value = merged

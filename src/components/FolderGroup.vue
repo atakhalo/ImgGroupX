@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { state, openInExplorer, saveVirtualGroup, getProcessedImages, startProgressiveScan, renameVirtualGroup, createSubFolder, openRandomExtractDialog, showToast } from '../stores/imageStore'
+import { state, openInExplorer, saveVirtualGroup, getProcessedImages, requestImageDims, startProgressiveScan, renameVirtualGroup, createSubFolder, openRandomExtractDialog, showToast } from '../stores/imageStore'
 import { t } from '../i18n'
 import GridView from './GridView.vue'
 import GridItem from './GridItem.vue'
@@ -307,6 +307,18 @@ const wrapChildren = computed(() => {
 
 /** 紧凑模式下统一网格中的图片列表（排序+筛选） */
 const processedImages = computed(() => getProcessedImages(props.node.images))
+
+// 统一网格展开（或退出隐私模式）时按需补尺寸，尺寸到达后分组宽度自动修正
+watch(
+  () => [
+    useUnifiedGrid.value && props.getExpanded(props.node, getExpandKey()),
+    state.settings.privacyMode,
+  ] as const,
+  ([expanded, privacy]) => {
+    if (expanded && !privacy) requestImageDims(processedImages.value)
+  },
+  { immediate: true, flush: 'post' }
+)
 
 function isImageSelected(item: ImageItem): boolean {
   return state.selectedPaths.has(item.path)

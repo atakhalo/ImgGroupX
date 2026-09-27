@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import type { ImageItem, MarkLevel } from '../types'
-import { state, loadImageBase64, setImageMark, ensurePrivacyIcon } from '../stores/imageStore'
+import { state, loadImageBase64, setImageMark, ensurePrivacyIcon, requestImageDimsUrgent } from '../stores/imageStore'
 import { matchShortcut } from '../utils/shortcuts'
 import { invoke } from '@tauri-apps/api/core'
 import OperationBar from './OperationBar.vue'
@@ -180,6 +180,8 @@ async function loadCurrentImage() {
   if (state.settings.autoCenter) {
     offset.value = { x: 0, y: 0 }
   }
+  // 尺寸按需读取（扫描阶段不再预读），确保尺寸已知再比较
+  await requestImageDimsUrgent([item])
   // 不同尺寸图片切换时重置缩放和平移
   if (item.width !== prevImageSize.value.width || item.height !== prevImageSize.value.height) {
     scale.value = 1

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { ImageItem } from '../types'
-import { state, getProcessedImages, releaseBase64, getLoadStats } from '../stores/imageStore'
+import { state, getProcessedImages, releaseBase64, getLoadStats, requestImageDims } from '../stores/imageStore'
 import GridItem from './GridItem.vue'
 
 const props = defineProps<{
@@ -116,6 +116,15 @@ watch(() => props.images, () => {
   displayLimit.value = INITIAL_LIMIT
   nextTick(() => setupSentinel())
 }, { deep: false })
+
+// 挂载、滚动加载更多、切换排序、退出隐私模式时，为将要显示的图片补上尺寸
+watch(
+  () => [visibleImages.value, state.settings.privacyMode] as const,
+  ([list, privacy]) => {
+    if (!privacy) requestImageDims(list)
+  },
+  { immediate: true, flush: 'post' }
+)
 </script>
 
 <template>
