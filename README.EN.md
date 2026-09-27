@@ -77,7 +77,7 @@
 - All keyboard shortcuts (including alternative keys) are configurable in Settings
 
 ### ⚡ Performance
-- Progressive scanning — renders each directory as soon as it's scanned
+- Progressive scanning + chunked rendering — directories stream in and groups mount in slices while scanning
 - Lazy loading — images load only when visible; size threshold skip for large files (placeholder only)
 - File system watcher — auto-detects external changes with incremental refresh
 
