@@ -2,6 +2,7 @@
 import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { ImageItem } from '../types'
 import { state, getProcessedImages, releaseBase64, getLoadStats, requestImageDims } from '../stores/imageStore'
+import { observeVisibility, unobserveVisibility } from '../utils/lazyObserver'
 import GridItem from './GridItem.vue'
 
 const props = defineProps<{
@@ -36,6 +37,10 @@ const visibleImages = computed(() =>
 const hasMore = computed(() => displayLimit.value < processedImages.value.length)
 
 let sentinelObserver: IntersectionObserver | null = null
+
+/** 网格是否出现在视口附近（决定是否读取图片尺寸） */
+const containerRef = ref<HTMLElement | null>(null)
+const inViewport = ref(false)
 
 function setupSentinel() {
   if (!sentinelRef.value) return
@@ -106,10 +111,14 @@ defineExpose({ releaseAll, loadMore, getLoadStats: () => getLoadStats() })
 
 onMounted(() => {
   nextTick(() => setupSentinel())
+  if (containerRef.value) {
+    observeVisibility(containerRef.value, (visible) => { inViewport.value = visible })
+  }
 })
 
 onUnmounted(() => {
   sentinelObserver?.disconnect()
+  unobserveVisibility(containerRef.value)
 })
 
 watch(() => props.images, () => {
@@ -117,11 +126,11 @@ watch(() => props.images, () => {
   nextTick(() => setupSentinel())
 }, { deep: false })
 
-// 挂载、滚动加载更多、切换排序、退出隐私模式时，为将要显示的图片补上尺寸
+// 仅在网格出现在视口附近时补尺寸：全部展开时视口外的分组不应抢占磁盘 IO
 watch(
-  () => [visibleImages.value, state.settings.privacyMode] as const,
-  ([list, privacy]) => {
-    if (!privacy) requestImageDims(list)
+  () => [visibleImages.value, state.settings.privacyMode, inViewport.value] as const,
+  ([list, privacy, inView]) => {
+    if (inView && !privacy) requestImageDims(list)
   },
   { immediate: true, flush: 'post' }
 )
@@ -129,6 +138,7 @@ watch(
 
 <template>
   <div
+    ref="containerRef"
     class="grid-container"
     :style="{
       gap: state.settings.gap + 'px',

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
 import { state, openInExplorer, saveVirtualGroup, getProcessedImages, requestImageDims, startProgressiveScan, renameVirtualGroup, createSubFolder, openRandomExtractDialog, showToast } from '../stores/imageStore'
+import { observeVisibility, unobserveVisibility } from '../utils/lazyObserver'
 import { t } from '../i18n'
 import GridView from './GridView.vue'
 import GridItem from './GridItem.vue'
@@ -308,14 +309,29 @@ const wrapChildren = computed(() => {
 /** 紧凑模式下统一网格中的图片列表（排序+筛选） */
 const processedImages = computed(() => getProcessedImages(props.node.images))
 
-// 统一网格展开（或退出隐私模式）时按需补尺寸，尺寸到达后分组宽度自动修正
+/** 统一网格是否出现在视口附近（决定是否读取图片尺寸） */
+const unifiedGridRef = ref<HTMLElement | null>(null)
+const unifiedInViewport = ref(false)
+
+watch(unifiedGridRef, (el, oldEl) => {
+  unobserveVisibility(oldEl)
+  unifiedInViewport.value = false
+  if (el) {
+    observeVisibility(el, (visible) => { unifiedInViewport.value = visible })
+  }
+})
+
+onUnmounted(() => unobserveVisibility(unifiedGridRef.value))
+
+// 统一网格展开且进入视口时按需补尺寸，尺寸到达后分组宽度自动修正
 watch(
   () => [
     useUnifiedGrid.value && props.getExpanded(props.node, getExpandKey()),
     state.settings.privacyMode,
+    unifiedInViewport.value,
   ] as const,
-  ([expanded, privacy]) => {
-    if (expanded && !privacy) requestImageDims(processedImages.value)
+  ([expanded, privacy, inView]) => {
+    if (expanded && inView && !privacy) requestImageDims(processedImages.value)
   },
   { immediate: true, flush: 'post' }
 )
@@ -1000,6 +1016,7 @@ function getNodeGridContainerBg(depth: number): string {
     <!-- 紧凑模式：统一内容网格（子节点 + 图片作为同级网格项混合排列）；折叠时不渲染，避免挂载大量图片组件 -->
     <div
       v-if="useUnifiedGrid && !isEmptyFolder && getExpanded(node, getExpandKey())"
+      ref="unifiedGridRef"
       class="folder-content-grid"
       :class="{ 'folder-content-collapsed': !getExpanded(node, getExpandKey()) }"
       :style="{
