@@ -25,6 +25,12 @@ const emit = defineEmits<{
 
 /** 展开状态存储：首次构造时确定，用户可切换，永不重算 */
 const expandedMap = reactive(new Map<string, boolean>())
+/**
+ * 筛选激活期间的展开覆盖表：只在 filterRegex 非空时生效。
+ * 与 expandedMap 隔离，取消筛选后直接丢弃覆盖、回到用户原有展开状态
+ * （旧实现直接改写 expandedMap，导致取消筛选时全部展开）。
+ */
+const filterExpandedMap = reactive(new Map<string, boolean>())
 /** 每个根路径的大文件夹检测标志 */
 const rootLargeDetected = reactive(new Map<string, boolean>())
 
@@ -68,6 +74,10 @@ function isRootLarge(rootNode: FolderNode): boolean {
 /** 获取节点展开状态：仅在首次构造时决定，之后不变（key 由调用方提供，真实树为绝对路径） */
 function isExpanded(node: FolderNode, key?: string): boolean {
   const k = key || getNodeAbsKey(node)
+  // 筛选激活时以筛选展开表为准（临时覆盖，不污染用户的展开状态）
+  if (state.settings.filterRegex && filterExpandedMap.has(k)) {
+    return filterExpandedMap.get(k)!
+  }
   if (expandedMap.has(k)) {
     return expandedMap.get(k)!
   }
@@ -163,14 +173,20 @@ watch(hasMoreGroups, (more) => {
   if (more) scheduleMoreGroups()
 })
 
+/** 统一写入展开状态：筛选激活时同步覆盖表，保证用户点击立即生效 */
+function setExpandedState(key: string, value: boolean) {
+  expandedMap.set(key, value)
+  if (filterExpandedMap.has(key)) filterExpandedMap.set(key, value)
+}
+
 function toggleNode(node: FolderNode, scopeKey?: string) {
   const key = scopeKey || getNodeAbsKey(node)
-  expandedMap.set(key, !(expandedMap.get(key) ?? true))
+  setExpandedState(key, !isExpanded(node, key))
 }
 
 /** 展开指定节点（新建子目录后调用，确保新目录可见） */
 function expandNode(key: string) {
-  expandedMap.set(key, true)
+  setExpandedState(key, true)
 }
 
 /** 根据根路径构造节点绝对 key（node.path 可能是相对或绝对路径） */
@@ -184,6 +200,8 @@ function absKeyFor(rootPath: string, nodePath: string): string {
 function toggleAll(expand: boolean) {
   expandedMap.clear()
   rootLargeDetected.clear()
+  // 用户显式操作全部节点：丢弃筛选覆盖，避免筛选期间的展开状态与操作冲突
+  filterExpandedMap.clear()
   function setAll(node: FolderNode, rootPath: string) {
     expandedMap.set(absKeyFor(rootPath, node.path), expand)
     for (const child of node.children) {
@@ -210,6 +228,7 @@ function setAllVg(vg: FolderNode, vi: number, expand: boolean) {
 function collapseLeaves() {
   expandedMap.clear()
   rootLargeDetected.clear()
+  filterExpandedMap.clear()
   function walk(node: FolderNode, rootPath: string) {
     const isLeaf = node.images.length > 0 && node.children.length === 0
     expandedMap.set(absKeyFor(rootPath, node.path), !isLeaf) // 叶子折叠，非叶子展开
@@ -237,44 +256,36 @@ function collapseLeavesVg(vg: FolderNode, vi: number) {
 watch(() => state.loading, (loading) => {
   if (!loading) {
     rootLargeDetected.clear()
+    // 扫描期间若筛选仍激活，新数据需要重算覆盖表
+    if (state.settings.filterRegex) updateExpandedByFilter()
   }
 })
 
-/** 根据筛选状态自动展开/折叠节点 */
-function hasMatchingImages(node: FolderNode): boolean {
-  const filtered = filterImages(node.images, state.settings.filterRegex, state.settings.filterTarget, state.virtualGroups)
-  if (filtered.length > 0) return true
-  for (const child of node.children) {
-    if (hasMatchingImages(child)) return true
-  }
-  return false
-}
-
+/**
+ * 按筛选结果刷新展开覆盖表：只写 filterExpandedMap，不动用户的 expandedMap。
+ * 清空筛选时直接丢弃覆盖表，展开状态自动回到筛选前。
+ */
 function updateExpandedByFilter() {
+  filterExpandedMap.clear()
   const regex = state.settings.filterRegex
-  function walk(node: FolderNode, rootPath: string) {
-    const key = absKeyFor(rootPath, node.path)
-    if (!regex) {
-      expandedMap.set(key, true)
-    } else {
-      expandedMap.set(key, hasMatchingImages(node))
-    }
+  if (!regex) return
+
+  // 后序遍历：每个节点只算一次子树匹配，避免逐节点重复递归
+  function walk(node: FolderNode, rootPath: string): boolean {
+    let hasMatch = filterImages(node.images, regex, state.settings.filterTarget, state.virtualGroups).length > 0
     for (const child of node.children) {
-      walk(child, rootPath)
+      if (walk(child, rootPath)) hasMatch = true
     }
+    filterExpandedMap.set(absKeyFor(rootPath, node.path), hasMatch)
+    return hasMatch
   }
   for (const node of folderTree.value) {
     walk(node, node.path)
   }
   for (let vi = 0; vi < state.virtualGroups.length; vi++) {
     const vg = state.virtualGroups[vi]
-    const vgKey = `vg:${vi}:${vg.path}`
-    if (!regex) {
-      expandedMap.set(vgKey, true)
-    } else {
-      const filtered = filterImages(vg.images, regex, state.settings.filterTarget, state.virtualGroups)
-      expandedMap.set(vgKey, filtered.length > 0)
-    }
+    const filtered = filterImages(vg.images, regex, state.settings.filterTarget, state.virtualGroups)
+    filterExpandedMap.set(`vg:${vi}:${vg.path}`, filtered.length > 0)
   }
 }
 

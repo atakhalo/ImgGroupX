@@ -10,16 +10,38 @@ const presetsRef = ref<HTMLElement | null>(null)
 /** 当前排序作用域：'image' 图片排序 | 'group' 分组排序 */
 const sortScope = ref<'image' | 'group'>('image')
 
+/** 输入防抖：一次筛选会触发全量过滤、排序与重渲染，逐键触发会明显卡顿 */
+const FILTER_DEBOUNCE_MS = 400
+let filterTimer: ReturnType<typeof setTimeout> | undefined
+
+function cancelPendingFilter() {
+  if (filterTimer) {
+    clearTimeout(filterTimer)
+    filterTimer = undefined
+  }
+}
+
 function applyFilter() {
   state.settings.filterRegex = regexInput.value
 }
 
+/** 输入中的防抖版本（清空与预设为明确操作，走立即生效） */
+function onFilterInput() {
+  cancelPendingFilter()
+  filterTimer = setTimeout(() => {
+    filterTimer = undefined
+    applyFilter()
+  }, FILTER_DEBOUNCE_MS)
+}
+
 function clearFilter() {
+  cancelPendingFilter()
   regexInput.value = ''
   state.settings.filterRegex = ''
 }
 
 function usePreset(pattern: string) {
+  cancelPendingFilter()
   regexInput.value = pattern
   state.settings.filterRegex = pattern
   showPresets.value = false
@@ -77,7 +99,10 @@ function onClickOutside(e: MouseEvent) {
   }
 }
 onMounted(() => document.addEventListener('click', onClickOutside))
-onUnmounted(() => document.removeEventListener('click', onClickOutside))
+onUnmounted(() => {
+  document.removeEventListener('click', onClickOutside)
+  cancelPendingFilter()
+})
 </script>
 
 <template>
@@ -135,7 +160,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
           type="text"
           class="filter-input"
           :placeholder="$t('filter.placeholder')"
-          @input="applyFilter"
+          @input="onFilterInput"
         />
         <button v-if="regexInput" class="filter-clear" @click="clearFilter">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
