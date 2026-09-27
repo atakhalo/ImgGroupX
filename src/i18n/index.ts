@@ -153,6 +153,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.new_subfolder_hint': '输入新文件夹名称',
     'folder.new_subfolder_exists': '同名文件夹已存在',
     'folder.random_extract': '随机抽取为新分组',
+    'folder.collapse': '折叠',
 
     // 空状态
     'empty.drop_hint': '拖入图片或文件夹到此处',
@@ -466,6 +467,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.new_subfolder_hint': 'Enter new folder name',
     'folder.new_subfolder_exists': 'A folder with the same name already exists',
     'folder.random_extract': 'Random Extract as New Group',
+    'folder.collapse': 'Collapse',
 
     'empty.drop_hint': 'Drop images or folders here',
     'empty.format_hint': 'Supports JPG, PNG, WebP formats',

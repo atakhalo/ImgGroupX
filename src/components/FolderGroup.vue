@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { state, openInExplorer, saveVirtualGroup, getProcessedImages, requestImageDims, startProgressiveScan, renameVirtualGroup, createSubFolder, openRandomExtractDialog, showToast } from '../stores/imageStore'
+import { state, openInExplorer, saveVirtualGroup, getProcessedImages, requestImageDims, startProgressiveScan, renameVirtualGroup, createSubFolder, openRandomExtractDialog, showToast, ctxFoldAction } from '../stores/imageStore'
 import { observeVisibility, unobserveVisibility } from '../utils/lazyObserver'
 import { t } from '../i18n'
 import GridView from './GridView.vue'
@@ -400,6 +400,19 @@ function openHeaderCtxMenu(e: MouseEvent) {
 
 function closeHeaderCtxMenu() {
   headerCtxMenu.value.show = false
+}
+
+/**
+ * 分组内容背景右键：把"折叠本分组"登记给内容区菜单（菜单由 App 统一渲染）。
+ * 冒泡时内层分组先执行，用触发事件判重，保证只有最内层分组认领。
+ */
+function handleBodyCtxMenu(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  // 图片、标题栏各自有自己的右键菜单
+  if (target.closest('.grid-item') || target.closest('.folder-header')) return
+  if (ctxFoldAction.value?.ev === e) return
+  if (!props.getExpanded(props.node, getExpandKey())) return
+  ctxFoldAction.value = { ev: e, run: () => emit('toggle', props.node, getExpandKey()) }
 }
 
 /** 向上：加载父文件夹并移除当前根节点 */
@@ -1023,6 +1036,7 @@ function getNodeGridContainerBg(depth: number): string {
         gap: getExpanded(node, getExpandKey()) ? state.settings.gap + 'px' : '0',
         backgroundColor: getNodeGridContainerBg(realDepth),
       }"
+      @contextmenu="handleBodyCtxMenu"
     >
       <FolderGroup
         v-for="(child, childIdx) in node.children"
@@ -1062,7 +1076,7 @@ function getNodeGridContainerBg(depth: number): string {
 
     <!-- 非紧凑模式：子节点 + 图片分区域布局 -->
     <template v-if="!useUnifiedGrid">
-      <div v-if="!isEmptyFolder" class="folder-noncompact-body" :style="{ borderRadius: '20px', background: getNodeGridContainerBg(realDepth) }">
+      <div v-if="!isEmptyFolder" class="folder-noncompact-body" :style="{ borderRadius: '20px', background: getNodeGridContainerBg(realDepth) }" @contextmenu="handleBodyCtxMenu">
         <div
           v-if="node.children.length"
           class="folder-children-section"

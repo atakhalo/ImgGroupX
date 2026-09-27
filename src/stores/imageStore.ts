@@ -1,4 +1,4 @@
-import { reactive, computed } from 'vue'
+import { reactive, computed, ref } from 'vue'
 import type { ImageInfo, ImageItem, FolderNode, AppSettings, SortBy, SortOrder, FilterTarget, NavigableEntry } from '../types'
 import { getDefaultBindings } from '../utils/shortcuts'
 import { findSubTreeInTree, resolveRelativePathInTree } from '../utils/treePath'
@@ -7,6 +7,12 @@ import { open, ask } from '@tauri-apps/plugin-dialog'
 import { t } from '../i18n'
 
 export { findSubTreeInTree }
+
+/**
+ * 分组内容背景右键产生的"折叠该分组"动作。
+ * 记录触发事件，内容区菜单只在同一次右键时才显示此项（区分不同分组/不同位置）。
+ */
+export const ctxFoldAction = ref<{ ev: MouseEvent; run: () => void } | null>(null)
 
 /** 冒泡提示 */
 export const toastState = reactive({

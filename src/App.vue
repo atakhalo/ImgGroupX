@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut } from './utils/shortcuts'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction } from './stores/imageStore'
 import type { ImageItem, NavigableEntry } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -39,6 +39,8 @@ const compareImages = ref<ImageItem[]>([])
 
 // 内容区右键菜单（模式切换）
 const contentCtx = ref({ show: false, x: 0, y: 0 })
+/** 本次菜单中的"折叠分组"动作（仅右键落在展开的分组内容背景上时存在） */
+const ctxFold = ref<(() => void) | null>(null)
 function handleContentCtxMenu(e: MouseEvent) {
   // 单元格有自己的右键菜单，不处理
   const target = e.target as HTMLElement
@@ -48,11 +50,23 @@ function handleContentCtxMenu(e: MouseEvent) {
   // 顶栏/底栏有自己的交互，不弹出内容区菜单
   if (target.closest('.top-bar') || target.closest('.bottom-bar')) return
   e.preventDefault()
-  contentCtx.value = { show: true, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 120) }
+  // 分组内容背景右键时会预先登记折叠动作（同一事件才生效）
+  const pending = ctxFoldAction.value
+  ctxFold.value = pending && pending.ev === e ? pending.run : null
+  contentCtx.value = { show: true, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 200) }
   // 打开时刷新剪贴板文件状态（不阻塞菜单显示）
   refreshClipboardHasFiles()
 }
-function closeContentCtx() { contentCtx.value.show = false }
+function closeContentCtx() {
+  contentCtx.value.show = false
+  ctxFold.value = null
+  ctxFoldAction.value = null
+}
+function ctxCollapseGroup() {
+  const run = ctxFold.value
+  closeContentCtx()
+  run?.()
+}
 function ctxSwitchToViewMode() {
   closeContentCtx()
   state.selectMode = 'view'
@@ -740,8 +754,16 @@ async function handleRefresh() {
       >
         <!-- 内容区右键菜单（模式切换） -->
         <Teleport to="body">
-          <div v-if="contentCtx.show" class="content-ctx-backdrop" @click="closeContentCtx"></div>
+          <div v-if="contentCtx.show" class="content-ctx-backdrop" @click="closeContentCtx" @contextmenu.prevent="closeContentCtx"></div>
           <div v-if="contentCtx.show" class="content-ctx-menu" :style="{ left: contentCtx.x + 'px', top: contentCtx.y + 'px' }" @click.stop>
+            <!-- 折叠分组（右键落在展开的分组内容背景上时显示） -->
+            <button v-if="ctxFold" class="content-ctx-item" @click="ctxCollapseGroup">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="18 15 12 9 6 15"/>
+              </svg>
+              <span>{{ $t('folder.collapse') }}</span>
+            </button>
+            <div v-if="ctxFold" class="content-ctx-separator"></div>
             <button v-if="state.selectMode === 'select'" class="content-ctx-item" @click="ctxSwitchToViewMode">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
