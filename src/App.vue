@@ -442,6 +442,11 @@ function closeViewer() {
   viewingNavIndex.value = -1
 }
 
+/** 查看器内部导航后同步索引，保证 Ctrl+←/→ 切换节点时能正确重置序号 */
+function handleViewerIndexChange(index: number) {
+  viewingIndex.value = index
+}
+
 async function handleViewerDelete(path: string, index: number) {
   await deleteImages([path])
   const updated = viewingImages.value.filter(img => img.path !== path)
@@ -948,7 +953,7 @@ async function handleRefresh() {
     <SettingsPanel v-if="showSettingsPanel" @close="closeSettings" />
 
     <!-- 大图查看器 -->
-    <ImageViewer v-if="viewingIndex >= 0" :key="viewerKey" :images="viewingImages" :initialIndex="viewingIndex" @close="closeViewer" @deleteImage="handleViewerDelete" @prevNode="handleViewerPrevNode" @nextNode="handleViewerNextNode" />
+    <ImageViewer v-if="viewingIndex >= 0" :key="viewerKey" :images="viewingImages" :initialIndex="viewingIndex" @close="closeViewer" @deleteImage="handleViewerDelete" @indexChange="handleViewerIndexChange" @prevNode="handleViewerPrevNode" @nextNode="handleViewerNextNode" />
 
     <!-- 对比查看器（多图比对） -->
     <CompareViewer v-if="showCompare && compareImages.length >= 2" :images="compareImages" @close="closeCompare" />

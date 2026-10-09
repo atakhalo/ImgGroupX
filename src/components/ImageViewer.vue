@@ -22,6 +22,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   deleteImage: [path: string, index: number]
+  indexChange: [index: number]
   prevNode: []
   nextNode: []
 }>()
@@ -210,7 +211,11 @@ async function loadCurrentImage() {
   }
 }
 
-watch(currentIndex, () => { loadCurrentImage() })
+watch(currentIndex, (val) => {
+  // 同步父组件索引，否则切换节点时父组件仍持打开时的快照，index 相等即被误判为无需重置
+  if (val !== props.initialIndex) emit('indexChange', val)
+  loadCurrentImage()
+})
 
 // 外部更新 initialIndex 时同步（如图片删除后索引调整）
 watch(() => props.initialIndex, (val) => {
