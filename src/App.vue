@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
-import { matchShortcut } from './utils/shortcuts'
+import { matchShortcut, isEditableTarget } from './utils/shortcuts'
 import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction } from './stores/imageStore'
 import type { ImageItem, NavigableEntry } from './types'
 import GridView from './components/GridView.vue'
@@ -32,6 +32,18 @@ const showSettingsPanel = ref(false)
 // 新建分组命名
 const groupNameInput = ref('')
 const showGroupNameInput = ref(false)
+
+// 重命名弹窗输入框：打开时自动聚焦并全选文件名
+const renameInputRef = ref<HTMLInputElement | null>(null)
+watch(() => state.renameDialog.show, async (show) => {
+  if (!show) return
+  await nextTick()
+  const el = renameInputRef.value
+  if (el) {
+    el.focus()
+    el.select()
+  }
+})
 
 // 对比模式（多图比对，2-8张）
 const showCompare = ref(false)
@@ -154,6 +166,16 @@ const displayImages = computed(() => {
 })
 
 function handleKeydown(e: KeyboardEvent) {
+  // 重命名弹窗打开时：Esc 仅关闭弹窗，其余快捷键一律不响应（避免输入内容误触发）
+  if (state.renameDialog.show) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      closeRenameDialog()
+    }
+    return
+  }
+  // 输入框/文本域等可编辑元素聚焦时不响应全局快捷键
+  if (isEditableTarget(e.target)) return
   if (e.key === 'Escape') {
     if (showSettingsPanel.value) {
       closeSettings()
@@ -930,11 +952,12 @@ async function handleRefresh() {
 
     <!-- 重命名弹窗 -->
     <Teleport to="body">
-      <div v-if="state.renameDialog.show" class="name-input-overlay" @click.self="closeRenameDialog">
+      <div v-if="state.renameDialog.show" class="name-input-overlay">
         <div class="name-input-dialog">
           <h4>重命名</h4>
           <p class="name-input-hint">{{ state.renameDialog.item?.name }}</p>
           <input
+            ref="renameInputRef"
             v-model="state.renameDialog.name"
             type="text"
             class="name-input"

@@ -32,6 +32,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'viewer.prevNode', defaultKey: 'Ctrl+←', scope: 'viewer', labelKey: 'shortcuts.viewer_prev_node', readonly: true },
   { id: 'viewer.nextNode', defaultKey: 'Ctrl+→', scope: 'viewer', labelKey: 'shortcuts.viewer_next_node', readonly: true },
   { id: 'viewer.delete', defaultKey: 'Delete', scope: 'viewer', labelKey: 'shortcuts.viewer_delete' },
+  { id: 'viewer.rename', defaultKey: 'F2', scope: 'viewer', labelKey: 'shortcuts.viewer_rename' },
   { id: 'viewer.mark0', defaultKey: '`', altKeys: ['0'], scope: 'viewer', labelKey: 'shortcuts.viewer_mark_0' },
   { id: 'viewer.mark1', defaultKey: '1', scope: 'viewer', labelKey: 'shortcuts.viewer_mark_1' },
   { id: 'viewer.mark2', defaultKey: '2', scope: 'viewer', labelKey: 'shortcuts.viewer_mark_2' },
@@ -88,6 +89,15 @@ export function matchShortcut(e: KeyboardEvent, actionId: string): boolean {
     if (e.key === mainKey || e.code === mainKey) return true
   }
   return false
+}
+
+/** 判断事件目标是否为可编辑元素（输入框/文本域/可编辑区域） */
+export function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (!el || !el.tagName) return false
+  const tag = el.tagName.toLowerCase()
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true
+  return !!el.isContentEditable
 }
 
 /** 格式化按键显示 */

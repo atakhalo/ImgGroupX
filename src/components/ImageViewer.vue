@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import type { ImageItem, MarkLevel } from '../types'
-import { state, loadImageBase64, setImageMark, ensurePrivacyIcon, requestImageDimsUrgent } from '../stores/imageStore'
-import { matchShortcut } from '../utils/shortcuts'
+import { state, loadImageBase64, setImageMark, ensurePrivacyIcon, requestImageDimsUrgent, showRenameDialog } from '../stores/imageStore'
+import { matchShortcut, isEditableTarget } from '../utils/shortcuts'
 import { invoke } from '@tauri-apps/api/core'
 import OperationBar from './OperationBar.vue'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
@@ -255,6 +255,9 @@ onUnmounted(() => {
 })
 
 function handleKeydown(e: KeyboardEvent) {
+  // 重命名弹窗打开、按键已被上层处理、或输入框聚焦时，不响应查看器快捷键
+  if (state.renameDialog.show || e.defaultPrevented) return
+  if (isEditableTarget(e.target)) return
   if (matchShortcut(e, 'close')) {
     if (isFullscreen.value) exitFullscreen()
     else emit('close')
@@ -265,6 +268,11 @@ function handleKeydown(e: KeyboardEvent) {
   else if (matchShortcut(e, 'viewer.zoomIn')) zoomIn()
   else if (matchShortcut(e, 'viewer.zoomOut')) zoomOut()
   else if (matchShortcut(e, 'viewer.delete')) handleDeleteImage()
+  else if (matchShortcut(e, 'viewer.rename')) {
+    e.preventDefault()
+    const item = currentItem.value
+    if (item) showRenameDialog(item)
+  }
   else if (matchShortcut(e, 'viewer.mark0')) handleSetMark(0)
   else if (matchShortcut(e, 'viewer.mark1')) handleSetMark(1)
   else if (matchShortcut(e, 'viewer.mark2')) handleSetMark(2)
