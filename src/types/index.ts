@@ -153,6 +153,8 @@ export interface AppSettings {
   showMarks: boolean
   /** 是否显示标记角标 */
   showMarkBadge: boolean
+  /** 大图查看时是否按标记颜色显示图片边框 */
+  showViewerMarkBorder: boolean
   /** 扫描文件夹时是否跳过空文件夹（勾选后空文件夹不创建为子节点） */
   skipEmptyFolders: boolean
   /** 图片加载大小阈值（MB），超过则跳过加载仅显示文件名，0=不限 */

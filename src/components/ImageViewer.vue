@@ -140,6 +140,18 @@ const currentMarkColor = computed(() => {
   return state.settings.markColors[lv - 1] || ''
 })
 
+/** 大图标记边框：开启时按标记颜色为图片描边；宽度按缩放反向补偿，保持视觉粗细稳定 */
+const markBorderStyle = computed((): Record<string, string> => {
+  if (!state.settings.showMarks || !state.settings.showViewerMarkBorder) return {}
+  const color = currentMarkColor.value
+  if (!color) return {}
+  const s = scale.value || 1
+  // 用 outline（绘制在图片内容之上）并负向偏移，使边框完全位于图片内缘：
+  // inset box-shadow 会被 img 的替换内容覆盖，而外扩的 outline 会被容器 overflow 裁掉
+  const w = 2 / s
+  return { outline: `${w}px solid ${color}`, outlineOffset: `${-w}px` }
+})
+
 function formatSize(bytes?: number): string {
   if (bytes == null) return ''
   if (bytes < 1024) return bytes + 'B'
@@ -429,7 +441,7 @@ function handleClose() {
           :alt="currentItem?.name"
           class="viewer-image"
           :class="{ loaded: isLoaded }"
-          :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }"
+          :style="[{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }, markBorderStyle]"
           @load="isLoaded = true"
           @error="isLoaded = true"
           :draggable="!panMode"

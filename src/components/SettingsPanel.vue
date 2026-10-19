@@ -26,7 +26,7 @@ const tabs = [
 const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   general: ['language', 'maxLoadSizeMB', 'loadSkippedOnView', 'randomGroupEnabled', 'randomGroupCount', 'filterPresets', 'filterRegex', 'filterTarget', 'sortBy', 'sortOrder', 'groupSortBy', 'groupSortOrder'],
   grid: ['borderRadius', 'gap', 'contentMarginX', 'gridSize', 'bgColor', 'nodeGridGapV', 'nodeGridGapH', 'compactMode', 'compactHeader', 'collapseHierarchy'],
-  colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
+  colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'showViewerMarkBorder', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
   advanced: ['scanAllFiles', 'skipEmptyFolders', 'folderGroup', 'showGroupTitle', 'showMarks', 'privacyMode'],
@@ -54,7 +54,7 @@ const defaultSettings = {
   maxLoadSizeMB: 0, loadSkippedOnView: true,
   randomGroupEnabled: false, randomGroupCount: 20,
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
-  showMarks: true, showMarkBadge: true,
+  showMarks: true, showMarkBadge: true, showViewerMarkBorder: true,
   keyBindings: getDefaultBindings(),
   keyAltBindings: getDefaultBindings(true),
 }
@@ -381,6 +381,13 @@ onUnmounted(() => {
                 <input type="checkbox" v-model="localSettings.showMarkBadge" class="toggle-input" />
                 <span class="toggle-switch"></span>
                 {{ $t('settings.show_mark_badge') }}
+              </label>
+            </div>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.showViewerMarkBorder" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.show_viewer_mark_border') }}
               </label>
             </div>
             <div

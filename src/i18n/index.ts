@@ -80,6 +80,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.mark_colors': '标记颜色',
     'settings.mark_color': '标记',
     'settings.show_mark_badge': '显示标记角标',
+    'settings.show_viewer_mark_border': '大图时显示标记边框',
 
     // 控制栏
     'control.open': '打开',
@@ -373,6 +374,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.mark_colors': 'Mark Colors',
     'settings.mark_color': 'Mark',
     'settings.show_mark_badge': 'Show Mark Badge',
+    'settings.show_viewer_mark_border': 'Show Mark Border in Viewer',
     'settings.auto_pan': 'Auto Pan',
     'settings.auto_pan_hint': 'Automatically enable pan mode when zoomed in beyond 100%',
     'settings.auto_center': 'Auto Center on Switch',
