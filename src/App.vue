@@ -656,7 +656,7 @@ function handleContentWheel(e: WheelEvent) {
   if (e.ctrlKey || e.metaKey) {
     e.preventDefault()
     const delta = e.deltaY > 0 ? -10 : 10
-    state.settings.gridSize = Math.max(10, Math.min(400, state.settings.gridSize + delta))
+    state.settings.gridSize = Math.max(10, Math.min(1000, state.settings.gridSize + delta))
   }
 }
 

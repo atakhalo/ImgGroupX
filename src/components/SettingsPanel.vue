@@ -264,7 +264,7 @@ onUnmounted(() => {
             <div class="setting-hint">{{ $t('settings.content_margin_x_hint') }}</div>
             <div class="setting-row">
               <label>{{ $t('settings.grid_size') }}</label>
-              <input type="range" v-model.number="localSettings.gridSize" min="10" max="400" step="10" />
+              <input type="range" v-model.number="localSettings.gridSize" min="10" max="1000" step="10" />
               <span class="setting-value">{{ localSettings.gridSize }}px</span>
             </div>
             <div class="setting-row">
