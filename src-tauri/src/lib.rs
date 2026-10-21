@@ -976,6 +976,134 @@ fn trash_paths(paths: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
+/// 自定义回收站移动结果
+#[derive(Debug, Serialize)]
+pub struct TrashMoveResult {
+    /// 成功移动的源路径
+    pub moved: Vec<String>,
+    /// 失败的源路径及原因（"路径: 原因"）
+    pub failed: Vec<String>,
+}
+
+/// 递归复制目录（跨卷移动目录时的兜底）
+fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dest)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let to = dest.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_recursive(&entry.path(), &to)?;
+        } else {
+            fs::copy(entry.path(), &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// 计算回收站内的不冲突目标路径：重名时追加 ` (2)`、` (3)`…
+fn unique_trash_dest(dir: &Path, src: &Path) -> PathBuf {
+    let file_name = src
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unnamed")
+        .to_string();
+    let candidate = dir.join(&file_name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    // 目录没有扩展名；文件按“主名 + 扩展名”插入序号
+    let ext = if src.is_dir() {
+        String::new()
+    } else {
+        src.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| format!(".{}", e))
+            .unwrap_or_default()
+    };
+    let stem = file_name
+        .strip_suffix(&ext)
+        .unwrap_or(&file_name)
+        .to_string();
+    for i in 2.. {
+        let name = format!("{} ({}){}", stem, i, ext);
+        let path = dir.join(name);
+        if !path.exists() {
+            return path;
+        }
+    }
+    candidate
+}
+
+/// 移动到自定义回收站文件夹（支持文件和文件夹，重名自动追加序号）
+/// 目标目录不存在时自动创建；跨卷时回退为复制后删除
+#[tauri::command]
+fn move_to_custom_trash(paths: Vec<String>, trash_dir: String) -> Result<TrashMoveResult, String> {
+    let trash_dir = trash_dir.trim().to_string();
+    if trash_dir.is_empty() {
+        return Err("自定义回收站路径为空".into());
+    }
+    let trash = PathBuf::from(&trash_dir);
+    fs::create_dir_all(&trash)
+        .map_err(|e| format!("创建自定义回收站目录失败 ({}): {}", trash.display(), e))?;
+    if !trash.is_dir() {
+        return Err(format!("自定义回收站路径不是文件夹: {}", trash.display()));
+    }
+    let trash_canon = trash.canonicalize().ok();
+
+    let mut result = TrashMoveResult { moved: Vec::new(), failed: Vec::new() };
+    for p in &paths {
+        let src = PathBuf::from(p);
+        if !src.exists() {
+            result.failed.push(format!("{}: 文件不存在", p));
+            continue;
+        }
+        // 源路径已在回收站内：不自我移动，记为失败由前端提示（避免文件未移动却从界面消失）
+        if let (Some(s), Some(t)) = (src.canonicalize().ok(), trash_canon.as_ref()) {
+            if s == *t || s.starts_with(t) {
+                result
+                    .failed
+                    .push(format!("{}: 源路径已在回收站目录内，未移动", p));
+                continue;
+            }
+        }
+        let dest = unique_trash_dest(&trash, &src);
+        match fs::rename(&src, &dest) {
+            Ok(()) => result.moved.push(p.clone()),
+            Err(rename_err) => {
+                // 跨卷时 rename 失败，回退到复制+删除（失败时清理回收站中的残留）
+                let fallback = if src.is_dir() {
+                    match copy_dir_recursive(&src, &dest) {
+                        Ok(()) => fs::remove_dir_all(&src),
+                        Err(e) => {
+                            let _ = fs::remove_dir_all(&dest);
+                            Err(e)
+                        }
+                    }
+                } else {
+                    match fs::copy(&src, &dest) {
+                        Ok(_) => fs::remove_file(&src),
+                        Err(e) => {
+                            let _ = fs::remove_file(&dest);
+                            Err(e)
+                        }
+                    }
+                };
+                match fallback {
+                    Ok(()) => result.moved.push(p.clone()),
+                    Err(e) => result.failed.push(format!(
+                        "{}: 移动失败（{}），跨卷复制回退失败（{}）",
+                        p,
+                        rename_err,
+                        e
+                    )),
+                }
+            }
+        }
+    }
+    Ok(result)
+}
+
 /// 重命名文件（仅修改文件名，不修改扩展名）
 /// 返回新的完整路径
 #[tauri::command]
@@ -1398,6 +1526,7 @@ pub fn run() {
             get_cli_args,
             delete_file,
             trash_paths,
+            move_to_custom_trash,
             copy_files,
             move_files,
             update_watcher,
@@ -1485,5 +1614,54 @@ mod tests {
             per_file * 1000.0
         );
         assert!(ok > 0, "应至少读到一个有效尺寸");
+    }
+
+    /// 自定义回收站：移动文件/文件夹、重名追加序号、已在回收站内的路径不自我移动
+    #[test]
+    fn custom_trash_moves_files_and_folders() {
+        let base = std::env::temp_dir().join(format!("imggroupx_trash_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let src = base.join("src");
+        let src2 = base.join("src2");
+        let bin = base.join("bin");
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&src2).unwrap();
+        fs::create_dir_all(src.join("sub")).unwrap();
+        fs::write(src.join("1.jpg"), b"a").unwrap();
+        fs::write(src2.join("1.jpg"), b"c").unwrap();
+        fs::write(src.join("sub").join("2.jpg"), b"b").unwrap();
+
+        let p = |x: &Path| x.to_string_lossy().to_string();
+        let tr = p(&bin);
+
+        // 移动普通文件
+        let r = move_to_custom_trash(vec![p(&src.join("1.jpg"))], tr.clone()).unwrap();
+        assert_eq!(r.moved.len(), 1, "文件应移动成功");
+        assert!(r.failed.is_empty());
+        assert!(bin.join("1.jpg").exists(), "目标文件应存在");
+
+        // 同名文件来自其他目录 → 自动追加序号，不覆盖
+        let r = move_to_custom_trash(vec![p(&src2.join("1.jpg"))], tr.clone()).unwrap();
+        assert_eq!(r.moved.len(), 1);
+        assert!(bin.join("1 (2).jpg").exists(), "重名文件应追加序号");
+
+        // 移动整个文件夹（含子目录与文件）
+        let r = move_to_custom_trash(vec![p(&src.join("sub"))], tr.clone()).unwrap();
+        assert_eq!(r.moved.len(), 1);
+        assert!(bin.join("sub").join("2.jpg").exists(), "文件夹内容应保留");
+        assert!(!src.join("sub").exists(), "源文件夹应被移除");
+
+        // 已在回收站内的路径：不自我移动，记为失败，文件保持原样
+        let r = move_to_custom_trash(vec![p(&bin.join("1.jpg"))], tr.clone()).unwrap();
+        assert!(r.moved.is_empty());
+        assert_eq!(r.failed.len(), 1);
+        assert!(bin.join("1.jpg").exists());
+
+        // 不存在的路径：记入 failed，不 panic
+        let r = move_to_custom_trash(vec![p(&base.join("missing.jpg"))], tr.clone()).unwrap();
+        assert!(r.moved.is_empty());
+        assert_eq!(r.failed.len(), 1);
+
+        fs::remove_dir_all(&base).unwrap();
     }
 }

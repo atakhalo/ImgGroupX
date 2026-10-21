@@ -54,7 +54,7 @@
 - Keyboard shortcuts: `1`-`5` to mark, `` ` `` / `0` to clear
 
 ### 🛠️ Batch Management
-- Move, copy, delete (to recycle bin) with directory structure preservation
+- Move, copy, delete (to system or custom recycle bin folder) with directory structure preservation
 - Auto-rename on conflict (`-copy` suffix)
 - **Node-level selection** — Select entire folder nodes with select-all / invert / first-level quick actions
 - **Right-click context menus** — Grid/viewer/compare: copy image, copy path, rename, save as

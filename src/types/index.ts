@@ -171,4 +171,8 @@ export interface AppSettings {
   randomGroupEnabled: boolean
   /** 随机分组默认抽取文件数 */
   randomGroupCount: number
+  /** 是否启用自定义回收站（删除时移动到指定文件夹而非系统回收站） */
+  customTrashEnabled: boolean
+  /** 自定义回收站文件夹路径 */
+  customTrashPath: string
 }

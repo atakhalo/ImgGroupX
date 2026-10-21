@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { t } from '../i18n'
-import { state } from '../stores/imageStore'
+import { state, showToast } from '../stores/imageStore'
 import { SHORTCUTS, getDefaultBindings, formatKey, getAltKey } from '../utils/shortcuts'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
@@ -29,7 +29,7 @@ const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'showViewerMarkBorder', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
-  advanced: ['scanAllFiles', 'skipEmptyFolders', 'folderGroup', 'showGroupTitle', 'showMarks', 'privacyMode'],
+  advanced: ['scanAllFiles', 'skipEmptyFolders', 'folderGroup', 'showGroupTitle', 'showMarks', 'privacyMode', 'customTrashEnabled', 'customTrashPath'],
 }
 
 const defaultSettings = {
@@ -55,6 +55,7 @@ const defaultSettings = {
   randomGroupEnabled: false, randomGroupCount: 20,
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   showMarks: true, showMarkBadge: true, showViewerMarkBorder: true,
+  customTrashEnabled: false, customTrashPath: '',
   keyBindings: getDefaultBindings(),
   keyAltBindings: getDefaultBindings(true),
 }
@@ -75,6 +76,29 @@ async function browseProgram(index: number) {
       localSettings.value.openWithPrograms[index] = selected as string
     }
   } catch { /* 用户取消 */ }
+}
+
+/** 选择自定义回收站文件夹 */
+async function browseTrashFolder() {
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: t('settings.custom_trash_select'),
+    })
+    if (selected) {
+      localSettings.value.customTrashPath = String(selected).replace(/\\/g, '/')
+    }
+  } catch { /* 用户取消 */ }
+}
+
+/** 在资源管理器中打开自定义回收站文件夹 */
+function openTrashFolder() {
+  const path = (localSettings.value.customTrashPath || '').trim()
+  if (!path) return
+  invoke('open_in_explorer', { path }).catch(() => {
+    showToast(t('hint.trash_open_failed', { path }))
+  })
 }
 
 function openExternal(url: string) {
@@ -556,6 +580,36 @@ onUnmounted(() => {
             </div>
             <div class="setting-hint">{{ $t('control.privacy_mode_hint') }}</div>
 
+            <!-- 自定义回收站 -->
+            <h4 style="margin-top: 24px;">{{ $t('settings.custom_trash') }}</h4>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.customTrashEnabled" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.custom_trash_enable') }}
+              </label>
+            </div>
+            <div class="setting-hint">{{ $t('settings.custom_trash_hint') }}</div>
+            <template v-if="localSettings.customTrashEnabled">
+              <div class="setting-row">
+                <label>{{ $t('settings.custom_trash_path') }}</label>
+                <input
+                  type="text"
+                  class="trash-path-input"
+                  v-model="localSettings.customTrashPath"
+                  :placeholder="$t('settings.custom_trash_placeholder')"
+                />
+                <button class="preset-browse" :title="$t('settings.custom_trash_select')" @click="browseTrashFolder">{{ $t('settings.btn_browse') }}</button>
+                <button
+                  class="preset-browse"
+                  :disabled="!(localSettings.customTrashPath || '').trim()"
+                  :title="$t('settings.custom_trash_open')"
+                  @click="openTrashFolder"
+                >{{ $t('settings.custom_trash_open_btn') }}</button>
+              </div>
+              <div class="setting-hint" v-if="!(localSettings.customTrashPath || '').trim()">{{ $t('settings.custom_trash_empty_hint') }}</div>
+            </template>
+
             <!-- GitHub -->
             <h4 style="margin-top: 24px;">GitHub</h4>
             <div class="setting-row" style="flex-wrap: wrap;">
@@ -814,6 +868,19 @@ onUnmounted(() => {
 }
 .preset-input:focus { border-color: rgba(100,108,255,0.4); }
 
+.trash-path-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  color: rgba(255,255,255,0.8);
+  font-size: 12px;
+  outline: none;
+}
+.trash-path-input:focus { border-color: rgba(100,108,255,0.4); }
+
 .preset-remove {
   background: transparent;
   border: none;
@@ -834,6 +901,7 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .preset-browse:hover { border-color: rgba(100,108,255,0.3); color: #aab0ff; }
+.preset-browse:disabled { opacity: 0.35; cursor: default; border-color: rgba(255,255,255,0.12); color: rgba(255,255,255,0.4); }
 
 /* 快捷键 */
 .shortcut-group {

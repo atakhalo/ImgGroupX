@@ -88,6 +88,8 @@ const defaultSettings: AppSettings = {
   privacyMode: false,
   randomGroupEnabled: false,
   randomGroupCount: 20,
+  customTrashEnabled: false,
+  customTrashPath: '',
 }
 
 /** 全局状态 */
@@ -1182,16 +1184,74 @@ export async function createSubFolder(parentPath: string, name: string): Promise
   }
 }
 
+/** 回收站操作结果：成功与失败的路径 */
+interface TrashOutcome {
+  moved: string[]
+  failed: string[]
+}
+
+/** 是否启用了自定义回收站（开关开启且路径非空） */
+export function customTrashActive(): boolean {
+  return !!state.settings.customTrashEnabled && !!(state.settings.customTrashPath || '').trim()
+}
+
+/**
+ * 将路径移入回收站：启用自定义回收站时移动到指定文件夹，否则使用系统回收站。
+ * 返回实际成功移动的路径（失败时保留在列表中，避免界面上误删）。
+ */
+async function movePathsToTrash(paths: string[]): Promise<TrashOutcome> {
+  if (paths.length === 0) return { moved: [], failed: [] }
+
+  // 自定义回收站：一次调用交给后端（文件、文件夹混合均可）
+  if (customTrashActive()) {
+    try {
+      const res = await invoke<{ moved: string[]; failed: string[] }>('move_to_custom_trash', {
+        paths,
+        trashDir: state.settings.customTrashPath.trim(),
+      })
+      return { moved: res?.moved ?? [], failed: res?.failed ?? [] }
+    } catch (e: any) {
+      return { moved: [], failed: paths.map(p => `${p}: ${String(e?.message ?? e)}`) }
+    }
+  }
+
+  // 系统回收站：逐个处理，单项失败不影响其他项
+  const moved: string[] = []
+  const failed: string[] = []
+  for (const p of paths) {
+    try {
+      await invoke('delete_file', { path: p })
+      moved.push(p)
+    } catch (e: any) {
+      failed.push(`${p}: ${String(e?.message ?? e)}`)
+    }
+  }
+  return { moved, failed }
+}
+
+/** 展示回收站操作结果（自定义回收站成功时提示，失败时提示原因） */
+function toastTrashOutcome(outcome: TrashOutcome) {
+  if (outcome.failed.length > 0) {
+    showToast(
+      t('hint.trash_failed', { n: outcome.failed.length, msg: outcome.failed[0] }),
+      6000
+    )
+  } else if (customTrashActive() && outcome.moved.length > 0) {
+    showToast(t('hint.trash_moved_custom', { n: outcome.moved.length }))
+  }
+}
+
 /** 删除图片（从磁盘和所有分组中移除） */
 export async function deleteImages(paths: string[]): Promise<void> {
   await setSuppressWatcher(true)
   try {
-    for (const p of paths) {
-      try { await invoke('delete_file', { path: p }) } catch { /* */ }
-    }
-    const pathSet = new Set(paths)
+    const outcome = await movePathsToTrash(paths)
+    toastTrashOutcome(outcome)
+    // 全部失败（如回收站不可用）时保留列表，避免文件仍在磁盘却从界面消失
+    if (outcome.moved.length === 0) return
+    const pathSet = new Set(outcome.moved)
     state.allImages = state.allImages.filter(img => !pathSet.has(img.path))
-    for (const p of paths) state.selectedPaths.delete(p)
+    for (const p of pathSet) state.selectedPaths.delete(p)
     // 从虚拟分组中移除
     for (const vg of state.virtualGroups) {
       vg.images = vg.images.filter(img => !pathSet.has(img.path))
@@ -1396,27 +1456,47 @@ function collectNodeImagePathsList(node: FolderNode): string[] {
   return result
 }
 
+/** 解析选中文件夹节点对应的绝对路径（找不到返回 null） */
+function resolveSelectedFolderAbs(fp: string, roots: FolderNode[]): string | null {
+  const norm = fp.replace(/\\/g, '/').replace(/\/$/, '')
+  if (/^[A-Za-z]:\//.test(norm) || norm.startsWith('/')) return norm
+  for (const rootNode of roots) {
+    const rootNorm = rootNode.path.replace(/\\/g, '/').replace(/\/$/, '')
+    if (rootNorm === norm) return rootNorm
+    const abs = resolveRelativePathInTree(rootNode, norm, rootNorm)
+    if (abs) return abs
+  }
+  return null
+}
+
 /** 删除选中内容（图片 + 文件夹），返回移除的图片路径列表 */
 export async function deleteSelectedContents(): Promise<string[]> {
   const allRemoved: string[] = []
+  // 汇总两批回收站操作，删除过程结束后统一提示，避免连续弹出多个 toast
+  const trashSummary: TrashOutcome = { moved: [], failed: [] }
   await setSuppressWatcher(true)
   try {
   // 1. 删除选中文件夹（整个目录到回收站）
   const folderPaths = collectSelectedFolderAbsolutePaths()
   if (folderPaths.length > 0) {
-    await invoke('trash_paths', { paths: folderPaths })
-    // 收集被删文件夹下的图片路径（去重：从 selectedFolderPaths 中移除子路径）
+    const outcome = await movePathsToTrash(folderPaths)
+    trashSummary.moved.push(...outcome.moved)
+    trashSummary.failed.push(...outcome.failed)
+    const movedSet = new Set(outcome.moved)
+    // 收集实际已移入回收站的文件夹下的图片路径（去重：从 selectedFolderPaths 中移除子路径）
     const sortedFp = Array.from(state.selectedFolderPaths).sort((a, b) => a.length - b.length)
     const dedupFp = sortedFp.filter((p, i) => !sortedFp.some((q, j) => j < i && p.startsWith(q + '/')))
     const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
     for (const fp of dedupFp) {
+      const abs = resolveSelectedFolderAbs(fp, fullTree)
+      if (!abs || !movedSet.has(abs)) continue
       const node = findSubTreeInTree(fullTree, fp)
       if (node) {
         allRemoved.push(...collectNodeImagePathsList(node))
       }
     }
     // 清理被删除文件夹的扫描目录记录（含其子目录），避免空文件夹节点残留
-    for (const fp of folderPaths) {
+    for (const fp of outcome.moved) {
       const normFp = fp.replace(/\\/g, '/').replace(/\/$/, '')
       for (const d of [...state.scannedDirs]) {
         if (d === normFp || d.startsWith(normFp + '/')) {
@@ -1432,10 +1512,10 @@ export async function deleteSelectedContents(): Promise<string[]> {
     const folderImageSet = new Set(allRemoved)
     const standalonePaths = Array.from(state.selectedPaths).filter(p => !folderImageSet.has(p))
     if (standalonePaths.length > 0) {
-      for (const p of standalonePaths) {
-        try { await invoke('delete_file', { path: p }) } catch { /* */ }
-      }
-      allRemoved.push(...standalonePaths)
+      const outcome = await movePathsToTrash(standalonePaths)
+      trashSummary.moved.push(...outcome.moved)
+      trashSummary.failed.push(...outcome.failed)
+      allRemoved.push(...outcome.moved)
     }
   }
 
@@ -1471,6 +1551,7 @@ export async function deleteSelectedContents(): Promise<string[]> {
   } finally {
     await setSuppressWatcher(false)
   }
+  toastTrashOutcome(trashSummary)
   return allRemoved
 }
 
