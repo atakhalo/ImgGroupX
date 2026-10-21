@@ -962,6 +962,14 @@ export function showAllMarks(): void {
   if (state.hiddenMarkLevels.length > 0) state.hiddenMarkLevels = []
 }
 
+/**
+ * 大图查看中因设置标记而隐藏的图片事件。
+ * App.vue 监听后把该图片从查看列表移除并切到下一张（与删除行为一致）。
+ * seq 用于去重：同一事件只消费一次。
+ */
+export const hiddenByMarkEvent = ref<{ path: string; seq: number } | null>(null)
+let hiddenByMarkSeq = 0
+
 export function setImageMark(path: string, level: import('../types').MarkLevel) {
   const img = state.allImages.find(i => i.path === path)
   if (img) {
@@ -974,7 +982,10 @@ export function setImageMark(path: string, level: import('../types').MarkLevel) 
   // 同时更新虚拟分组中的图片（含子节点树）
   updateNodeTreeMark(state.virtualGroups, path, level)
   // 目标标记处于隐藏状态时，该图片会立刻从视图消失，同步取消其选中
-  if (isMarkHidden(level)) state.selectedPaths.delete(path)
+  if (isMarkHidden(level)) {
+    state.selectedPaths.delete(path)
+    hiddenByMarkEvent.value = { path, seq: ++hiddenByMarkSeq }
+  }
 }
 
 /** 为所有选中图片（含文件夹节点内图片）设置标记 */

@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut, isEditableTarget } from './utils/shortcuts'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction, hiddenByMarkEvent } from './stores/imageStore'
 import type { ImageItem, NavigableEntry } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -480,6 +480,29 @@ async function handleViewerDelete(path: string, index: number) {
   viewingImages.value = updated
   viewingIndex.value = Math.min(index, updated.length - 1)
 }
+
+/** 大图查看中，当前图片因设置隐藏标记而移出视图：更新列表并切到下一张（与删除一致） */
+function handleViewerHiddenByMark(path: string) {
+  const idx = viewingImages.value.findIndex(img => img.path === path)
+  if (idx < 0) return
+  const updated = viewingImages.value.filter(img => img.path !== path)
+  if (updated.length === 0) {
+    closeViewer()
+    viewerKey.value++
+    return
+  }
+  viewingImages.value = updated
+  viewingIndex.value = Math.min(idx, updated.length - 1)
+}
+
+/** 消费"标记隐藏"事件：仅大图打开且该图片正在查看时处理，seq 去重 */
+let lastHiddenByMarkSeq = 0
+watch(hiddenByMarkEvent, (ev) => {
+  if (!ev || ev.seq === lastHiddenByMarkSeq) return
+  lastHiddenByMarkSeq = ev.seq
+  if (viewingIndex.value < 0) return
+  handleViewerHiddenByMark(ev.path)
+})
 
 /** 切到 navigableList 中的指定偏移位置，返回是否成功 */
 function navigateToOffset(offset: -1 | 1): boolean {
