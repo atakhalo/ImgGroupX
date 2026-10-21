@@ -112,6 +112,8 @@ export const state = reactive({
   selectedPaths: new Set<string>(),
   /** 选中的文件夹节点路径集合 */
   selectedFolderPaths: new Set<string>(),
+  /** 被隐藏的标记等级（0=未标记，1-5=标记等级）：对应图片不显示 */
+  hiddenMarkLevels: [] as number[],
   /** 设置 */
   settings: { ...defaultSettings },
   /** 加载状态 */
@@ -297,6 +299,11 @@ export function filterImages(images: ImageItem[], regex: string, target: FilterT
 /** 获取处理后的图片列表（排序+筛选） */
 export function getProcessedImages(images: ImageItem[]): ImageItem[] {
   let result = [...images]
+  // 隐藏指定标记的图片（0=未标记）
+  if (state.hiddenMarkLevels.length > 0) {
+    const hidden = new Set(state.hiddenMarkLevels)
+    result = result.filter(img => !hidden.has(img.markLevel || 0))
+  }
   // 筛选
   result = filterImages(result, state.settings.filterRegex, state.settings.filterTarget, state.virtualGroups)
   // 排序
@@ -560,6 +567,8 @@ export async function refreshFolders(): Promise<void> {
   state.allImages = []
   state.scannedDirs.clear()
   state.selectedPaths.clear()
+  // 全量重扫会重建图片对象（标记信息丢失），同步复位标记隐藏，避免刷新后视图全空
+  state.hiddenMarkLevels = []
   for (const vg of state.virtualGroups) {
     vg.images = []
   }
@@ -927,6 +936,32 @@ function updateNodeTreeMark(nodes: FolderNode[], path: string, level: import('..
   }
 }
 
+/** 当前被隐藏的标记数量（用于界面角标提示） */
+export const hiddenMarkCount = computed(() => state.hiddenMarkLevels.length)
+
+/** 指定标记等级是否处于隐藏状态（0=未标记） */
+export function isMarkHidden(level: number): boolean {
+  return state.hiddenMarkLevels.includes(level)
+}
+
+/** 切换某个标记等级图片的显示/隐藏 */
+export function toggleMarkHidden(level: number): void {
+  if (state.hiddenMarkLevels.includes(level)) {
+    state.hiddenMarkLevels = state.hiddenMarkLevels.filter(l => l !== level)
+    return
+  }
+  state.hiddenMarkLevels = [...state.hiddenMarkLevels, level]
+  // 隐藏后这些图片不在视图中，同步取消其选中，避免对不可见图片执行批量操作
+  for (const img of state.allImages) {
+    if ((img.markLevel || 0) === level) state.selectedPaths.delete(img.path)
+  }
+}
+
+/** 恢复显示所有标记的图片 */
+export function showAllMarks(): void {
+  if (state.hiddenMarkLevels.length > 0) state.hiddenMarkLevels = []
+}
+
 export function setImageMark(path: string, level: import('../types').MarkLevel) {
   const img = state.allImages.find(i => i.path === path)
   if (img) {
@@ -938,6 +973,8 @@ export function setImageMark(path: string, level: import('../types').MarkLevel) 
   }
   // 同时更新虚拟分组中的图片（含子节点树）
   updateNodeTreeMark(state.virtualGroups, path, level)
+  // 目标标记处于隐藏状态时，该图片会立刻从视图消失，同步取消其选中
+  if (isMarkHidden(level)) state.selectedPaths.delete(path)
 }
 
 /** 为所有选中图片（含文件夹节点内图片）设置标记 */
@@ -950,6 +987,8 @@ export function setSelectedImagesMark(level: import('../types').MarkLevel) {
 
 /** 选中指定标记等级的所有图片（0=未标记） */
 export function selectImagesByMark(level: import('../types').MarkLevel) {
+  // 该标记的图片处于隐藏状态时，不在视图中，跳过（避免选中不可见图片）
+  if (isMarkHidden(level)) return
   for (const img of state.allImages) {
     if (level === 0 ? !img.markLevel : img.markLevel === level) {
       state.selectedPaths.add(img.path)
@@ -1727,6 +1766,8 @@ export function clearAll() {
   state.scannedDirs.clear()
   state.explicitDirs.clear()
   state.loadedRootPaths = []
+  // 清空后不再保留标记隐藏状态，避免下次加载时图片莫名缺失
+  state.hiddenMarkLevels = []
 }
 
 /** 加载配置（忽略已存盘的 filterRegex，始终从空值开始） */

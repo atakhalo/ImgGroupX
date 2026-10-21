@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { state } from '../stores/imageStore'
+import { state, hiddenMarkCount, showAllMarks } from '../stores/imageStore'
 import type { SortBy, GroupSortBy } from '../types'
 
 const regexInput = ref(state.settings.filterRegex)
@@ -144,6 +144,19 @@ onUnmounted(() => {
 
     <div class="filter-right-area">
       <slot name="right-prepend" />
+      <!-- 已隐藏的标记：随时可恢复显示 -->
+      <button
+        v-if="hiddenMarkCount > 0"
+        class="hidden-mark-chip"
+        :title="$t('control.mark_show_all_tip')"
+        @click="showAllMarks"
+      >
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+        <span>{{ $t('control.mark_hidden_label') }}</span>
+      </button>
       <!-- 筛选模式切换 -->
       <button
         class="filter-mode-btn"
@@ -284,6 +297,27 @@ onUnmounted(() => {
 
 .filter-mode-btn:hover {
   background: rgba(100, 108, 255, 0.2);
+}
+
+/* 已隐藏标记提示（点击恢复全部显示） */
+.hidden-mark-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 180, 0, 0.12);
+  border: 1px solid rgba(255, 180, 0, 0.35);
+  color: #ffd166;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.hidden-mark-chip:hover {
+  background: rgba(255, 180, 0, 0.22);
 }
 
 .filter-group {

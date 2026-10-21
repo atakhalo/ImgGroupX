@@ -111,6 +111,12 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.mark_select': '标记选择',
     'control.mark_select_all': '全选',
     'control.mark_deselect': '取消选择',
+    'control.mark_hide': '隐藏',
+    'control.mark_show': '显示',
+    'control.mark_hide_tip': '隐藏该标记的图片',
+    'control.mark_show_tip': '显示该标记的图片',
+    'control.mark_show_all_tip': '恢复显示所有被隐藏的标记图片',
+    'control.mark_hidden_label': '标记',
     'control.mark_clear': '取消标记',
 
     // 筛选排序栏
@@ -430,6 +436,12 @@ const messages: Record<Lang, Record<string, string>> = {
     'control.mark_select': 'Mark Selection',
     'control.mark_select_all': 'Select All',
     'control.mark_deselect': 'Deselect',
+    'control.mark_hide': 'Hide',
+    'control.mark_show': 'Show',
+    'control.mark_hide_tip': 'Hide images with this mark',
+    'control.mark_show_tip': 'Show images with this mark',
+    'control.mark_show_all_tip': 'Show all images hidden by mark',
+    'control.mark_hidden_label': 'Mark',
     'control.mark_clear': 'Clear Mark',
 
     'filter.sort': 'Sort',

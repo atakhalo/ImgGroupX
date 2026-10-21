@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { MarkLevel } from '../types'
-import { state, getTotalSelectedCount, setSelectedImagesMark, selectImagesByMark, deselectImagesByMark, collectAllSelectedPaths, getProcessedImages, showToast } from '../stores/imageStore'
+import { state, getTotalSelectedCount, setSelectedImagesMark, selectImagesByMark, deselectImagesByMark, collectAllSelectedPaths, getProcessedImages, showToast, hiddenMarkCount, isMarkHidden, toggleMarkHidden } from '../stores/imageStore'
 import { writeFiles } from 'tauri-plugin-clipboard-api'
 import { t } from '../i18n'
 
@@ -184,10 +184,11 @@ onUnmounted(() => {
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
         </svg>
         <span>{{ $t('control.mark_select') }}</span>
+        <span v-if="hiddenMarkCount > 0" class="mark-hidden-badge">{{ hiddenMarkCount }}</span>
       </button>
       <div v-if="showMarkMenu" class="op-menu-backdrop" @click="showMarkMenu = false"></div>
       <div v-if="showMarkMenu" class="op-menu mark-menu-wide" @click.stop>
-        <div v-for="lv in 5" :key="lv" class="mark-menu-row">
+        <div v-for="lv in 5" :key="lv" class="mark-menu-row" :class="{ 'row-hidden': isMarkHidden(lv) }">
           <button
             class="mark-dot-btn"
             :style="{ backgroundColor: state.settings.markColors[lv - 1] || '#888' }"
@@ -205,9 +206,25 @@ onUnmounted(() => {
             </svg>
             {{ $t('control.mark_deselect') }}
           </button>
+          <button
+            class="mark-action-btn mark-visibility-btn"
+            :class="{ 'is-hidden': isMarkHidden(lv) }"
+            :title="isMarkHidden(lv) ? $t('control.mark_show_tip') : $t('control.mark_hide_tip')"
+            @click="toggleMarkHidden(lv)"
+          >
+            <svg v-if="isMarkHidden(lv)" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+              <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            {{ isMarkHidden(lv) ? $t('control.mark_show') : $t('control.mark_hide') }}
+          </button>
         </div>
         <div class="op-menu-divider"></div>
-        <div class="mark-menu-row">
+        <div class="mark-menu-row" :class="{ 'row-hidden': isMarkHidden(0) }">
           <button class="mark-dot-btn mark-dot-none" @click="handleMarkSelected(0)">
             <span class="mark-dot-none-inner">✕</span>
           </button>
@@ -222,6 +239,22 @@ onUnmounted(() => {
               <line x1="18" y1="6" x2="6" y2="18" />
             </svg>
             {{ $t('control.mark_deselect') }}
+          </button>
+          <button
+            class="mark-action-btn mark-visibility-btn"
+            :class="{ 'is-hidden': isMarkHidden(0) }"
+            :title="isMarkHidden(0) ? $t('control.mark_show_tip') : $t('control.mark_hide_tip')"
+            @click="toggleMarkHidden(0)"
+          >
+            <svg v-if="isMarkHidden(0)" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+              <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            {{ isMarkHidden(0) ? $t('control.mark_show') : $t('control.mark_hide') }}
           </button>
         </div>
       </div>
@@ -405,7 +438,7 @@ onUnmounted(() => {
 
 /* 标记菜单 */
 .mark-menu-wide {
-  min-width: 200px;
+  min-width: 230px;
   padding: 8px;
 }
 
@@ -420,6 +453,15 @@ onUnmounted(() => {
 
 .mark-menu-row:hover {
   background: rgba(255,255,255,0.04);
+}
+
+/* 该标记处于隐藏状态的行 */
+.mark-menu-row.row-hidden {
+  background: rgba(255, 180, 0, 0.07);
+}
+
+.mark-menu-row.row-hidden:hover {
+  background: rgba(255, 180, 0, 0.11);
 }
 
 .mark-dot-btn {
@@ -473,5 +515,37 @@ onUnmounted(() => {
   background: rgba(255,255,255,0.1);
   color: white;
   border-color: rgba(255,255,255,0.15);
+}
+
+/* 显示/隐藏切换按钮 */
+.mark-visibility-btn {
+  margin-left: auto;
+}
+
+.mark-visibility-btn.is-hidden {
+  background: rgba(255, 180, 0, 0.18);
+  border-color: rgba(255, 180, 0, 0.45);
+  color: #ffd166;
+}
+
+.mark-visibility-btn.is-hidden:hover {
+  background: rgba(255, 180, 0, 0.28);
+  color: #ffe08a;
+  border-color: rgba(255, 180, 0, 0.6);
+}
+
+/* 触发按钮上的隐藏数量角标 */
+.mark-hidden-badge {
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  margin-left: 2px;
+  border-radius: 8px;
+  background: #e74c3c;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
 }
 </style>

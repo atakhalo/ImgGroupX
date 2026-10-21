@@ -50,6 +50,7 @@
 ### 🏷️ 5-Level Mark System
 - Customizable mark colors with visible borders and badges in grid view
 - Select/deselect by mark level, batch mark operations
+- Show/hide images by mark level, with one-click restore
 - Keyboard shortcuts: `1`-`5` to mark, `` ` `` / `0` to clear
 
 ### 🛠️ Batch Management
