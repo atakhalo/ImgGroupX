@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut, isEditableTarget } from './utils/shortcuts'
 import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction, hiddenByMarkEvent } from './stores/imageStore'
-import type { ImageItem, NavigableEntry } from './types'
+import type { ImageItem, NavigableEntry, FolderNode } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
 import ControlBar from './components/ControlBar.vue'
@@ -12,6 +12,7 @@ import FolderPanel from './components/FolderPanel.vue'
 import FilterSortBar from './components/FilterSortBar.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import CompareViewer from './components/CompareViewer.vue'
+import GroupViewer from './components/GroupViewer.vue'
 import LoadPanel from './components/LoadPanel.vue'
 import { open, ask } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -32,6 +33,13 @@ const showSettingsPanel = ref(false)
 // 新建分组命名
 const groupNameInput = ref('')
 const showGroupNameInput = ref(false)
+/** 新分组仅查看：不保留分组，直接打开分组查看器 */
+const createGroupViewOnly = ref(false)
+
+// 分组查看器（仅查看模式新建的分组）
+const viewOnlyGroup = ref<FolderNode | null>(null)
+/** 打开分组查看器前的选择模式（关闭后恢复） */
+const selectModeBeforeGroupViewer = ref<'select' | 'view'>('view')
 
 // 重命名弹窗输入框：打开时自动聚焦并全选文件名
 const renameInputRef = ref<HTMLInputElement | null>(null)
@@ -174,6 +182,14 @@ function handleKeydown(e: KeyboardEvent) {
     }
     return
   }
+  // 新建分组弹窗打开时：Esc 取消，避免勾选「仅查看」后焦点不在输入框时误关应用
+  if (showGroupNameInput.value) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      cancelVirtualGroup()
+    }
+    return
+  }
   // 输入框/文本域等可编辑元素聚焦时不响应全局快捷键
   if (isEditableTarget(e.target)) return
   if (e.key === 'Escape') {
@@ -183,10 +199,12 @@ function handleKeydown(e: KeyboardEvent) {
       closeViewer()
     } else if (showCompare.value) {
       closeCompare()
+    } else if (viewOnlyGroup.value) {
+      closeGroupViewer()
     } else {
       closeApp()
     }
-  } else if (matchShortcut(e, 'global.modeSwitch') && viewingIndex.value < 0 && !showCompare.value) {
+  } else if (matchShortcut(e, 'global.modeSwitch') && viewingIndex.value < 0 && !showCompare.value && !viewOnlyGroup.value) {
     e.preventDefault()
     if (state.selectMode === 'view') {
       state.selectMode = 'select'
@@ -554,6 +572,7 @@ function createVirtualGroup() {
   if (state.selectedPaths.size === 0 && state.selectedFolderPaths.size === 0) return
   showGroupNameInput.value = true
   groupNameInput.value = ''
+  createGroupViewOnly.value = false
 }
 
 /** 递归将子树的相对路径转为绝对路径（利用图片的 dir 字段） */
@@ -568,10 +587,13 @@ function makeNodePathsAbsolute(node: import('./types').FolderNode) {
 }
 
 function confirmVirtualGroup() {
-  const name = groupNameInput.value.trim() || `${t('virtual_group_default')}-${state.virtualGroups.length + 1}`
+  const viewOnly = createGroupViewOnly.value
+  const name = viewOnly
+    ? t('hint.view_only')
+    : (groupNameInput.value.trim() || `${t('virtual_group_default')}-${state.virtualGroups.length + 1}`)
   const selectedImages = state.allImages.filter(img => state.selectedPaths.has(img.path))
   // 构建选中的文件夹节点子树
-  const childNodes: import('./types').FolderNode[] = []
+  const childNodes: FolderNode[] = []
   const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
   for (const fp of state.selectedFolderPaths) {
     const found = findSubTreeInTree(fullTree, fp)
@@ -581,16 +603,67 @@ function confirmVirtualGroup() {
     }
   }
   if (selectedImages.length > 0 || childNodes.length > 0) {
-    addVirtualGroup(name, selectedImages, childNodes)
+    if (viewOnly) {
+      // 仅查看：不加入主视图的分组列表，直接构建临时分组并打开分组查看器
+      openGroupViewer({
+        path: `__virtual__viewonly${Date.now()}`,
+        name,
+        children: childNodes,
+        images: selectedImages,
+        expanded: true,
+        isVirtual: true,
+      })
+    } else {
+      addVirtualGroup(name, selectedImages, childNodes)
+    }
   }
   groupNameInput.value = ''
+  createGroupViewOnly.value = false
   showGroupNameInput.value = false
   state.selectedPaths.clear()
   state.selectedFolderPaths.clear()
 }
 
+function openGroupViewer(node: FolderNode) {
+  // 查看器内点击图片即打开大图，临时切换到查看模式（关闭后恢复原模式）
+  selectModeBeforeGroupViewer.value = state.selectMode
+  state.selectMode = 'view'
+  viewOnlyGroup.value = node
+}
+
+function closeGroupViewer() {
+  viewOnlyGroup.value = null
+  state.selectMode = selectModeBeforeGroupViewer.value
+}
+
+/** 分组查看器中点击图片：用该分组当前节点的图片列表作为大图导航范围 */
+function viewGroupImage(item: ImageItem, scope: ImageItem[]) {
+  const images = scope && scope.length > 0 ? scope : [item]
+  const idx = images.findIndex(img => img.path === item.path)
+  viewingImages.value = [...images]
+  viewingIndex.value = idx >= 0 ? idx : 0
+  viewingNavIndex.value = -1
+}
+
+/** 递归清理仅查看分组中已不存在的图片（与主视图保持一致） */
+function pruneViewOnlyGroup(node: FolderNode, alive: Set<string>) {
+  if (node.images.length > 0) {
+    node.images = node.images.filter(img => alive.has(img.path))
+  }
+  for (const child of node.children) {
+    pruneViewOnlyGroup(child, alive)
+  }
+}
+
+watch(() => state.allImages.length, () => {
+  const group = viewOnlyGroup.value
+  if (!group) return
+  pruneViewOnlyGroup(group, new Set(state.allImages.map(img => img.path)))
+})
+
 function cancelVirtualGroup() {
   groupNameInput.value = ''
+  createGroupViewOnly.value = false
   showGroupNameInput.value = false
 }
 
@@ -925,7 +998,18 @@ async function handleRefresh() {
         <div class="name-input-dialog">
           <h4>{{ $t('hint.create_group') }}</h4>
           <p class="name-input-hint">{{ $t('hint.selected_count', { n: state.selectedPaths.size }) }}</p>
+          <label class="view-only-row">
+            <input
+              v-model="createGroupViewOnly"
+              type="checkbox"
+              class="view-only-checkbox"
+              @keyup.enter="confirmVirtualGroup"
+            />
+            <span class="view-only-label">{{ $t('hint.view_only') }}</span>
+            <span class="view-only-tip">{{ $t('hint.view_only_hint') }}</span>
+          </label>
           <input
+            v-if="!createGroupViewOnly"
             v-model="groupNameInput"
             type="text"
             class="name-input"
@@ -997,6 +1081,17 @@ async function handleRefresh() {
 
     <!-- 设置面板 -->
     <SettingsPanel v-if="showSettingsPanel" @close="closeSettings" />
+
+    <!-- 分组查看器（「仅查看」新建的分组） -->
+    <GroupViewer
+      v-if="viewOnlyGroup"
+      :node="viewOnlyGroup"
+      @close="closeGroupViewer"
+      @viewImage="viewGroupImage"
+      @selectImage="selectImage"
+      @copyToFolder="handleCopyToFolder"
+      @moveToFolder="handleMoveToFolder"
+    />
 
     <!-- 大图查看器 -->
     <ImageViewer v-if="viewingIndex >= 0" :key="viewerKey" :images="viewingImages" :initialIndex="viewingIndex" @close="closeViewer" @deleteImage="handleViewerDelete" @indexChange="handleViewerIndexChange" @prevNode="handleViewerPrevNode" @nextNode="handleViewerNextNode" />
@@ -1285,6 +1380,32 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
 }
 .name-input:focus { border-color: rgba(100,108,255,0.4); }
 .name-input-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+/* 新建分组：「仅查看」勾选项 */
+.view-only-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.75);
+  cursor: pointer;
+  user-select: none;
+}
+.view-only-checkbox {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: #646cff;
+}
+.view-only-label { flex-shrink: 0; }
+.view-only-tip {
+  margin-left: auto;
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  text-align: right;
+}
 .name-btn {
   padding: 6px 16px; border-radius: 6px; cursor: pointer;
   font-size: 13px; border: 1px solid transparent;

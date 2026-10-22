@@ -43,7 +43,7 @@
 
 ### 📁 Grid & Group View
 - **Auto folder grouping** — Organized in a folder tree with hierarchical display
-- **Virtual groups** — Create temporary groups from arbitrary selected images
+- **Virtual groups** — Create temporary groups from arbitrary selected images; use "View only" to browse the selection alone in the group viewer
 - **Multi-folder viewing** — Browse multiple folders at once; compact mode for efficient small-folder handling
 - **Rainbow tier coloring** — Depth-based auto-cycling background colors for clear hierarchy
 

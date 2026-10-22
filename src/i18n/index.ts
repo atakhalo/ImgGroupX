@@ -209,6 +209,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.selected_count': '已选择 {n} 张图片',
     'hint.large_selection_warning': '当前所选较多（共 {n} 张），注意确认',
     'hint.group_name': '输入分组名称（可选）',
+    'hint.view_only': '仅查看',
+    'hint.view_only_hint': '不保留分组，直接打开分组查看器',
     'hint.group_empty': '分组中没有图片',
     'hint.random_extract_title': '随机抽取为新分组',
     'hint.random_extract_total': '节点内共 {n} 张图片',
@@ -233,6 +235,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.trash_moved_custom': '已将 {n} 项移入自定义回收站',
     'hint.trash_failed': '移入回收站失败（{n} 项）：{msg}',
     'hint.trash_open_failed': '打开回收站文件夹失败：{path}',
+
+    // 分组查看器
+    'group_viewer.close': '关闭分组查看器',
 
     // 最近打开
     'recent.folders': '文件夹',
@@ -538,6 +543,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.selected_count': '{n} images selected',
     'hint.large_selection_warning': 'Large selection ({n} images), please confirm',
     'hint.group_name': 'Enter group name (optional)',
+    'hint.view_only': 'View only',
+    'hint.view_only_hint': 'Do not keep the group; open it in the group viewer',
     'hint.group_empty': 'No images in group',
     'hint.random_extract_title': 'Random Extract as New Group',
     'hint.random_extract_total': '{n} images in this node',
@@ -559,6 +566,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.trash_moved_custom': 'Moved {n} item(s) to custom recycle bin',
     'hint.trash_failed': 'Failed to move {n} item(s) to recycle bin: {msg}',
     'hint.trash_open_failed': 'Failed to open recycle bin folder: {path}',
+
+    // Group viewer
+    'group_viewer.close': 'Close group viewer',
     'hint.copy_file': 'Copy as File',
     'hint.copy_file_tip': 'Can paste in File Explorer',
     'hint.paste_as_group': 'Paste as Temporary Group',

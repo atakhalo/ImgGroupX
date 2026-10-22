@@ -29,11 +29,14 @@ const props = withDefaults(defineProps<{
   anonName?: string
   /** 同级兄弟节点列表（用于 Shift 连选） */
   siblingNodes?: FolderNode[]
+  /** 分组查看器模式：只读查看，隐藏会改动主视图/文件系统的节点操作 */
+  viewerMode?: boolean
 }>(), {
   collapsePrefix: '',
   hierarchyPath: '',
   realDepth: 0,
   siblingNodes: () => [],
+  viewerMode: false,
 })
 
 const emit = defineEmits<{
@@ -56,6 +59,8 @@ function handleToggle() {
 
 /** 展开状态全局唯一 key：真实树用绝对路径，虚拟分组用作用域前缀，避免多根同名子目录冲突 */
 function getExpandKey(): string {
+  // 分组查看器是独立作用域，避免与主视图中的同名节点串用展开状态
+  if (props.viewerMode) return `viewer:${props.node.path}`
   if (props.vgIndex !== undefined) return `vg:${props.vgIndex}:${props.node.path}`
   return getNodeAbsolutePath()
 }
@@ -113,6 +118,7 @@ function absKeyOfNode(node: FolderNode): string {
 
 /** 选择状态全局唯一 key：真实树用绝对路径；虚拟分组子节点 path 本身已是绝对路径 */
 function getSelectKey(): string {
+  if (props.viewerMode) return props.node.path
   if (props.vgIndex !== undefined) return props.node.path
   return getNodeAbsolutePath()
 }
@@ -135,6 +141,8 @@ function totalCount(node: FolderNode): number {
 
 /** 获取节点的绝对路径（子节点 node.path 是相对路径，需拼接 rootPath） */
 function getNodeAbsolutePath(): string {
+  // 分组查看器中的节点 path 在构建分组时已转为绝对路径，直接使用
+  if (props.viewerMode) return props.node.path.replace(/\\/g, '/')
   const root = props.rootPath.replace(/\\/g, '/').replace(/\/$/, '')
   if (props.depth === 0) return root
   const rel = props.node.path.replace(/\\/g, '/')
@@ -546,6 +554,8 @@ const shouldShowPath = () => {
 
 /** 获取节点完整路径（用于悬浮提示；虚拟分组显示分组名而非 internal path） */
 function getNodeFullPath(): string {
+  // 分组查看器内节点使用节点名作为提示
+  if (props.viewerMode) return props.node.name
   // 虚拟分组根节点 → 显示分组名
   if (props.isVirtualRoot && props.depth === 0) {
     return state.virtualGroups[props.vgIndex ?? -1]?.name || props.node.name
@@ -626,6 +636,7 @@ function getNodeGridContainerBg(depth: number): string {
       :collapsePrefix="collapsePrefix + node.name + ' / '"
       :realDepth="realDepth + 1"
       :siblingNodes="node.children"
+      :viewerMode="viewerMode"
       :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
       @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
       @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
@@ -645,6 +656,7 @@ function getNodeGridContainerBg(depth: number): string {
     :class="{ 
       'folder-group-selected': isSelected(),
       'folder-group-compact': isCompactNode,
+      'viewer-mode': viewerMode,
     }"
     :style="{ 
       borderRadius: '20px',
@@ -830,7 +842,7 @@ function getNodeGridContainerBg(depth: number): string {
         @click.stop
       >
         <!-- 选择操作（选择模式下） -->
-        <template v-if="state.selectMode === 'select'">
+        <template v-if="state.selectMode === 'select' && !viewerMode">
           <button class="ctx-menu-item" @click="selectAll(), closeHeaderCtxMenu()">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -857,7 +869,7 @@ function getNodeGridContainerBg(depth: number): string {
             <span>{{ $t('folder.first_level') }}</span>
           </button>
           <!-- 移动至此 / 复制至此（显示条件同在标题栏上） -->
-          <template v-if="hasAnySelection && !isVirtualRoot">
+          <template v-if="hasAnySelection && !isVirtualRoot && !viewerMode">
             <div class="ctx-separator"></div>
             <button class="ctx-menu-item" @click="handleMoveToFolder(), closeHeaderCtxMenu()">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -877,7 +889,7 @@ function getNodeGridContainerBg(depth: number): string {
         </template>
         <!-- 虚拟分组重命名（仅虚拟根节点显示） -->
         <button
-          v-if="isVirtualRoot && depth === 0"
+          v-if="isVirtualRoot && depth === 0 && !viewerMode"
           class="ctx-menu-item"
           @click="handleRenameVirtualGroup(), closeHeaderCtxMenu()"
         >
@@ -941,7 +953,7 @@ function getNodeGridContainerBg(depth: number): string {
         <!-- 文件夹操作 -->
         <!-- 向上（仅根节点，紧凑模式时图标隐藏，放入右键菜单） -->
         <button
-          v-if="depth === 0 && !isVirtualRoot"
+          v-if="depth === 0 && !isVirtualRoot && !viewerMode"
           class="ctx-menu-item"
           @click="handleUp(), closeHeaderCtxMenu()"
         >
@@ -964,7 +976,7 @@ function getNodeGridContainerBg(depth: number): string {
           <span>{{ $t('hint.copy_path') }}</span>
         </button>
         <button
-          v-if="realFolderPath"
+          v-if="realFolderPath && !viewerMode"
           class="ctx-menu-item"
           @click="handleNewSubFolder(), closeHeaderCtxMenu()"
         >
@@ -975,7 +987,7 @@ function getNodeGridContainerBg(depth: number): string {
           <span>{{ $t('folder.new_subfolder') }}</span>
         </button>
         <div class="ctx-separator"></div>
-        <button class="ctx-menu-item ctx-danger" @click="handleRemove(), closeHeaderCtxMenu()">
+        <button v-if="!viewerMode" class="ctx-menu-item ctx-danger" @click="handleRemove(), closeHeaderCtxMenu()">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
           </svg>
@@ -1051,6 +1063,7 @@ function getNodeGridContainerBg(depth: number): string {
         :vgIndex="vgIndex"
         :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
         :siblingNodes="node.children"
+        :viewerMode="viewerMode"
         :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
         @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
         @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
@@ -1096,6 +1109,7 @@ function getNodeGridContainerBg(depth: number): string {
               :vgIndex="vgIndex"
               :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
               :siblingNodes="node.children"
+              :viewerMode="viewerMode"
               :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
               @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
               @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
@@ -1122,6 +1136,7 @@ function getNodeGridContainerBg(depth: number): string {
               :vgIndex="vgIndex"
               :hierarchyPath="isVirtualRoot ? '' : (hierarchyPath || '') + node.name + ' / '"
               :siblingNodes="node.children"
+              :viewerMode="viewerMode"
               :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (childIdx + 1) : undefined"
               @toggle="(n: FolderNode, sk?: string) => emit('toggle', n, sk)"
               @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
@@ -1590,6 +1605,20 @@ function getNodeGridContainerBg(depth: number): string {
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 0;
+}
+
+/* 分组查看器模式：隐藏会改动主视图/文件系统的节点操作，其余样式与网格视图保持一致 */
+.folder-group.viewer-mode .folder-open-btn,
+.folder-group.viewer-mode .folder-up-btn,
+.folder-group.viewer-mode .folder-save-btn,
+.folder-group.viewer-mode .folder-remove-btn,
+.folder-group.viewer-mode .folder-move-btn,
+.folder-group.viewer-mode .folder-copy-btn,
+.folder-group.viewer-mode .folder-select-box,
+.folder-group.viewer-mode .folder-select-actions,
+.folder-group.viewer-mode .vg-add-btn,
+.folder-group.viewer-mode .vg-remove-btn {
+  display: none !important;
 }
 </style>
 <style>
