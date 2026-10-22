@@ -656,7 +656,6 @@ function getNodeGridContainerBg(depth: number): string {
     :class="{ 
       'folder-group-selected': isSelected(),
       'folder-group-compact': isCompactNode,
-      'viewer-mode': viewerMode,
     }"
     :style="{ 
       borderRadius: '20px',
@@ -842,7 +841,7 @@ function getNodeGridContainerBg(depth: number): string {
         @click.stop
       >
         <!-- 选择操作（选择模式下） -->
-        <template v-if="state.selectMode === 'select' && !viewerMode">
+        <template v-if="state.selectMode === 'select'">
           <button class="ctx-menu-item" @click="selectAll(), closeHeaderCtxMenu()">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -869,7 +868,7 @@ function getNodeGridContainerBg(depth: number): string {
             <span>{{ $t('folder.first_level') }}</span>
           </button>
           <!-- 移动至此 / 复制至此（显示条件同在标题栏上） -->
-          <template v-if="hasAnySelection && !isVirtualRoot && !viewerMode">
+          <template v-if="hasAnySelection && !isVirtualRoot">
             <div class="ctx-separator"></div>
             <button class="ctx-menu-item" @click="handleMoveToFolder(), closeHeaderCtxMenu()">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -889,7 +888,7 @@ function getNodeGridContainerBg(depth: number): string {
         </template>
         <!-- 虚拟分组重命名（仅虚拟根节点显示） -->
         <button
-          v-if="isVirtualRoot && depth === 0 && !viewerMode"
+          v-if="isVirtualRoot && depth === 0"
           class="ctx-menu-item"
           @click="handleRenameVirtualGroup(), closeHeaderCtxMenu()"
         >
@@ -953,7 +952,7 @@ function getNodeGridContainerBg(depth: number): string {
         <!-- 文件夹操作 -->
         <!-- 向上（仅根节点，紧凑模式时图标隐藏，放入右键菜单） -->
         <button
-          v-if="depth === 0 && !isVirtualRoot && !viewerMode"
+          v-if="depth === 0 && !isVirtualRoot"
           class="ctx-menu-item"
           @click="handleUp(), closeHeaderCtxMenu()"
         >
@@ -976,7 +975,7 @@ function getNodeGridContainerBg(depth: number): string {
           <span>{{ $t('hint.copy_path') }}</span>
         </button>
         <button
-          v-if="realFolderPath && !viewerMode"
+          v-if="realFolderPath"
           class="ctx-menu-item"
           @click="handleNewSubFolder(), closeHeaderCtxMenu()"
         >
@@ -987,7 +986,7 @@ function getNodeGridContainerBg(depth: number): string {
           <span>{{ $t('folder.new_subfolder') }}</span>
         </button>
         <div class="ctx-separator"></div>
-        <button v-if="!viewerMode" class="ctx-menu-item ctx-danger" @click="handleRemove(), closeHeaderCtxMenu()">
+        <button class="ctx-menu-item ctx-danger" @click="handleRemove(), closeHeaderCtxMenu()">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
           </svg>
@@ -1605,20 +1604,6 @@ function getNodeGridContainerBg(depth: number): string {
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 0;
-}
-
-/* 分组查看器模式：隐藏会改动主视图/文件系统的节点操作，其余样式与网格视图保持一致 */
-.folder-group.viewer-mode .folder-open-btn,
-.folder-group.viewer-mode .folder-up-btn,
-.folder-group.viewer-mode .folder-save-btn,
-.folder-group.viewer-mode .folder-remove-btn,
-.folder-group.viewer-mode .folder-move-btn,
-.folder-group.viewer-mode .folder-copy-btn,
-.folder-group.viewer-mode .folder-select-box,
-.folder-group.viewer-mode .folder-select-actions,
-.folder-group.viewer-mode .vg-add-btn,
-.folder-group.viewer-mode .vg-remove-btn {
-  display: none !important;
 }
 </style>
 <style>

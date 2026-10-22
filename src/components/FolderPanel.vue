@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { t } from '../i18n'
-import { state, buildFolderTree, filterImages, findSubTreeInTree, showToast, sortFolderTree } from '../stores/imageStore'
+import { state, buildFolderTree, filterImages, sortFolderTree, addSelectionToVirtualGroup, removeSelectionFromVirtualGroup, excludeNodeFromVirtualGroup } from '../stores/imageStore'
 import FolderGroup from './FolderGroup.vue'
 
 const props = defineProps<{
@@ -116,11 +115,14 @@ const folderTree = computed(() => {
 
 /** 完整节点列表：虚拟分组（原始顺序）+ 排序后的文件夹树 */
 const allRootNodes = computed<(FolderNode & { isVirtualGroup?: boolean })[]>(() => {
-  const virtualRoots = props.virtualGroups.map((vg, i) => ({
-    ...vg,
-    isVirtualGroup: true,
-    _vgIndex: i,
-  }))
+  const virtualRoots = props.virtualGroups
+    .map((vg, i) => ({
+      ...vg,
+      isVirtualGroup: true,
+      _vgIndex: i,
+    }))
+    // 仅用于分组查看器的临时分组不在主视图显示（保留原始索引，保证 vgIndex 正确）
+    .filter(vg => !vg.temporary)
   return [...virtualRoots, ...folderTree.value]
 })
 
@@ -308,107 +310,12 @@ function handleDeleteVg(index: number) {
 
 /** 删除虚拟分组中的子节点 */
 function handleVirtualExcludeNode(rootPath: string, subPath: string) {
-  const vg = state.virtualGroups.find(v => v.path === rootPath)
-  if (!vg) return
-  vg.children = vg.children.filter(c => c.path !== subPath)
-  vg.images = vg.images.filter(img => !img.dir.startsWith(subPath))
+  const vgIndex = state.virtualGroups.findIndex(v => v.path === rootPath)
+  if (vgIndex >= 0) excludeNodeFromVirtualGroup(vgIndex, subPath)
 }
 
 function handleExcludeNode(rootPath: string, subPath: string) {
   emit('excludeNode', rootPath, subPath)
-}
-
-/** 递归将子树的相对路径转为绝对路径 */
-function makeNodePathsAbsolute(node: FolderNode) {
-  if (node.images.length > 0) {
-    const absDir = node.images[0].dir.replace(/\\/g, '/')
-    node.path = absDir
-  }
-  for (const child of node.children) {
-    makeNodePathsAbsolute(child)
-  }
-}
-
-/** 将选中项添加到指定虚拟分组 */
-function handleAddToVirtualGroup(vgIndex: number) {
-  const vg = state.virtualGroups[vgIndex]
-  if (!vg) return
-
-  // 只检查一级图片是否已存在（非一级图片即使已在子节点中，也应允许添加为一级图片）
-  const existingPaths = new Set(vg.images.map(i => i.path))
-
-  // 添加不重复的选中图片
-  for (const fp of state.selectedPaths) {
-    if (!existingPaths.has(fp)) {
-      const img = state.allImages.find(i => i.path === fp)
-      if (img) vg.images.push({ ...img, loading: false })
-    }
-  }
-
-  // 只检查一级子节点是否已存在（非一级节点即使已在深层子树中，也应允许添加为一级节点）
-  const existingChildPaths = new Set(vg.children.map(c => c.path))
-
-  // 添加不重复的选中文件夹子树
-  const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
-  const normRoots = state.loadedRootPaths.map(r => r.replace(/\\/g, '/').replace(/\/$/, ''))
-  for (const fp of state.selectedFolderPaths) {
-    if (existingChildPaths.has(fp)) continue
-    // 先按原路径（绝对/相对）查找，再尝试转为相对路径查找
-    let found = findSubTreeInTree(fullTree, fp)
-    if (!found) {
-      const normFp = fp.replace(/\\/g, '/').replace(/\/$/, '')
-      for (const root of normRoots) {
-        if (normFp.startsWith(root + '/')) {
-          const rel = normFp.substring(root.length + 1)
-          found = findSubTreeInTree(fullTree, rel)
-          if (found) break
-        }
-      }
-    }
-    if (found) {
-      makeNodePathsAbsolute(found)
-      vg.children.push(found)
-    }
-  }
-
-  state.selectedPaths.clear()
-  state.selectedFolderPaths.clear()
-}
-
-/** 从指定虚拟分组中移除选中项（仅处理一级节点和一级图片，非一级提示） */
-function handleRemoveFromVirtualGroup(vgIndex: number) {
-  const vg = state.virtualGroups[vgIndex]
-  if (!vg) return
-
-  // 判断是否有非一级项被选中
-  const firstLevelImagePaths = new Set(vg.images.map(i => i.path))
-  const firstLevelChildPaths = new Set(vg.children.map(c => c.path))
-  let hasNonFirstLevel = false
-
-  for (const fp of state.selectedPaths) {
-    if (!firstLevelImagePaths.has(fp)) { hasNonFirstLevel = true; break }
-  }
-  if (!hasNonFirstLevel) {
-    for (const fp of state.selectedFolderPaths) {
-      if (!firstLevelChildPaths.has(fp)) { hasNonFirstLevel = true; break }
-    }
-  }
-
-  // 移除一级图片
-  vg.images = vg.images.filter(img => !state.selectedPaths.has(img.path))
-  // 移除一级子节点
-  state.selectedFolderPaths.forEach(fp => {
-    const idx = vg.children.findIndex(c => c.path === fp)
-    if (idx !== -1) vg.children.splice(idx, 1)
-  })
-
-  state.selectedPaths.clear()
-  state.selectedFolderPaths.clear()
-
-  // 有非一级项时提示
-  if (hasNonFirstLevel) {
-    showToast(t('hint.remove_first_level_only'))
-  }
 }
 
 defineExpose({ toggleAll, collapseLeaves })
@@ -436,8 +343,8 @@ defineExpose({ toggleAll, collapseLeaves })
           @removeRoot="() => handleDeleteVg((node as any)._vgIndex)"
           @excludeNode="handleVirtualExcludeNode"
           @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
-          @addToVirtualGroup="handleAddToVirtualGroup"
-          @removeFromVirtualGroup="handleRemoveFromVirtualGroup"
+          @addToVirtualGroup="addSelectionToVirtualGroup((node as any)._vgIndex)"
+          @removeFromVirtualGroup="removeSelectionFromVirtualGroup((node as any)._vgIndex)"
           @copyToFolder="(p:string) => emit('copyToFolder', p)"
           @moveToFolder="(p:string) => emit('moveToFolder', p)"
         />
@@ -483,8 +390,8 @@ defineExpose({ toggleAll, collapseLeaves })
         @removeRoot="() => handleDeleteVg((node as any)._vgIndex)"
         @excludeNode="handleVirtualExcludeNode"
         @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
-        @addToVirtualGroup="handleAddToVirtualGroup"
-        @removeFromVirtualGroup="handleRemoveFromVirtualGroup"
+        @addToVirtualGroup="addSelectionToVirtualGroup((node as any)._vgIndex)"
+        @removeFromVirtualGroup="removeSelectionFromVirtualGroup((node as any)._vgIndex)"
         @copyToFolder="(p:string) => emit('copyToFolder', p)"
         @moveToFolder="(p:string) => emit('moveToFolder', p)"
       />

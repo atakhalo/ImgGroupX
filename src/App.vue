@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut, isEditableTarget } from './utils/shortcuts'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction, hiddenByMarkEvent } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction, hiddenByMarkEvent, addSelectionToVirtualGroup, removeSelectionFromVirtualGroup, excludeNodeFromVirtualGroup, groupViewerNode, groupViewerIndex, openGroupViewer, closeGroupViewer, addTemporaryVirtualGroup } from './stores/imageStore'
 import type { ImageItem, NavigableEntry, FolderNode } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -33,13 +33,8 @@ const showSettingsPanel = ref(false)
 // 新建分组命名
 const groupNameInput = ref('')
 const showGroupNameInput = ref(false)
-/** 新分组仅查看：不保留分组，直接打开分组查看器 */
-const createGroupViewOnly = ref(false)
-
-// 分组查看器（仅查看模式新建的分组）
-const viewOnlyGroup = ref<FolderNode | null>(null)
-/** 打开分组查看器前的选择模式（关闭后恢复） */
-const selectModeBeforeGroupViewer = ref<'select' | 'view'>('view')
+/** 新建分组：勾选后创建临时分组并直接在分组查看器中打开（关闭查看器不保留） */
+const openInViewerOnCreate = ref(false)
 
 // 重命名弹窗输入框：打开时自动聚焦并全选文件名
 const renameInputRef = ref<HTMLInputElement | null>(null)
@@ -199,12 +194,12 @@ function handleKeydown(e: KeyboardEvent) {
       closeViewer()
     } else if (showCompare.value) {
       closeCompare()
-    } else if (viewOnlyGroup.value) {
+    } else if (groupViewerNode.value) {
       closeGroupViewer()
     } else {
       closeApp()
     }
-  } else if (matchShortcut(e, 'global.modeSwitch') && viewingIndex.value < 0 && !showCompare.value && !viewOnlyGroup.value) {
+  } else if (matchShortcut(e, 'global.modeSwitch') && viewingIndex.value < 0 && !showCompare.value) {
     e.preventDefault()
     if (state.selectMode === 'view') {
       state.selectMode = 'select'
@@ -572,7 +567,7 @@ function createVirtualGroup() {
   if (state.selectedPaths.size === 0 && state.selectedFolderPaths.size === 0) return
   showGroupNameInput.value = true
   groupNameInput.value = ''
-  createGroupViewOnly.value = false
+  openInViewerOnCreate.value = false
 }
 
 /** 递归将子树的相对路径转为绝对路径（利用图片的 dir 字段） */
@@ -587,10 +582,8 @@ function makeNodePathsAbsolute(node: import('./types').FolderNode) {
 }
 
 function confirmVirtualGroup() {
-  const viewOnly = createGroupViewOnly.value
-  const name = viewOnly
-    ? t('hint.view_only')
-    : (groupNameInput.value.trim() || `${t('virtual_group_default')}-${state.virtualGroups.length + 1}`)
+  const openInViewer = openInViewerOnCreate.value
+  const name = groupNameInput.value.trim() || `${t('virtual_group_default')}-${state.virtualGroups.length + 1}`
   const selectedImages = state.allImages.filter(img => state.selectedPaths.has(img.path))
   // 构建选中的文件夹节点子树
   const childNodes: FolderNode[] = []
@@ -603,67 +596,30 @@ function confirmVirtualGroup() {
     }
   }
   if (selectedImages.length > 0 || childNodes.length > 0) {
-    if (viewOnly) {
-      // 仅查看：不加入主视图的分组列表，直接构建临时分组并打开分组查看器
-      openGroupViewer({
-        path: `__virtual__viewonly${Date.now()}`,
-        name,
-        children: childNodes,
-        images: selectedImages,
-        expanded: true,
-        isVirtual: true,
-      })
+    if (openInViewer) {
+      // 临时分组：不显示在主视图，关闭查看器时移除
+      openGroupViewer(addTemporaryVirtualGroup(name, selectedImages, childNodes))
     } else {
       addVirtualGroup(name, selectedImages, childNodes)
     }
   }
   groupNameInput.value = ''
-  createGroupViewOnly.value = false
+  openInViewerOnCreate.value = false
   showGroupNameInput.value = false
   state.selectedPaths.clear()
   state.selectedFolderPaths.clear()
 }
 
-function openGroupViewer(node: FolderNode) {
-  // 查看器内点击图片即打开大图，临时切换到查看模式（关闭后恢复原模式）
-  selectModeBeforeGroupViewer.value = state.selectMode
-  state.selectMode = 'view'
-  viewOnlyGroup.value = node
+/** 删除分组查看器中的分组并关闭查看器 */
+function handleDeleteViewedGroup() {
+  const index = groupViewerIndex.value
+  if (index >= 0) removeVirtualGroup(index)
+  closeGroupViewer()
 }
-
-function closeGroupViewer() {
-  viewOnlyGroup.value = null
-  state.selectMode = selectModeBeforeGroupViewer.value
-}
-
-/** 分组查看器中点击图片：用该分组当前节点的图片列表作为大图导航范围 */
-function viewGroupImage(item: ImageItem, scope: ImageItem[]) {
-  const images = scope && scope.length > 0 ? scope : [item]
-  const idx = images.findIndex(img => img.path === item.path)
-  viewingImages.value = [...images]
-  viewingIndex.value = idx >= 0 ? idx : 0
-  viewingNavIndex.value = -1
-}
-
-/** 递归清理仅查看分组中已不存在的图片（与主视图保持一致） */
-function pruneViewOnlyGroup(node: FolderNode, alive: Set<string>) {
-  if (node.images.length > 0) {
-    node.images = node.images.filter(img => alive.has(img.path))
-  }
-  for (const child of node.children) {
-    pruneViewOnlyGroup(child, alive)
-  }
-}
-
-watch(() => state.allImages.length, () => {
-  const group = viewOnlyGroup.value
-  if (!group) return
-  pruneViewOnlyGroup(group, new Set(state.allImages.map(img => img.path)))
-})
 
 function cancelVirtualGroup() {
   groupNameInput.value = ''
-  createGroupViewOnly.value = false
+  openInViewerOnCreate.value = false
   showGroupNameInput.value = false
 }
 
@@ -934,9 +890,9 @@ async function handleRefresh() {
         <!-- 未分组模式：所有图片平铺网格 -->
         <template v-if="!state.folderGroup">
           <GridView :images="displayImages" @viewImage="(item: ImageItem, scope: ImageItem[]) => viewImage(item, scope)" @selectImage="selectImage" />
-          <!-- 虚拟分组（未分组模式下额外显示） -->
+          <!-- 虚拟分组（未分组模式下额外显示；临时查看器分组不显示） -->
           <template v-for="(vg, vi) in state.virtualGroups" :key="vg.path">
-            <div class="vg-section">
+            <div v-if="!vg.temporary" class="vg-section">
               <div class="vg-section-header">
                 <span class="vg-section-icon">📦</span>
                 <span class="vg-section-title" :style="{ color: state.settings.rootTitleColor }">{{ vg.name }}</span>
@@ -998,27 +954,20 @@ async function handleRefresh() {
         <div class="name-input-dialog">
           <h4>{{ $t('hint.create_group') }}</h4>
           <p class="name-input-hint">{{ $t('hint.selected_count', { n: state.selectedPaths.size }) }}</p>
-          <label class="view-only-row">
-            <input
-              v-model="createGroupViewOnly"
-              type="checkbox"
-              class="view-only-checkbox"
-              @keyup.enter="confirmVirtualGroup"
-            />
-            <span class="view-only-label">{{ $t('hint.view_only') }}</span>
-            <span class="view-only-tip">{{ $t('hint.view_only_hint') }}</span>
-          </label>
           <input
-            v-if="!createGroupViewOnly"
             v-model="groupNameInput"
             type="text"
             class="name-input"
             :placeholder="$t('hint.group_name')"
-            @keyup.enter="confirmVirtualGroup"
+            @keyup.enter="confirmVirtualGroup()"
           />
           <div class="name-input-actions">
+            <label class="viewer-toggle" :title="$t('hint.open_in_viewer_hint')">
+              <input v-model="openInViewerOnCreate" type="checkbox" class="viewer-toggle-checkbox" />
+              <span>{{ $t('hint.open_in_viewer') }}</span>
+            </label>
             <button class="name-btn secondary" @click="cancelVirtualGroup">{{ $t('settings.reset') }}</button>
-            <button class="name-btn primary" @click="confirmVirtualGroup">{{ $t('settings.apply') }}</button>
+            <button class="name-btn primary" @click="confirmVirtualGroup()">{{ $t('settings.apply') }}</button>
           </div>
         </div>
       </div>
@@ -1050,6 +999,10 @@ async function handleRefresh() {
             <span class="extract-total">/ {{ state.randomExtractDialog.total }}</span>
           </div>
           <div class="name-input-actions">
+            <label class="viewer-toggle" :title="$t('hint.open_in_viewer_hint')">
+              <input v-model="state.randomExtractDialog.openInViewer" type="checkbox" class="viewer-toggle-checkbox" />
+              <span>{{ $t('hint.open_in_viewer') }}</span>
+            </label>
             <button class="name-btn secondary" @click="closeRandomExtractDialog">{{ $t('settings.reset') }}</button>
             <button class="name-btn primary" @click="confirmRandomExtract">{{ $t('settings.apply') }}</button>
           </div>
@@ -1082,13 +1035,19 @@ async function handleRefresh() {
     <!-- 设置面板 -->
     <SettingsPanel v-if="showSettingsPanel" @close="closeSettings" />
 
-    <!-- 分组查看器（「仅查看」新建的分组） -->
+    <!-- 分组查看器（单独查看某个虚拟分组，底部控制栏保持可用） -->
     <GroupViewer
-      v-if="viewOnlyGroup"
-      :node="viewOnlyGroup"
+      v-if="groupViewerNode"
+      :node="groupViewerNode"
+      :vgIndex="groupViewerIndex"
       @close="closeGroupViewer"
-      @viewImage="viewGroupImage"
+      @viewImage="viewImage"
       @selectImage="selectImage"
+      @deleteGroup="handleDeleteViewedGroup"
+      @addToVirtualGroup="addSelectionToVirtualGroup(groupViewerIndex)"
+      @removeFromVirtualGroup="removeSelectionFromVirtualGroup(groupViewerIndex)"
+      @excludeNode="(subPath: string) => excludeNodeFromVirtualGroup(groupViewerIndex, subPath)"
+      @toggleSelectFolder="handleToggleSelectFolder"
       @copyToFolder="handleCopyToFolder"
       @moveToFolder="handleMoveToFolder"
     />
@@ -1381,30 +1340,24 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
 .name-input:focus { border-color: rgba(100,108,255,0.4); }
 .name-input-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 
-/* 新建分组：「仅查看」勾选项 */
-.view-only-row {
+/* 「在查看器打开」勾选项（新建分组 / 随机抽取）：与重置/应用同处一行并靠左 */
+.viewer-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 0 12px;
+  margin-right: auto;
   font-size: 13px;
   color: rgba(255,255,255,0.75);
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
 }
-.view-only-checkbox {
+.viewer-toggle-checkbox {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
   cursor: pointer;
   accent-color: #646cff;
-}
-.view-only-label { flex-shrink: 0; }
-.view-only-tip {
-  margin-left: auto;
-  font-size: 11px;
-  color: rgba(255,255,255,0.35);
-  text-align: right;
 }
 .name-btn {
   padding: 6px 16px; border-radius: 6px; cursor: pointer;

@@ -1,4 +1,4 @@
-import { reactive, computed, ref } from 'vue'
+import { reactive, computed, ref, watch } from 'vue'
 import type { ImageInfo, ImageItem, FolderNode, AppSettings, SortBy, SortOrder, FilterTarget, NavigableEntry } from '../types'
 import { getDefaultBindings } from '../utils/shortcuts'
 import { findSubTreeInTree, resolveRelativePathInTree } from '../utils/treePath'
@@ -161,7 +161,22 @@ export const state = reactive({
     total: 0,
     /** 节点内全部图片（含子节点，不受筛选影响） */
     images: [] as ImageItem[],
+    /** 是否创建临时分组并直接在分组查看器中打开 */
+    openInViewer: false,
   },
+})
+
+/** 分组查看器当前显示的分组（null = 未打开） */
+export const groupViewerNode = ref<FolderNode | null>(null)
+
+/** 查看器分组在 state.virtualGroups 中的索引（-1 = 分组已不存在） */
+export const groupViewerIndex = computed(() =>
+  groupViewerNode.value ? state.virtualGroups.indexOf(groupViewerNode.value) : -1,
+)
+
+// 分组被删除（删除、保存后替换、空分组清理等）时自动关闭查看器
+watch(groupViewerIndex, (index) => {
+  if (groupViewerNode.value && index < 0) groupViewerNode.value = null
 })
 
 /** 按路径去重后添加到allImages */
@@ -871,10 +886,143 @@ export function removeVirtualGroup(index: number) {
   state.virtualGroups.splice(index, 1)
 }
 
+/** 添加仅用于分组查看器的临时分组（不显示在主视图，关闭查看器时移除） */
+export function addTemporaryVirtualGroup(name: string, images: ImageItem[], children?: FolderNode[]): FolderNode {
+  const node = addVirtualGroup(name, images, children)
+  node.temporary = true
+  return node
+}
+
+/** 打开分组查看器（若已在查看临时分组，切换时移除旧的临时分组） */
+export function openGroupViewer(node: FolderNode) {
+  const prev = groupViewerNode.value
+  if (prev && prev !== node) {
+    groupViewerNode.value = null
+    if (prev.temporary) {
+      const index = state.virtualGroups.indexOf(prev)
+      if (index >= 0) state.virtualGroups.splice(index, 1)
+    }
+  }
+  groupViewerNode.value = node
+}
+
+/** 关闭分组查看器；临时分组不保留，关闭时一并移除 */
+export function closeGroupViewer() {
+  const node = groupViewerNode.value
+  groupViewerNode.value = null
+  if (node?.temporary) {
+    const index = state.virtualGroups.indexOf(node)
+    if (index >= 0) state.virtualGroups.splice(index, 1)
+  }
+}
+
 /** 重命名虚拟分组 */
 export function renameVirtualGroup(index: number, newName: string) {
   const vg = state.virtualGroups[index]
   if (vg) vg.name = newName
+}
+
+/** 递归将子树的相对路径转为绝对路径（利用图片的 dir 字段） */
+function normalizeSubTreePaths(node: FolderNode) {
+  if (node.images.length > 0) {
+    const absDir = node.images[0].dir.replace(/\\/g, '/')
+    node.path = absDir
+  }
+  for (const child of node.children) {
+    normalizeSubTreePaths(child)
+  }
+}
+
+/**
+ * 将当前选中项添加到指定虚拟分组。
+ * 只处理一级图片和一级节点（已存在的跳过），完成后清空选择。
+ */
+export function addSelectionToVirtualGroup(vgIndex: number): void {
+  const vg = state.virtualGroups[vgIndex]
+  if (!vg) return
+
+  // 只检查一级图片是否已存在（非一级图片即使已在子节点中，也应允许添加为一级图片）
+  const existingPaths = new Set(vg.images.map(i => i.path))
+  for (const fp of state.selectedPaths) {
+    if (!existingPaths.has(fp)) {
+      const img = state.allImages.find(i => i.path === fp)
+      if (img) vg.images.push({ ...img, loading: false })
+    }
+  }
+
+  // 只检查一级子节点是否已存在（非一级节点即使已在深层子树中，也应允许添加为一级节点）
+  const existingChildPaths = new Set(vg.children.map(c => c.path))
+  const fullTree = buildFolderTree(state.allImages, state.loadedRootPaths)
+  const normRoots = state.loadedRootPaths.map(r => r.replace(/\\/g, '/').replace(/\/$/, ''))
+  for (const fp of state.selectedFolderPaths) {
+    if (existingChildPaths.has(fp)) continue
+    // 先按原路径（绝对/相对）查找，再尝试转为相对路径查找
+    let found = findSubTreeInTree(fullTree, fp)
+    if (!found) {
+      const normFp = fp.replace(/\\/g, '/').replace(/\/$/, '')
+      for (const root of normRoots) {
+        if (normFp.startsWith(root + '/')) {
+          const rel = normFp.substring(root.length + 1)
+          found = findSubTreeInTree(fullTree, rel)
+          if (found) break
+        }
+      }
+    }
+    if (found) {
+      normalizeSubTreePaths(found)
+      vg.children.push(found)
+    }
+  }
+
+  state.selectedPaths.clear()
+  state.selectedFolderPaths.clear()
+}
+
+/**
+ * 从指定虚拟分组中移除当前选中项。
+ * 仅处理一级节点和一级图片；存在非一级选中项时提示。
+ */
+export function removeSelectionFromVirtualGroup(vgIndex: number): void {
+  const vg = state.virtualGroups[vgIndex]
+  if (!vg) return
+
+  // 判断是否有非一级项被选中
+  const firstLevelImagePaths = new Set(vg.images.map(i => i.path))
+  const firstLevelChildPaths = new Set(vg.children.map(c => c.path))
+  let hasNonFirstLevel = false
+
+  for (const fp of state.selectedPaths) {
+    if (!firstLevelImagePaths.has(fp)) { hasNonFirstLevel = true; break }
+  }
+  if (!hasNonFirstLevel) {
+    for (const fp of state.selectedFolderPaths) {
+      if (!firstLevelChildPaths.has(fp)) { hasNonFirstLevel = true; break }
+    }
+  }
+
+  // 移除一级图片
+  vg.images = vg.images.filter(img => !state.selectedPaths.has(img.path))
+  // 移除一级子节点
+  state.selectedFolderPaths.forEach(fp => {
+    const idx = vg.children.findIndex(c => c.path === fp)
+    if (idx !== -1) vg.children.splice(idx, 1)
+  })
+
+  state.selectedPaths.clear()
+  state.selectedFolderPaths.clear()
+
+  // 有非一级项时提示
+  if (hasNonFirstLevel) {
+    showToast(t('hint.remove_first_level_only'))
+  }
+}
+
+/** 从虚拟分组中移除指定子节点（连同其下直属图片） */
+export function excludeNodeFromVirtualGroup(vgIndex: number, subPath: string): void {
+  const vg = state.virtualGroups[vgIndex]
+  if (!vg) return
+  vg.children = vg.children.filter(c => c.path !== subPath)
+  vg.images = vg.images.filter(img => !img.dir.startsWith(subPath))
 }
 
 /** 打开随机抽取对话框（images 为节点内全部图片） */
@@ -885,6 +1033,7 @@ export function openRandomExtractDialog(images: ImageItem[]) {
   d.total = images.length
   d.count = Math.max(0, Math.min(Math.floor(state.settings.randomGroupCount) || 0, images.length))
   d.name = ''
+  d.openInViewer = false
 }
 
 /** 关闭随机抽取对话框 */
@@ -907,16 +1056,20 @@ function pickRandom<T>(arr: T[], n: number): T[] {
   return copy.slice(0, take)
 }
 
-/** 执行随机抽取：创建为新虚拟分组 */
+/** 执行随机抽取：创建为新虚拟分组（勾选「在查看器打开」时创建临时分组并打开查看器） */
 export function confirmRandomExtract() {
   const d = state.randomExtractDialog
   if (!d.show) return
   const count = Math.max(0, Math.min(Math.floor(d.count) || 0, d.images.length))
   const picked = pickRandom(d.images, count)
   const name = d.name.trim() || `${t('virtual_group_default')}-${state.virtualGroups.length + 1}`
+  const openInViewer = d.openInViewer
   closeRandomExtractDialog()
-  addVirtualGroup(name, picked)
+  const node = openInViewer
+    ? addTemporaryVirtualGroup(name, picked)
+    : addVirtualGroup(name, picked)
   showToast(t('hint.random_extracted', { n: picked.length, name }))
+  if (openInViewer) openGroupViewer(node)
 }
 
 /** 设置指定图片的标记等级 */
@@ -1241,6 +1394,12 @@ function toastTrashOutcome(outcome: TrashOutcome) {
   }
 }
 
+/** 递归移除节点子树中已删除的图片 */
+function pruneNodeImages(node: FolderNode, paths: Set<string>) {
+  if (node.images.length > 0) node.images = node.images.filter(img => !paths.has(img.path))
+  for (const child of node.children) pruneNodeImages(child, paths)
+}
+
 /** 删除图片（从磁盘和所有分组中移除） */
 export async function deleteImages(paths: string[]): Promise<void> {
   await setSuppressWatcher(true)
@@ -1252,11 +1411,13 @@ export async function deleteImages(paths: string[]): Promise<void> {
     const pathSet = new Set(outcome.moved)
     state.allImages = state.allImages.filter(img => !pathSet.has(img.path))
     for (const p of pathSet) state.selectedPaths.delete(p)
-    // 从虚拟分组中移除
+    // 从虚拟分组中递归移除（含子节点中的图片），仅丢弃完全为空的分组
     for (const vg of state.virtualGroups) {
-      vg.images = vg.images.filter(img => !pathSet.has(img.path))
+      pruneNodeImages(vg, pathSet)
     }
-    state.virtualGroups = state.virtualGroups.filter(vg => vg.images.length > 0)
+    state.virtualGroups = state.virtualGroups.filter(
+      vg => vg.images.length > 0 || vg.children.length > 0,
+    )
     // 清理空根路径
     state.loadedRootPaths = state.loadedRootPaths.filter(r => {
       const norm = r.replace(/\\/g, '/')

@@ -5,14 +5,21 @@ import { state } from '../stores/imageStore'
 import FolderGroup from './FolderGroup.vue'
 
 defineProps<{
-  /** 要单独查看的分组节点（临时构建，不参与主视图树） */
+  /** 当前在查看器中显示的分组（state.virtualGroups 中的节点） */
   node: FolderNode
+  /** 分组在 state.virtualGroups 中的索引 */
+  vgIndex: number
 }>()
 
 const emit = defineEmits<{
   close: []
-  viewImage: [item: ImageItem, scope: ImageItem[]]
+  viewImage: [item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number]
   selectImage: [item: ImageItem, ctrl: boolean]
+  deleteGroup: []
+  addToVirtualGroup: []
+  removeFromVirtualGroup: []
+  excludeNode: [subPath: string]
+  toggleSelectFolder: [path: string]
   copyToFolder: [targetPath: string]
   moveToFolder: [targetPath: string]
 }>()
@@ -49,22 +56,27 @@ function handleWheel(e: WheelEvent) {
 
 <template>
   <div class="group-viewer" :style="bgStyle" @wheel="handleWheel">
-    <!-- 点击分组外的空白区域关闭 -->
-    <div class="group-viewer-scroll" @click.self="emit('close')">
+    <div class="group-viewer-scroll">
       <div class="group-viewer-card">
-        <!-- 复用网格视图的分组渲染，保证样式完全一致 -->
+        <!-- 复用网格视图的分组渲染：标题栏、层级背景、紧凑模式及虚拟分组操作均保持一致 -->
         <FolderGroup
           :node="node"
           :depth="0"
           :rootPath="node.path"
           :showTitle="state.showGroupTitle"
           :getExpanded="getExpanded"
+          :isVirtualRoot="true"
+          :vgIndex="vgIndex"
           :siblingNodes="[node]"
           :viewerMode="true"
           @toggle="toggleNode"
-          @viewImage="(item: ImageItem, scope?: ImageItem[]) => emit('viewImage', item, scope || [])"
+          @viewImage="(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) => emit('viewImage', item, scope, navKey, imageIndex)"
           @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
-          @removeRoot="emit('close')"
+          @removeRoot="emit('deleteGroup')"
+          @excludeNode="(_rootPath: string, subPath: string) => emit('excludeNode', subPath)"
+          @addToVirtualGroup="emit('addToVirtualGroup')"
+          @removeFromVirtualGroup="emit('removeFromVirtualGroup')"
+          @toggleSelectFolder="(p: string) => emit('toggleSelectFolder', p)"
           @copyToFolder="(p: string) => emit('copyToFolder', p)"
           @moveToFolder="(p: string) => emit('moveToFolder', p)"
           @expandNode="(k: string) => expandedMap.set(k, true)"
@@ -82,11 +94,14 @@ function handleWheel(e: WheelEvent) {
 </template>
 
 <style scoped>
-/* 层级：网格视图之上、大图查看器（z-index 1000）之下 */
+/*
+ * 层级：网格视图之上、大图查看器（z-index 1000）之下；
+ * 底部控制栏 z-index 100 位于查看器之上，保持可见可操作。
+ */
 .group-viewer {
   position: fixed;
   inset: 0;
-  z-index: 900;
+  z-index: 90;
 }
 
 .group-viewer-scroll {
@@ -97,7 +112,8 @@ function handleWheel(e: WheelEvent) {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 20px 24px 40px;
+  /* 底部留出控制栏高度，避免最后一行图片被遮挡 */
+  padding: 20px 24px 140px;
 }
 
 /* 分组居中：宽度随内容自适应，过大时限制最大宽度 */

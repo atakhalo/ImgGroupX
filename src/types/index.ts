@@ -47,6 +47,8 @@ export interface FolderNode {
   expanded: boolean
   /** 是否为虚拟分组（非文件夹加载） */
   isVirtual?: boolean
+  /** 是否仅为分组查看器临时创建（不显示在主视图，关闭查看器时移除） */
+  temporary?: boolean
 }
 
 /** 视图模式 */
