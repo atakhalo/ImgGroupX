@@ -3,7 +3,7 @@ use std::env;
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Instant, UNIX_EPOCH};
 use base64::Engine;
@@ -1530,12 +1530,9 @@ const THUMB_CONCURRENCY: usize = 3;
 static THUMB_ACTIVE: Mutex<usize> = Mutex::new(0);
 static THUMB_CV: Condvar = Condvar::new();
 
-/// 缩略图磁盘缓存上限：超过任一阈值时按最近访问时间（mtime）删除最旧
-const THUMB_CACHE_MAX_BYTES: u64 = 300 * 1024 * 1024;
-const THUMB_CACHE_MAX_FILES: usize = 8000;
-/// 每写入 N 张触发一次增量清理
-const THUMB_CLEAN_EVERY: usize = 50;
-static THUMB_WRITES: AtomicUsize = AtomicUsize::new(0);
+/// 缩略图内存缓存上限（会话级，关闭应用后全部释放）
+const THUMB_MEM_MAX_BYTES: usize = 128 * 1024 * 1024;
+const THUMB_MEM_MAX_ITEMS: usize = 2000;
 
 struct ThumbSlot;
 
@@ -1600,7 +1597,7 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 }
 
 /// 缓存 key：路径 + 修改时间 + 大小 + 请求尺寸
-fn thumb_cache_key(path: &str, size: u32) -> Result<String, String> {
+fn thumb_key(path: &str, size: u32) -> Result<String, String> {
     let meta = fs::metadata(path).map_err(|e| format!("读取文件信息失败: {}", e))?;
     let mtime = meta
         .modified()
@@ -1613,154 +1610,105 @@ fn thumb_cache_key(path: &str, size: u32) -> Result<String, String> {
     Ok(format!("{:016x}", fnv1a(raw.as_bytes())))
 }
 
-/// 视频缩略图缓存目录（不存在时创建）
-fn thumb_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| format!("获取缓存目录失败: {}", e))?
-        .join("video_thumbs");
-    fs::create_dir_all(&dir).map_err(|e| format!("创建缓存目录失败: {}", e))?;
-    Ok(dir)
+/// 内存缓存条目
+struct MemThumb {
+    thumb: VideoThumb,
+    bytes: usize,
+    last_used: u64,
 }
 
-fn thumb_cache_path(app: &AppHandle, key: &str) -> Result<PathBuf, String> {
-    Ok(thumb_cache_dir(app)?.join(format!("{}.jpg", key)))
+/// 会话级缩略图 LRU 内存缓存（不写磁盘）
+struct ThumbMemCache {
+    map: HashMap<String, MemThumb>,
+    total_bytes: usize,
+    clock: u64,
+    max_bytes: usize,
+    max_items: usize,
 }
 
-fn thumb_cache_stats(dir: &Path) -> (u64, usize) {
-    let mut size = 0u64;
-    let mut count = 0usize;
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let Ok(meta) = entry.metadata() else { continue };
-            if !meta.is_file() || !entry.file_name().to_string_lossy().ends_with(".jpg") {
-                continue;
+impl ThumbMemCache {
+    fn new(max_bytes: usize, max_items: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            total_bytes: 0,
+            clock: 0,
+            max_bytes,
+            max_items,
+        }
+    }
+
+    fn get(&mut self, key: &str) -> Option<VideoThumb> {
+        self.clock = self.clock.wrapping_add(1);
+        let clock = self.clock;
+        let entry = self.map.get_mut(key)?;
+        entry.last_used = clock;
+        Some(entry.thumb.clone())
+    }
+
+    fn put(&mut self, key: String, thumb: VideoThumb) {
+        self.clock = self.clock.wrapping_add(1);
+        // base64 data URI 大小 + key 与结构体近似开销
+        let bytes = thumb.data.len() + key.len() + 64;
+        if let Some(old) = self.map.insert(
+            key,
+            MemThumb {
+                thumb,
+                bytes,
+                last_used: self.clock,
+            },
+        ) {
+            self.total_bytes = self.total_bytes.saturating_sub(old.bytes);
+        }
+        self.total_bytes = self.total_bytes.saturating_add(bytes);
+        // 超限时淘汰最久未使用的条目
+        while (self.total_bytes > self.max_bytes || self.map.len() > self.max_items)
+            && !self.map.is_empty()
+        {
+            let victim = self
+                .map
+                .iter()
+                .min_by_key(|(_, e)| e.last_used)
+                .map(|(k, _)| k.clone());
+            match victim {
+                Some(k) => {
+                    if let Some(e) = self.map.remove(&k) {
+                        self.total_bytes = self.total_bytes.saturating_sub(e.bytes);
+                    }
+                }
+                None => break,
             }
-            size = size.saturating_add(meta.len());
-            count += 1;
-        }
-    }
-    (size, count)
-}
-
-/// 标记缓存文件最近被访问（LRU 依据）；失败忽略
-fn touch_cache_file(path: &Path) {
-    let now = std::time::SystemTime::now();
-    let times = fs::FileTimes::new().set_accessed(now).set_modified(now);
-    if let Ok(file) = fs::OpenOptions::new().write(true).open(path) {
-        let _ = file.set_times(times);
-    }
-}
-
-/// LRU 清理：超过上限时删除最久未访问的缩略图
-fn cleanup_thumb_cache(dir: &Path) {
-    cleanup_thumb_cache_with(dir, THUMB_CACHE_MAX_BYTES, THUMB_CACHE_MAX_FILES);
-}
-
-fn cleanup_thumb_cache_with(dir: &Path, max_bytes: u64, max_count: usize) {
-    let Ok(entries) = fs::read_dir(dir) else { return };
-    let mut files: Vec<(PathBuf, u64, std::time::SystemTime)> = Vec::new();
-    let mut total: u64 = 0;
-    let now = std::time::SystemTime::now();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let Ok(meta) = entry.metadata() else { continue };
-        if !meta.is_file() {
-            continue;
-        }
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.ends_with(".tmp") {
-            // 生成中途中断残留的临时文件，超过 1 小时清理
-            let stale = meta
-                .modified()
-                .ok()
-                .and_then(|t| now.duration_since(t).ok())
-                .map(|d| d.as_secs() > 3600)
-                .unwrap_or(false);
-            if stale {
-                let _ = fs::remove_file(&path);
-            }
-            continue;
-        }
-        if !name.ends_with(".jpg") {
-            continue;
-        }
-        total = total.saturating_add(meta.len());
-        files.push((path, meta.len(), meta.modified().unwrap_or(UNIX_EPOCH)));
-    }
-    if files.len() <= max_count && total <= max_bytes {
-        return;
-    }
-    // 容量清理到上限的 90%，给后续写入留余量；数量严格保留上限
-    let target_bytes = max_bytes / 10 * 9;
-    let target_count = max_count;
-    files.sort_by_key(|f| f.2); // 最旧（最久未访问）优先
-    let mut count = files.len();
-    for (path, len, _) in files {
-        if count <= target_count && total <= target_bytes {
-            break;
-        }
-        if fs::remove_file(&path).is_ok() {
-            count -= 1;
-            total = total.saturating_sub(len);
         }
     }
 }
 
-/// 缓存占用信息（设置页显示）
-#[derive(Serialize)]
-struct ThumbCacheInfo {
-    size_bytes: u64,
-    count: usize,
+fn thumb_mem() -> &'static Mutex<ThumbMemCache> {
+    static MEM: OnceLock<Mutex<ThumbMemCache>> = OnceLock::new();
+    MEM.get_or_init(|| Mutex::new(ThumbMemCache::new(THUMB_MEM_MAX_BYTES, THUMB_MEM_MAX_ITEMS)))
 }
 
-#[tauri::command]
-fn get_video_thumb_cache_info(app: AppHandle) -> Result<ThumbCacheInfo, String> {
-    let dir = thumb_cache_dir(&app)?;
-    let (size_bytes, count) = thumb_cache_stats(&dir);
-    Ok(ThumbCacheInfo { size_bytes, count })
+fn cached_thumb(key: &str) -> Option<VideoThumb> {
+    thumb_mem().lock().unwrap_or_else(|e| e.into_inner()).get(key)
 }
 
-/// 清空视频缩略图缓存（保留正在写入的 .tmp）
-#[tauri::command]
-fn clear_video_thumb_cache(app: AppHandle) -> Result<(), String> {
-    let dir = thumb_cache_dir(&app)?;
-    let entries = fs::read_dir(&dir).map_err(|e| format!("读取缓存目录失败: {}", e))?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && !entry.file_name().to_string_lossy().ends_with(".tmp") {
-            let _ = fs::remove_file(&path);
-        }
-    }
-    Ok(())
+fn store_thumb(key: &str, thumb: &VideoThumb) {
+    let mut stored = thumb.clone();
+    stored.cached = true;
+    thumb_mem()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .put(key.to_string(), stored);
 }
 
-fn read_cached_thumb(cache: &Path) -> Option<VideoThumb> {
-    let (width, height) = image::image_dimensions(cache).ok()?;
-    let bytes = fs::read(cache).ok()?;
-    // 更新访问时间，供 LRU 判断
-    touch_cache_file(cache);
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    Some(VideoThumb {
-        data: format!("data:image/jpeg;base64,{}", b64),
-        width,
-        height,
-        cached: true,
-    })
-}
-
-fn generate_thumb(path: &str, size: u32, cache: &Path, key: &str) -> Result<VideoThumb, String> {
-    if let Some(t) = read_cached_thumb(cache) {
+fn generate_thumb(path: &str, size: u32, key: &str) -> Result<VideoThumb, String> {
+    if let Some(t) = cached_thumb(key) {
         return Ok(t);
     }
     if thumb_failed_recently(key) {
         return Err("视频缩略图不可用".into());
     }
     let _slot = acquire_thumb_slot();
-    // 等待期间可能已有其他任务生成完成
-    if let Some(t) = read_cached_thumb(cache) {
+    // 等待并发槽位期间可能已有其他任务生成完成
+    if let Some(t) = cached_thumb(key) {
         return Ok(t);
     }
     let result = (|| -> Result<VideoThumb, String> {
@@ -1773,20 +1721,6 @@ fn generate_thumb(path: &str, size: u32, cache: &Path, key: &str) -> Result<Vide
         encoder
             .encode_image(&dynimg)
             .map_err(|e| format!("缩略图编码失败: {}", e))?;
-        let nonce = std::time::SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let tmp = cache.with_file_name(format!("{}.{}.{}.tmp", key, std::process::id(), nonce));
-        fs::write(&tmp, &jpg).map_err(|e| format!("写入缩略图缓存失败: {}", e))?;
-        let _ = fs::rename(&tmp, cache);
-        // 每写入 N 张触发一次后台 LRU 清理（启动时另有一次）
-        if THUMB_WRITES.fetch_add(1, Ordering::Relaxed) % THUMB_CLEAN_EVERY == 0 {
-            if let Some(dir) = cache.parent() {
-                let dir = dir.to_path_buf();
-                std::thread::spawn(move || cleanup_thumb_cache(&dir));
-            }
-        }
         let b64 = base64::engine::general_purpose::STANDARD.encode(&jpg);
         Ok(VideoThumb {
             data: format!("data:image/jpeg;base64,{}", b64),
@@ -1795,28 +1729,28 @@ fn generate_thumb(path: &str, size: u32, cache: &Path, key: &str) -> Result<Vide
             cached: false,
         })
     })();
-    if result.is_err() {
-        mark_thumb_failed(key);
+    match &result {
+        Ok(thumb) => store_thumb(key, thumb),
+        Err(_) => mark_thumb_failed(key),
     }
     result
 }
 
-/// 生成视频缩略图（按需从磁盘缓存读取）
+/// 生成视频缩略图（优先命中会话内存缓存）
 #[tauri::command]
-async fn load_video_thumbnail(app: AppHandle, path: String, size: u32) -> Result<VideoThumb, String> {
+async fn load_video_thumbnail(path: String, size: u32) -> Result<VideoThumb, String> {
     if path.is_empty() || !Path::new(&path).exists() {
         return Err("文件不存在".into());
     }
     let size = size.clamp(64, 1280);
-    let key = thumb_cache_key(&path, size)?;
-    let cache = thumb_cache_path(&app, &key)?;
-    if let Some(t) = read_cached_thumb(&cache) {
+    let key = thumb_key(&path, size)?;
+    if let Some(t) = cached_thumb(&key) {
         return Ok(t);
     }
     if thumb_failed_recently(&key) {
         return Err("视频缩略图不可用".into());
     }
-    tauri::async_runtime::spawn_blocking(move || generate_thumb(&path, size, &cache, &key))
+    tauri::async_runtime::spawn_blocking(move || generate_thumb(&path, size, &key))
         .await
         .map_err(|e| format!("缩略图任务失败: {}", e))?
 }
@@ -1991,16 +1925,6 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard::init())
         .manage(Mutex::new(None::<RecommendedWatcher>))
         .manage(Mutex::new(false))
-        .setup(|app| {
-            // 启动后异步执行一次 LRU 清理，不阻塞窗口显示
-            let handle = app.handle().clone();
-            std::thread::spawn(move || {
-                if let Ok(dir) = thumb_cache_dir(&handle) {
-                    cleanup_thumb_cache(&dir);
-                }
-            });
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             scan_folder,
             scan_folders,
@@ -2035,8 +1959,6 @@ pub fn run() {
             load_video_thumbnail,
             get_video_duration,
             set_wallpaper_from_image_data,
-            get_video_thumb_cache_info,
-            clear_video_thumb_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2163,45 +2085,37 @@ mod tests {
         fs::remove_dir_all(&base).unwrap();
     }
 
-    /// 缩略图缓存 LRU：超过容量/数量上限时删除最久未访问的文件
+    /// 缩略图内存缓存 LRU：超限淘汰最久未使用项，命中会刷新使用时间
     #[test]
-    fn thumb_cache_lru_cleanup() {
-        let dir = std::env::temp_dir().join(format!("imggroupx_thumb_lru_{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-
-        let base = std::time::SystemTime::now();
-        for i in 0..5u64 {
-            let p = dir.join(format!("{:016x}.jpg", i));
-            fs::write(&p, vec![0u8; 1024]).unwrap();
-            let t = base - std::time::Duration::from_secs((5 - i) * 60);
-            let f = fs::OpenOptions::new().write(true).open(&p).unwrap();
-            f.set_times(fs::FileTimes::new().set_modified(t)).unwrap();
+    fn thumb_mem_cache_lru() {
+        fn thumb(n: usize) -> VideoThumb {
+            VideoThumb {
+                data: "x".repeat(n),
+                width: 1,
+                height: 1,
+                cached: false,
+            }
         }
 
-        // 5 个 1KB 文件、上限 4KB → 删除最旧的文件直到低于 90% 目标
-        cleanup_thumb_cache_with(&dir, 4 * 1024, 100);
-        let mut names: Vec<String> = fs::read_dir(&dir)
-            .unwrap()
-            .flatten()
-            .map(|e| e.file_name().to_string_lossy().to_string())
-            .collect();
-        names.sort();
-        assert_eq!(names.len(), 3, "应剩下 3 个文件，实际 {:?}", names);
-        assert!(
-            !names.contains(&format!("{:016x}.jpg", 0)),
-            "最旧文件应被删除"
-        );
-        assert!(
-            !names.contains(&format!("{:016x}.jpg", 1)),
-            "次旧文件应被删除"
-        );
+        // 每条约 1000 + key + 64 字节；上限 2500 → 最多 2 条
+        let mut cache = ThumbMemCache::new(2500, 10);
+        cache.put("a".into(), thumb(1000));
+        cache.put("b".into(), thumb(1000));
+        assert!(cache.map.contains_key("b"));
+        // 访问 a，使其成为最近使用
+        assert!(cache.get("a").is_some());
+        // 插入第三条时，最久未使用的 b 应被淘汰
+        cache.put("c".into(), thumb(1000));
+        assert!(cache.get("a").is_some(), "最近访问的 a 应保留");
+        assert!(cache.get("b").is_none(), "最久未使用的 b 应被淘汰");
+        assert!(cache.get("c").is_some());
 
-        // 数量上限：3 个文件、上限 2 → 删除最旧的 1 个
-        cleanup_thumb_cache_with(&dir, 1024 * 1024, 2);
-        let remaining = fs::read_dir(&dir).unwrap().flatten().count();
-        assert_eq!(remaining, 2, "数量上限应生效");
-
-        fs::remove_dir_all(&dir).unwrap();
+        // 数量上限
+        let mut cache = ThumbMemCache::new(1024 * 1024, 2);
+        cache.put("a".into(), thumb(10));
+        cache.put("b".into(), thumb(10));
+        cache.put("c".into(), thumb(10));
+        assert_eq!(cache.map.len(), 2, "数量上限应生效");
+        assert!(cache.get("a").is_none(), "最旧的 a 应被淘汰");
     }
 }

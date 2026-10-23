@@ -157,40 +157,8 @@ function resetShortcut(id: string, isAlt = false) {
   }
 }
 
-/** 视频缩略图缓存信息 */
-const thumbCacheInfo = ref({ size_bytes: 0, count: 0 })
-const thumbCacheLoading = ref(false)
-
-function formatCacheSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB'
-  if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB'
-  return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB'
-}
-
-async function loadThumbCacheInfo() {
-  thumbCacheLoading.value = true
-  try {
-    thumbCacheInfo.value = await invoke<{ size_bytes: number; count: number }>('get_video_thumb_cache_info')
-  } catch { /* 忽略 */ }
-  finally {
-    thumbCacheLoading.value = false
-  }
-}
-
-async function clearThumbCache() {
-  try {
-    await invoke('clear_video_thumb_cache')
-    showToast(t('hint.video_cache_cleared'))
-    await loadThumbCacheInfo()
-  } catch (e: any) {
-    showToast(t('hint.video_cache_clear_failed', { msg: e.message || e }))
-  }
-}
-
 onMounted(() => {
   document.addEventListener('keydown', onRecordKeydown, true)
-  loadThumbCacheInfo()
 })
 
 onUnmounted(() => {
@@ -601,16 +569,6 @@ onUnmounted(() => {
             </div>
             <div class="setting-hint">{{ $t('settings.include_videos_hint') }}</div>
 
-            <!-- 视频缩略图缓存 -->
-            <h4 style="margin-top: 24px;">{{ $t('settings.video_cache') }}</h4>
-            <div class="setting-row">
-              <span class="cache-usage">{{ $t('settings.video_cache_usage', { size: formatCacheSize(thumbCacheInfo.size_bytes), count: thumbCacheInfo.count }) }}</span>
-              <button class="preset-browse" :disabled="thumbCacheLoading" @click="clearThumbCache">
-                {{ $t('settings.video_cache_clear') }}
-              </button>
-            </div>
-            <div class="setting-hint">{{ $t('settings.video_cache_hint') }}</div>
-
             <!-- 空文件夹扫描设置 -->
             <h4 style="margin-top: 24px;">{{ $t('settings.skip_empty_folders') }}</h4>
             <div class="setting-row">
@@ -841,11 +799,6 @@ onUnmounted(() => {
   font-size: 13px;
   color: rgba(255,255,255,0.6);
   flex-shrink: 0;
-}
-.cache-usage {
-  flex: 1;
-  font-size: 13px;
-  color: rgba(255,255,255,0.6);
 }
 .setting-row input[type="range"] {
   flex: 1;
