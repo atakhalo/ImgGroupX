@@ -1,17 +1,12 @@
 <script setup lang="ts">
 import type { ImageItem } from '../types'
-import { state, loadImageBase64, ensurePrivacyIcon, requestImageDimsUrgent } from '../stores/imageStore'
+import { state, loadImageBase64, ensurePrivacyIcon, requestImageDimsUrgent, loadVideoThumb, getVideoDuration, VIDEO_THUMB_GRID_SIZE } from '../stores/imageStore'
+import { isImageExt, isVideoExt, formatDuration } from '../utils/media'
 import { observeOnce, unobserveElement } from '../utils/lazyObserver'
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import ImageContextMenu from './ImageContextMenu.vue'
 
-
-/** 可渲染为图片的支持格式 */
-const IMAGE_EXTENSIONS = new Set([
-  'jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif',
-  'tif', 'tiff', 'jxl', 'avif', 'svg', 'pcx', 'ico',
-])
 
 const props = defineProps<{
   item: ImageItem
@@ -25,7 +20,8 @@ const emit = defineEmits<{
   select: [item: ImageItem, ctrl: boolean, shift: boolean]
 }>()
 
-const isImage = computed(() => IMAGE_EXTENSIONS.has(props.item.ext))
+const isImage = computed(() => isImageExt(props.item.ext))
+const isVideo = computed(() => isVideoExt(props.item.ext))
 
 /** 格式化文件大小 */
 function formatSize(bytes: number): string {
@@ -62,14 +58,35 @@ let loadingPromise: Promise<string> | null = null
 let hasTriggered = false
 
 async function doLoad() {
-  if (!isImage.value) return // 非图片不加载
-  // 隐私模式：跳过真实图片加载，显示 app 图标
+  if (!isImage.value && !isVideo.value) return // 其他文件不加载
+  // 隐私模式：跳过真实图片/缩略图加载，显示 app 图标
   if (state.settings.privacyMode) {
     imgSrc.value = await ensurePrivacyIcon()
     isLoaded.value = true
     return
   }
   if (hasError.value) return
+  if (isVideo.value) {
+    if (props.item.thumb) {
+      imgSrc.value = props.item.thumb
+      isLoaded.value = true
+      return
+    }
+    if (props.item.thumbFailed) {
+      hasError.value = true
+      return
+    }
+    isLoaded.value = false
+    try {
+      const data = await loadVideoThumb(props.item, VIDEO_THUMB_GRID_SIZE)
+      imgSrc.value = data
+      isLoaded.value = true
+    } catch {
+      hasError.value = true
+      isLoaded.value = false
+    }
+    return
+  }
   if (props.item.base64) {
     imgSrc.value = props.item.base64
     isLoaded.value = true
@@ -108,6 +125,22 @@ onUnmounted(() => {
 
 // 监听 base64 被外部填充（如批量预加载）
 watch(() => props.item.base64, (val) => {
+  if (isVideo.value) return
+  if (val && !isLoaded.value) {
+    imgSrc.value = val
+    isLoaded.value = true
+    hasError.value = false
+  } else if (!val && imgSrc.value) {
+    imgSrc.value = ''
+    isLoaded.value = false
+    hasTriggered = false
+    if (isInViewport()) doLoad()
+  }
+})
+
+// 视频缩略图被外部释放后，重新进入视口时再加载
+watch(() => props.item.thumb, (val) => {
+  if (!isVideo.value) return
   if (val && !isLoaded.value) {
     imgSrc.value = val
     isLoaded.value = true
@@ -165,26 +198,45 @@ async function loadMetadata() {
   metaLoading.value = true
   metaFields.value = []
   try {
-    const [allFields, uc, times] = await Promise.all([
-      invoke<[string, string][]>('get_image_metadata', { path: item.path }).catch(() => [] as [string, string][]),
-      invoke<string>('read_user_comment', { path: item.path }).catch(() => ''),
-      invoke<[string, string]>('get_file_times', { path: item.path }).catch(() => ['', ''] as [string, string]),
-    ])
-    let merged: [string, string][]
-    if (uc) {
-      merged = allFields.filter(([k]) => k !== 'UserComment')
-      merged.push(['UserComment', uc])
+    if (isVideo.value) {
+      // 确保缩略图尺寸已就绪（通常已由网格加载触发）
+      if (!item.width || !item.height) {
+        try { await loadVideoThumb(item, VIDEO_THUMB_GRID_SIZE) } catch { /* 失败显示 — */ }
+      }
+      const [ms, times] = await Promise.all([
+        getVideoDuration(item),
+        invoke<[string, string]>('get_file_times', { path: item.path }).catch(() => ['', ''] as [string, string]),
+      ])
+      const fields: [string, string][] = [
+        ['文件大小', formatSize(item.size_bytes)],
+        ['分辨率（缩略图）', item.width && item.height ? `${item.width}×${item.height}` : '—'],
+      ]
+      if (ms != null) fields.push(['时长', formatDuration(ms)])
+      if (times[0]) fields.push(['创建时间', times[0]])
+      if (times[1]) fields.push(['修改时间', times[1]])
+      metaFields.value = fields
     } else {
-      merged = allFields
+      const [allFields, uc, times] = await Promise.all([
+        invoke<[string, string][]>('get_image_metadata', { path: item.path }).catch(() => [] as [string, string][]),
+        invoke<string>('read_user_comment', { path: item.path }).catch(() => ''),
+        invoke<[string, string]>('get_file_times', { path: item.path }).catch(() => ['', ''] as [string, string]),
+      ])
+      let merged: [string, string][]
+      if (uc) {
+        merged = allFields.filter(([k]) => k !== 'UserComment')
+        merged.push(['UserComment', uc])
+      } else {
+        merged = allFields
+      }
+      if (times[0]) merged.push(['创建时间', times[0]])
+      if (times[1]) merged.push(['修改时间', times[1]])
+      if (merged.length === 0) {
+        // 分辨率按需读取（扫描阶段不再预读）
+        await requestImageDimsUrgent([item])
+        merged = [['文件大小', formatSize(item.size_bytes)], ['分辨率', `${item.width}×${item.height}`]]
+      }
+      metaFields.value = merged
     }
-    if (times[0]) merged.push(['创建时间', times[0]])
-    if (times[1]) merged.push(['修改时间', times[1]])
-    if (merged.length === 0) {
-      // 分辨率按需读取（扫描阶段不再预读）
-      await requestImageDimsUrgent([item])
-      merged = [['文件大小', formatSize(item.size_bytes)], ['分辨率', `${item.width}×${item.height}`]]
-    }
-    metaFields.value = merged
   } catch (e) {
     metaFields.value = []
   } finally {
@@ -284,8 +336,8 @@ watch(showMetaDialog, async (val) => {
       </div>
     </Teleport>
     <div class="item-inner" :style="{ borderRadius: borderRadius + 'px' }">
-      <!-- 非图片文件：仅显示文件名 -->
-      <template v-if="!isImage">
+      <!-- 非图片、非视频文件：仅显示文件名 -->
+      <template v-if="!isImage && !isVideo">
         <div class="file-placeholder">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.35">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -314,7 +366,7 @@ watch(showMetaDialog, async (val) => {
             </svg>
             <span class="placeholder-file-name">{{ item.name }}</span>
             <span class="placeholder-file-size">{{ formatSize(item.size_bytes) }}</span>
-            <span class="placeholder-skipped">已跳过</span>
+            <span class="placeholder-skipped">{{ isVideo ? '缩略图不可用' : '已跳过' }}</span>
           </div>
         </div>
         <img
@@ -328,6 +380,10 @@ watch(showMetaDialog, async (val) => {
           @load="isLoaded = true"
           @error="hasError = true; isLoaded = false"
         />
+        <!-- 视频角标（区分图片） -->
+        <div v-if="isVideo && !state.settings.privacyMode" class="video-badge">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="white"><path d="M8 5v14l11-7z" /></svg>
+        </div>
         <div class="item-overlay">
           <span class="item-name">{{ item.name }}</span>
         </div>
@@ -457,7 +513,23 @@ watch(showMetaDialog, async (val) => {
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: contain;
   transition: opacity 0.3s;
+}
+
+.video-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 2;
+  pointer-events: none;
 }
 
 .item-overlay {

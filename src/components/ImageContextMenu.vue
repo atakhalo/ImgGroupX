@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { ImageItem, MarkLevel } from '../types'
-import { state, showToast, showRenameDialog, setImageMark, applyFileChanges, setSuppressWatcher } from '../stores/imageStore'
+import { state, loadPreview, showToast, showRenameDialog, setImageMark, applyFileChanges, setSuppressWatcher } from '../stores/imageStore'
 import { t } from '../i18n'
+import { isVideoExt, MEDIA_FILTER_EXTENSIONS } from '../utils/media'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { save } from '@tauri-apps/plugin-dialog'
@@ -123,7 +124,7 @@ async function handleSaveAs() {
   try {
     const dest = await save({
       defaultPath: item.name,
-      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff'] }],
+      filters: [{ name: 'Images', extensions: MEDIA_FILTER_EXTENSIONS }],
     })
     if (!dest) return
     const destStr = String(dest).replace(/\\/g, '/')
@@ -144,13 +145,23 @@ async function handleSaveAs() {
   }
 }
 
-/* ===== 设置为壁纸 ===== */
+/* ===== 设置为壁纸（图片用原图，视频用当前缩略图） ===== */
 async function handleSetWallpaper() {
   close()
   const item = props.item
   if (!item) return
   try {
-    await invoke('set_wallpaper', { path: item.path })
+    if (isVideoExt(item.ext)) {
+      // 优先用 1280 档缩略图，失败时退回当前显示档
+      let src = item.preview || props.imgSrc
+      if (!src) {
+        try { src = await loadPreview(item) } catch { /* 失败回退 */ }
+      }
+      if (!src) { showToast('缩略图尚未加载'); return }
+      await invoke('set_wallpaper_from_image_data', { data: src })
+    } else {
+      await invoke('set_wallpaper', { path: item.path })
+    }
     showToast(t('hint.wallpaper_set'))
   } catch (e: any) {
     showToast(t('hint.wallpaper_set_failed', { msg: e.message || e }))

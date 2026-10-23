@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
-use std::time::UNIX_EPOCH;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex, OnceLock};
+use std::time::{Instant, UNIX_EPOCH};
 use base64::Engine;
 use chrono::{DateTime, Local};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -17,6 +18,22 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
     "pcx", "tif", "tiff", "jxl", "avif", "svg",
     "ico",
 ];
+
+/// 视频扩展名（缩略图由 Windows Shell 生成）
+const VIDEO_EXTENSIONS: &[&str] = &[
+    "mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "ts", "m2ts",
+    "mts", "mpg", "mpeg", "3gp", "3g2", "ogv", "rm", "rmvb", "asf", "vob",
+    "f4v", "mxf",
+];
+
+fn is_video_ext(ext: &str) -> bool {
+    VIDEO_EXTENSIONS.contains(&ext)
+}
+
+/// 是否为媒体文件（图片，或开关开启时的视频）
+fn is_supported_media(ext: &str, include_videos: bool) -> bool {
+    SUPPORTED_EXTENSIONS.contains(&ext) || (include_videos && is_video_ext(ext))
+}
 
 #[derive(Debug, Serialize, Clone)]
 pub struct ImageInfo {
@@ -69,7 +86,7 @@ fn format_modified(metadata: &fs::Metadata) -> String {
 /// 遍历目录树，收集子目录与按目录切分的文件批次。
 /// 用 WalkDir 缓存的 file_type/metadata 代替 Path::is_dir/is_file + fs::metadata，
 /// 避免每个文件 2~3 次额外系统调用（2.9 万文件实测可省约 3.7 秒）。
-fn collect_dir_batches(root: &Path, scan_all_files: bool) -> (Vec<DirBatch>, Vec<String>) {
+fn collect_dir_batches(root: &Path, scan_all_files: bool, include_videos: bool) -> (Vec<DirBatch>, Vec<String>) {
     let mut batches: Vec<DirBatch> = Vec::new();
     let mut dirs: Vec<String> = Vec::new();
 
@@ -99,7 +116,7 @@ fn collect_dir_batches(root: &Path, scan_all_files: bool) -> (Vec<DirBatch>, Vec
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase())
             .unwrap_or_default();
-        if !scan_all_files && !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+        if !scan_all_files && !is_supported_media(&ext, include_videos) {
             continue;
         }
 
@@ -210,12 +227,12 @@ fn read_image_dims(paths: Vec<String>) -> Vec<DimResult> {
 
 /// 扫描文件夹，递归获取所有图片文件信息（尺寸由前端按需读取）
 #[tauri::command]
-fn scan_folder(path: String, scan_all_files: bool) -> Result<ScanResult, String> {
+fn scan_folder(path: String, scan_all_files: bool, include_videos: bool) -> Result<ScanResult, String> {
     let path = Path::new(&path);
     if !path.exists() {
         return Err("路径不存在".into());
     }
-    let (batches, dirs) = collect_dir_batches(path, scan_all_files);
+    let (batches, dirs) = collect_dir_batches(path, scan_all_files, include_videos);
     let images = flatten_batches(&batches);
     let total = images.len();
     Ok(ScanResult { images, total, dirs })
@@ -223,10 +240,10 @@ fn scan_folder(path: String, scan_all_files: bool) -> Result<ScanResult, String>
 
 /// 扫描多个文件夹
 #[tauri::command]
-fn scan_folders(paths: Vec<String>, scan_all_files: bool) -> Result<Vec<ScanResult>, String> {
+fn scan_folders(paths: Vec<String>, scan_all_files: bool, include_videos: bool) -> Result<Vec<ScanResult>, String> {
     paths
         .into_iter()
-        .map(|path| scan_folder(path, scan_all_files))
+        .map(|path| scan_folder(path, scan_all_files, include_videos))
         .collect()
 }
 
@@ -249,7 +266,7 @@ static SCAN_CANCELLED: AtomicBool = AtomicBool::new(false);
 /// 渐进式扫描：遍历完成后逐目录推送，前端边收边建树。
 /// 全程只读元数据（walkdir 缓存），不打开任何文件，2.9 万文件实测约 0.1 秒
 #[tauri::command]
-fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>, scan_all_files: bool) -> Result<(), String> {
+fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>, scan_all_files: bool, include_videos: bool) -> Result<(), String> {
     SCAN_CANCELLED.store(false, Ordering::Relaxed);
 
     std::thread::spawn(move || {
@@ -261,7 +278,7 @@ fn scan_folders_progressive(app_handle: AppHandle, paths: Vec<String>, scan_all_
                 continue;
             }
 
-            let (batches, dirs) = collect_dir_batches(root_dir, scan_all_files);
+            let (batches, dirs) = collect_dir_batches(root_dir, scan_all_files, include_videos);
 
             // 目录结构先发给前端，可立即显示空节点
             if !dirs.is_empty() {
@@ -1267,7 +1284,7 @@ fn update_watcher(app_handle: AppHandle, paths: Vec<String>) -> Result<(), Strin
             if matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)) {
                 let paths: Vec<String> = event.paths.iter().filter_map(|p| {
                     let ext = p.extension()?.to_str()?.to_lowercase();
-                    if SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+                    if is_supported_media(&ext, true) {
                         Some(p.to_string_lossy().to_string())
                     } else {
                         None
@@ -1303,7 +1320,7 @@ fn update_watcher(app_handle: AppHandle, paths: Vec<String>) -> Result<(), Strin
 
 /// 获取多个文件的信息（用于细粒度刷新）
 #[tauri::command]
-fn get_files_info(paths: Vec<String>, scan_all_files: bool) -> Result<Vec<ImageInfo>, String> {
+fn get_files_info(paths: Vec<String>, scan_all_files: bool, include_videos: bool) -> Result<Vec<ImageInfo>, String> {
     let mut result = Vec::new();
     for p in &paths {
         let entry_path = Path::new(p);
@@ -1315,7 +1332,7 @@ fn get_files_info(paths: Vec<String>, scan_all_files: bool) -> Result<Vec<ImageI
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase())
             .unwrap_or_default();
-        if !scan_all_files && !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+        if !scan_all_files && !is_supported_media(&ext, include_videos) {
             continue;
         }
         let metadata = fs::metadata(entry_path).map_err(|e| e.to_string())?;
@@ -1331,7 +1348,12 @@ fn get_files_info(paths: Vec<String>, scan_all_files: bool) -> Result<Vec<ImageI
                 dt.format("%Y-%m-%d %H:%M:%S").to_string()
             })
             .unwrap_or_default();
-        let (width, height) = get_image_dimensions(entry_path);
+        // 视频尺寸由缩略图命令返回，这里不做文件头解析
+        let (width, height) = if is_video_ext(&ext) {
+            (0, 0)
+        } else {
+            get_image_dimensions(entry_path)
+        };
         let name = entry_path
             .file_name()
             .and_then(|n| n.to_str())
@@ -1500,6 +1522,467 @@ fn set_wallpaper(path: String) -> Result<(), String> {
         .map_err(|e| format!("设置壁纸模式失败: {}", e))
 }
 
+// ===== 视频缩略图 / 时长（Windows Shell） =====
+
+/// 同时调用 Shell 缩略图接口的上限。
+/// 实测 4 并发稳定、8 并发会访问冲突崩溃，这里取 3 留余量。
+const THUMB_CONCURRENCY: usize = 3;
+static THUMB_ACTIVE: Mutex<usize> = Mutex::new(0);
+static THUMB_CV: Condvar = Condvar::new();
+
+/// 缩略图磁盘缓存上限：超过任一阈值时按最近访问时间（mtime）删除最旧
+const THUMB_CACHE_MAX_BYTES: u64 = 300 * 1024 * 1024;
+const THUMB_CACHE_MAX_FILES: usize = 8000;
+/// 每写入 N 张触发一次增量清理
+const THUMB_CLEAN_EVERY: usize = 50;
+static THUMB_WRITES: AtomicUsize = AtomicUsize::new(0);
+
+struct ThumbSlot;
+
+impl Drop for ThumbSlot {
+    fn drop(&mut self) {
+        let mut active = THUMB_ACTIVE.lock().unwrap_or_else(|e| e.into_inner());
+        *active = active.saturating_sub(1);
+        THUMB_CV.notify_one();
+    }
+}
+
+fn acquire_thumb_slot() -> ThumbSlot {
+    let mut active = THUMB_ACTIVE.lock().unwrap_or_else(|e| e.into_inner());
+    while *active >= THUMB_CONCURRENCY {
+        active = THUMB_CV.wait(active).unwrap_or_else(|e| e.into_inner());
+    }
+    *active += 1;
+    ThumbSlot
+}
+
+/// 失败负缓存（key 已含路径/修改时间/大小，文件变化后自然失效）
+fn thumb_failures() -> &'static Mutex<HashMap<String, Instant>> {
+    static FAILS: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+    FAILS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn thumb_failed_recently(key: &str) -> bool {
+    let mut map = thumb_failures().lock().unwrap_or_else(|e| e.into_inner());
+    match map.get(key) {
+        Some(t) if t.elapsed().as_secs() < 300 => true,
+        Some(_) => {
+            map.remove(key);
+            false
+        }
+        None => false,
+    }
+}
+
+fn mark_thumb_failed(key: &str) {
+    let mut map = thumb_failures().lock().unwrap_or_else(|e| e.into_inner());
+    if map.len() > 2000 {
+        map.clear();
+    }
+    map.insert(key.to_string(), Instant::now());
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct VideoThumb {
+    pub data: String,
+    pub width: u32,
+    pub height: u32,
+    pub cached: bool,
+}
+
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for &b in bytes {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// 缓存 key：路径 + 修改时间 + 大小 + 请求尺寸
+fn thumb_cache_key(path: &str, size: u32) -> Result<String, String> {
+    let meta = fs::metadata(path).map_err(|e| format!("读取文件信息失败: {}", e))?;
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let norm = path.replace('/', "\\");
+    let raw = format!("{}\0{}\0{}\0{}", norm, mtime, meta.len(), size);
+    Ok(format!("{:016x}", fnv1a(raw.as_bytes())))
+}
+
+/// 视频缩略图缓存目录（不存在时创建）
+fn thumb_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("获取缓存目录失败: {}", e))?
+        .join("video_thumbs");
+    fs::create_dir_all(&dir).map_err(|e| format!("创建缓存目录失败: {}", e))?;
+    Ok(dir)
+}
+
+fn thumb_cache_path(app: &AppHandle, key: &str) -> Result<PathBuf, String> {
+    Ok(thumb_cache_dir(app)?.join(format!("{}.jpg", key)))
+}
+
+fn thumb_cache_stats(dir: &Path) -> (u64, usize) {
+    let mut size = 0u64;
+    let mut count = 0usize;
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let Ok(meta) = entry.metadata() else { continue };
+            if !meta.is_file() || !entry.file_name().to_string_lossy().ends_with(".jpg") {
+                continue;
+            }
+            size = size.saturating_add(meta.len());
+            count += 1;
+        }
+    }
+    (size, count)
+}
+
+/// 标记缓存文件最近被访问（LRU 依据）；失败忽略
+fn touch_cache_file(path: &Path) {
+    let now = std::time::SystemTime::now();
+    let times = fs::FileTimes::new().set_accessed(now).set_modified(now);
+    if let Ok(file) = fs::OpenOptions::new().write(true).open(path) {
+        let _ = file.set_times(times);
+    }
+}
+
+/// LRU 清理：超过上限时删除最久未访问的缩略图
+fn cleanup_thumb_cache(dir: &Path) {
+    cleanup_thumb_cache_with(dir, THUMB_CACHE_MAX_BYTES, THUMB_CACHE_MAX_FILES);
+}
+
+fn cleanup_thumb_cache_with(dir: &Path, max_bytes: u64, max_count: usize) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    let mut files: Vec<(PathBuf, u64, std::time::SystemTime)> = Vec::new();
+    let mut total: u64 = 0;
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.ends_with(".tmp") {
+            // 生成中途中断残留的临时文件，超过 1 小时清理
+            let stale = meta
+                .modified()
+                .ok()
+                .and_then(|t| now.duration_since(t).ok())
+                .map(|d| d.as_secs() > 3600)
+                .unwrap_or(false);
+            if stale {
+                let _ = fs::remove_file(&path);
+            }
+            continue;
+        }
+        if !name.ends_with(".jpg") {
+            continue;
+        }
+        total = total.saturating_add(meta.len());
+        files.push((path, meta.len(), meta.modified().unwrap_or(UNIX_EPOCH)));
+    }
+    if files.len() <= max_count && total <= max_bytes {
+        return;
+    }
+    // 容量清理到上限的 90%，给后续写入留余量；数量严格保留上限
+    let target_bytes = max_bytes / 10 * 9;
+    let target_count = max_count;
+    files.sort_by_key(|f| f.2); // 最旧（最久未访问）优先
+    let mut count = files.len();
+    for (path, len, _) in files {
+        if count <= target_count && total <= target_bytes {
+            break;
+        }
+        if fs::remove_file(&path).is_ok() {
+            count -= 1;
+            total = total.saturating_sub(len);
+        }
+    }
+}
+
+/// 缓存占用信息（设置页显示）
+#[derive(Serialize)]
+struct ThumbCacheInfo {
+    size_bytes: u64,
+    count: usize,
+}
+
+#[tauri::command]
+fn get_video_thumb_cache_info(app: AppHandle) -> Result<ThumbCacheInfo, String> {
+    let dir = thumb_cache_dir(&app)?;
+    let (size_bytes, count) = thumb_cache_stats(&dir);
+    Ok(ThumbCacheInfo { size_bytes, count })
+}
+
+/// 清空视频缩略图缓存（保留正在写入的 .tmp）
+#[tauri::command]
+fn clear_video_thumb_cache(app: AppHandle) -> Result<(), String> {
+    let dir = thumb_cache_dir(&app)?;
+    let entries = fs::read_dir(&dir).map_err(|e| format!("读取缓存目录失败: {}", e))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && !entry.file_name().to_string_lossy().ends_with(".tmp") {
+            let _ = fs::remove_file(&path);
+        }
+    }
+    Ok(())
+}
+
+fn read_cached_thumb(cache: &Path) -> Option<VideoThumb> {
+    let (width, height) = image::image_dimensions(cache).ok()?;
+    let bytes = fs::read(cache).ok()?;
+    // 更新访问时间，供 LRU 判断
+    touch_cache_file(cache);
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Some(VideoThumb {
+        data: format!("data:image/jpeg;base64,{}", b64),
+        width,
+        height,
+        cached: true,
+    })
+}
+
+fn generate_thumb(path: &str, size: u32, cache: &Path, key: &str) -> Result<VideoThumb, String> {
+    if let Some(t) = read_cached_thumb(cache) {
+        return Ok(t);
+    }
+    if thumb_failed_recently(key) {
+        return Err("视频缩略图不可用".into());
+    }
+    let _slot = acquire_thumb_slot();
+    // 等待期间可能已有其他任务生成完成
+    if let Some(t) = read_cached_thumb(cache) {
+        return Ok(t);
+    }
+    let result = (|| -> Result<VideoThumb, String> {
+        let (width, height, rgba) = shell_thumbnail(path, size as i32)?;
+        let img = image::RgbaImage::from_raw(width, height, rgba)
+            .ok_or_else(|| "缩略图数据无效".to_string())?;
+        let dynimg = image::DynamicImage::ImageRgba8(img);
+        let mut jpg: Vec<u8> = Vec::new();
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpg, 82);
+        encoder
+            .encode_image(&dynimg)
+            .map_err(|e| format!("缩略图编码失败: {}", e))?;
+        let nonce = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let tmp = cache.with_file_name(format!("{}.{}.{}.tmp", key, std::process::id(), nonce));
+        fs::write(&tmp, &jpg).map_err(|e| format!("写入缩略图缓存失败: {}", e))?;
+        let _ = fs::rename(&tmp, cache);
+        // 每写入 N 张触发一次后台 LRU 清理（启动时另有一次）
+        if THUMB_WRITES.fetch_add(1, Ordering::Relaxed) % THUMB_CLEAN_EVERY == 0 {
+            if let Some(dir) = cache.parent() {
+                let dir = dir.to_path_buf();
+                std::thread::spawn(move || cleanup_thumb_cache(&dir));
+            }
+        }
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&jpg);
+        Ok(VideoThumb {
+            data: format!("data:image/jpeg;base64,{}", b64),
+            width,
+            height,
+            cached: false,
+        })
+    })();
+    if result.is_err() {
+        mark_thumb_failed(key);
+    }
+    result
+}
+
+/// 生成视频缩略图（按需从磁盘缓存读取）
+#[tauri::command]
+async fn load_video_thumbnail(app: AppHandle, path: String, size: u32) -> Result<VideoThumb, String> {
+    if path.is_empty() || !Path::new(&path).exists() {
+        return Err("文件不存在".into());
+    }
+    let size = size.clamp(64, 1280);
+    let key = thumb_cache_key(&path, size)?;
+    let cache = thumb_cache_path(&app, &key)?;
+    if let Some(t) = read_cached_thumb(&cache) {
+        return Ok(t);
+    }
+    if thumb_failed_recently(&key) {
+        return Err("视频缩略图不可用".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || generate_thumb(&path, size, &cache, &key))
+        .await
+        .map_err(|e| format!("缩略图任务失败: {}", e))?
+}
+
+#[cfg(target_os = "windows")]
+fn shell_thumbnail(path: &str, size: i32) -> Result<(u32, u32, Vec<u8>), String> {
+    use windows::core::HSTRING;
+    use windows::Win32::Foundation::SIZE;
+    use windows::Win32::Graphics::Gdi::{
+        DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO,
+        BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ,
+    };
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{
+        IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK,
+        SIIGBF_THUMBNAILONLY,
+    };
+
+    fn hbitmap_to_rgba(hbm: HBITMAP) -> Result<(u32, u32, Vec<u8>), String> {
+        use std::ffi::c_void;
+        unsafe {
+            let mut bmp = BITMAP::default();
+            let got = GetObjectW(
+                HGDIOBJ(hbm.0),
+                std::mem::size_of::<BITMAP>() as i32,
+                Some(&mut bmp as *mut _ as *mut c_void),
+            );
+            if got == 0 {
+                return Err("读取缩略图位图失败".into());
+            }
+            let w = bmp.bmWidth.max(0) as u32;
+            let h = bmp.bmHeight.max(0) as u32;
+            if w == 0 || h == 0 {
+                return Err("缩略图尺寸为 0".into());
+            }
+            let mut bi = BITMAPINFO::default();
+            bi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+            bi.bmiHeader.biWidth = w as i32;
+            bi.bmiHeader.biHeight = -(h as i32); // top-down
+            bi.bmiHeader.biPlanes = 1;
+            bi.bmiHeader.biBitCount = 32;
+            bi.bmiHeader.biCompression = BI_RGB.0;
+            let mut buf = vec![0u8; (w * h * 4) as usize];
+            let hdc: HDC = GetDC(None);
+            let lines = GetDIBits(
+                hdc,
+                hbm,
+                0,
+                h,
+                Some(buf.as_mut_ptr() as *mut c_void),
+                &mut bi,
+                DIB_RGB_COLORS,
+            );
+            ReleaseDC(None, hdc);
+            if lines == 0 {
+                return Err("读取缩略图像素失败".into());
+            }
+            // BGRA -> RGB
+            for px in buf.chunks_exact_mut(4) {
+                px.swap(0, 2);
+                px[3] = 255;
+            }
+            Ok((w, h, buf))
+        }
+    }
+
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        if hr.is_err() {
+            return Err(format!("COM 初始化失败: {:?}", hr));
+        }
+        let result = (|| -> Result<(u32, u32, Vec<u8>), String> {
+            let factory: IShellItemImageFactory =
+                SHCreateItemFromParsingName(&HSTRING::from(path), None)
+                    .map_err(|e| format!("读取缩略图失败: {:?}", e))?;
+            let hbm = factory
+                .GetImage(
+                    SIZE {
+                        cx: size,
+                        cy: size,
+                    },
+                    SIIGBF_BIGGERSIZEOK | SIIGBF_THUMBNAILONLY,
+                )
+                .map_err(|e| format!("生成缩略图失败: {:?}", e))?;
+            let out = hbitmap_to_rgba(hbm);
+            let _ = DeleteObject(HGDIOBJ(hbm.0));
+            out
+        })();
+        CoUninitialize();
+        result
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn shell_thumbnail(_path: &str, _size: i32) -> Result<(u32, u32, Vec<u8>), String> {
+    Err("当前平台不支持视频缩略图".into())
+}
+
+/// 读取视频时长（毫秒）
+#[tauri::command]
+async fn get_video_duration(path: String) -> Result<u64, String> {
+    if path.is_empty() || !Path::new(&path).exists() {
+        return Err("文件不存在".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || read_video_duration(&path))
+        .await
+        .map_err(|e| format!("时长任务失败: {}", e))?
+}
+
+#[cfg(target_os = "windows")]
+fn read_video_duration(path: &str) -> Result<u64, String> {
+    use windows::core::{GUID, HSTRING};
+    use windows::Win32::Foundation::PROPERTYKEY;
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{IShellItem2, SHCreateItemFromParsingName};
+
+    // System.Media.Duration（100ns）
+    let key = PROPERTYKEY {
+        fmtid: GUID::from_u128(0x64440490_4c8b_11d1_8b70_080036b11a03),
+        pid: 3,
+    };
+
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        if hr.is_err() {
+            return Err(format!("COM 初始化失败: {:?}", hr));
+        }
+        let result = (|| -> Result<u64, String> {
+            let item: IShellItem2 = SHCreateItemFromParsingName(&HSTRING::from(path), None)
+                .map_err(|e| format!("读取文件属性失败: {:?}", e))?;
+            let units = item
+                .GetUInt64(&key)
+                .map_err(|_| "该视频没有可用的时长信息".to_string())?;
+            Ok(units / 10_000)
+        })();
+        CoUninitialize();
+        result
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_video_duration(_path: &str) -> Result<u64, String> {
+    Err("当前平台不支持读取视频时长".into())
+}
+
+/// 用图片数据设置壁纸（视频缩略图走这里，图片仍走 set_wallpaper(path)）
+#[tauri::command]
+fn set_wallpaper_from_image_data(app: AppHandle, data: String) -> Result<(), String> {
+    let (header, payload) = data.split_once(',').ok_or("无效的图片数据")?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(payload)
+        .map_err(|e| format!("解码图片数据失败: {}", e))?;
+    let ext = if header.contains("image/png") { "png" } else { "jpg" };
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("获取缓存目录失败: {}", e))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("创建缓存目录失败: {}", e))?;
+    let path = dir.join(format!("wallpaper_preview.{}", ext));
+    fs::write(&path, bytes).map_err(|e| format!("写入壁纸文件失败: {}", e))?;
+    wallpaper::set_from_path(&path.to_string_lossy())
+        .map_err(|e| format!("设置壁纸失败: {}", e))?;
+    wallpaper::set_mode(wallpaper::Mode::Crop)
+        .map_err(|e| format!("设置壁纸模式失败: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1508,6 +1991,16 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard::init())
         .manage(Mutex::new(None::<RecommendedWatcher>))
         .manage(Mutex::new(false))
+        .setup(|app| {
+            // 启动后异步执行一次 LRU 清理，不阻塞窗口显示
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                if let Ok(dir) = thumb_cache_dir(&handle) {
+                    cleanup_thumb_cache(&dir);
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             scan_folder,
             scan_folders,
@@ -1539,6 +2032,11 @@ pub fn run() {
             rename_file,
             get_app_icon,
             set_wallpaper,
+            load_video_thumbnail,
+            get_video_duration,
+            set_wallpaper_from_image_data,
+            get_video_thumb_cache_info,
+            clear_video_thumb_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1560,7 +2058,7 @@ mod tests {
             return;
         }
         let t = std::time::Instant::now();
-        let (batches, dirs) = collect_dir_batches(root, false);
+        let (batches, dirs) = collect_dir_batches(root, false, true);
         let images = flatten_batches(&batches);
         let elapsed = t.elapsed().as_secs_f64();
 
@@ -1585,7 +2083,7 @@ mod tests {
             println!("测试目录不存在，跳过");
             return;
         }
-        let (batches, _) = collect_dir_batches(root, false);
+        let (batches, _) = collect_dir_batches(root, false, true);
         let sample: Vec<String> = batches
             .iter()
             .take(4)
@@ -1663,5 +2161,47 @@ mod tests {
         assert_eq!(r.failed.len(), 1);
 
         fs::remove_dir_all(&base).unwrap();
+    }
+
+    /// 缩略图缓存 LRU：超过容量/数量上限时删除最久未访问的文件
+    #[test]
+    fn thumb_cache_lru_cleanup() {
+        let dir = std::env::temp_dir().join(format!("imggroupx_thumb_lru_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let base = std::time::SystemTime::now();
+        for i in 0..5u64 {
+            let p = dir.join(format!("{:016x}.jpg", i));
+            fs::write(&p, vec![0u8; 1024]).unwrap();
+            let t = base - std::time::Duration::from_secs((5 - i) * 60);
+            let f = fs::OpenOptions::new().write(true).open(&p).unwrap();
+            f.set_times(fs::FileTimes::new().set_modified(t)).unwrap();
+        }
+
+        // 5 个 1KB 文件、上限 4KB → 删除最旧的文件直到低于 90% 目标
+        cleanup_thumb_cache_with(&dir, 4 * 1024, 100);
+        let mut names: Vec<String> = fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        assert_eq!(names.len(), 3, "应剩下 3 个文件，实际 {:?}", names);
+        assert!(
+            !names.contains(&format!("{:016x}.jpg", 0)),
+            "最旧文件应被删除"
+        );
+        assert!(
+            !names.contains(&format!("{:016x}.jpg", 1)),
+            "次旧文件应被删除"
+        );
+
+        // 数量上限：3 个文件、上限 2 → 删除最旧的 1 个
+        cleanup_thumb_cache_with(&dir, 1024 * 1024, 2);
+        let remaining = fs::read_dir(&dir).unwrap().flatten().count();
+        assert_eq!(remaining, 2, "数量上限应生效");
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

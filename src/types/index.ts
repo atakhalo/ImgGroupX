@@ -31,6 +31,14 @@ export interface ImageItem extends ImageInfo {
   error?: string
   /** 标记等级（1-5），0或无此字段表示未标记 */
   markLevel?: MarkLevel
+  /** 网格视频缩略图（320 档，data URI） */
+  thumb?: string
+  /** 查看器/对比/壁纸缩略图（1280 档，data URI，按需加载） */
+  preview?: string
+  /** 视频缩略图加载失败 */
+  thumbFailed?: boolean
+  /** 视频时长（毫秒，仅大图/元信息按需读取） */
+  durationMs?: number
 }
 
 /** 目录分组节点 */
@@ -145,6 +153,8 @@ export interface AppSettings {
   viewerBgColor: string
   /** 扫描文件夹时是否包含所有文件（非图片仅显示文件名） */
   scanAllFiles: boolean
+  /** 扫描文件夹时是否包含视频（显示 Shell 缩略图） */
+  includeVideos: boolean
   /** 图片放大超过 100% 时自动开启平移模式 */
   autoPan: boolean
   /** 切换图片时自动居中 */

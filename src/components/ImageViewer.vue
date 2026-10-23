@@ -1,18 +1,13 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import type { ImageItem, MarkLevel } from '../types'
-import { state, loadImageBase64, setImageMark, ensurePrivacyIcon, requestImageDimsUrgent, showRenameDialog } from '../stores/imageStore'
+import { state, loadImageBase64, loadPreview, getVideoDuration, setImageMark, ensurePrivacyIcon, requestImageDimsUrgent, showRenameDialog } from '../stores/imageStore'
+import { isImageExt, isVideoExt, formatDuration } from '../utils/media'
 import { matchShortcut, isEditableTarget } from '../utils/shortcuts'
 import { invoke } from '@tauri-apps/api/core'
 import OperationBar from './OperationBar.vue'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import ImageContextMenu from './ImageContextMenu.vue'
-
-/** 可渲染为图片的支持格式 */
-const IMAGE_EXTENSIONS = new Set([
-  'jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif',
-  'tif', 'tiff', 'jxl', 'avif', 'svg', 'pcx', 'ico',
-])
 
 const props = defineProps<{
   images: ImageItem[]
@@ -38,28 +33,47 @@ async function loadMetadata() {
   metaLoading.value = true
   metaFields.value = []
   try {
-    // 并发获取所有 EXIF 字段、UserComment、文件时间
-    const [allFields, uc, times] = await Promise.all([
-      invoke<[string, string][]>('get_image_metadata', { path: item.path }).catch(() => [] as [string, string][]),
-      invoke<string>('read_user_comment', { path: item.path }).catch(() => ''),
-      invoke<[string, string]>('get_file_times', { path: item.path }).catch(() => ['', ''] as [string, string]),
-    ])
-    // 合并：用正确解码的 UserComment 替换 get_image_metadata 中的 UserComment 字段
-    let merged: [string, string][]
-    if (uc) {
-      const replaced = allFields.filter(([k]) => k !== 'UserComment')
-      merged = [...replaced, ['UserComment', uc]]
+    if (isVideo.value) {
+      // 确保缩略图尺寸已就绪（通常查看器已加载）
+      if (!item.width || !item.height) {
+        try { await loadPreview(item) } catch { /* 失败显示 — */ }
+      }
+      const [ms, times] = await Promise.all([
+        getVideoDuration(item),
+        invoke<[string, string]>('get_file_times', { path: item.path }).catch(() => ['', ''] as [string, string]),
+      ])
+      const fields: [string, string][] = [
+        ['文件大小', formatSize(item.size_bytes)],
+        ['分辨率（缩略图）', item.width && item.height ? `${item.width}×${item.height}` : '—'],
+      ]
+      if (ms != null) fields.push(['时长', formatDuration(ms)])
+      if (times[0]) fields.push(['创建时间', times[0]])
+      if (times[1]) fields.push(['修改时间', times[1]])
+      metaFields.value = fields
     } else {
-      merged = allFields
+      // 并发获取所有 EXIF 字段、UserComment、文件时间
+      const [allFields, uc, times] = await Promise.all([
+        invoke<[string, string][]>('get_image_metadata', { path: item.path }).catch(() => [] as [string, string][]),
+        invoke<string>('read_user_comment', { path: item.path }).catch(() => ''),
+        invoke<[string, string]>('get_file_times', { path: item.path }).catch(() => ['', ''] as [string, string]),
+      ])
+      // 合并：用正确解码的 UserComment 替换 get_image_metadata 中的 UserComment 字段
+      let merged: [string, string][]
+      if (uc) {
+        const replaced = allFields.filter(([k]) => k !== 'UserComment')
+        merged = [...replaced, ['UserComment', uc]]
+      } else {
+        merged = allFields
+      }
+      // 添加文件时间
+      if (times[0]) merged.push(['创建时间', times[0]])
+      if (times[1]) merged.push(['修改时间', times[1]])
+      // 如果没有字段，至少显示文件信息
+      if (merged.length === 0) {
+        merged = [['文件大小', formatSize(item.size_bytes)], ['分辨率', `${item.width}×${item.height}`]]
+      }
+      metaFields.value = merged
     }
-    // 添加文件时间
-    if (times[0]) merged.push(['创建时间', times[0]])
-    if (times[1]) merged.push(['修改时间', times[1]])
-    // 如果没有字段，至少显示文件信息
-    if (merged.length === 0) {
-      merged = [['文件大小', formatSize(item.size_bytes)], ['分辨率', `${item.width}×${item.height}`]]
-    }
-    metaFields.value = merged
   } catch (e) {
     metaFields.value = []
   } finally {
@@ -98,11 +112,12 @@ watch(showMetaDialog, async (val) => {
 })
 
 const currentIndex = ref(props.initialIndex)
-const isImage = computed(() => IMAGE_EXTENSIONS.has(currentItem.value?.ext || ''))
-/** 当前图片是否因大小阈值被跳过 */
+const isImage = computed(() => isImageExt(currentItem.value?.ext || ''))
+const isVideo = computed(() => isVideoExt(currentItem.value?.ext || ''))
+/** 当前图片是否因大小阈值被跳过（视频缩略图不整读文件，永不跳过） */
 const isSkipped = computed(() => {
   const item = currentItem.value
-  if (!item) return false
+  if (!item || isVideo.value) return false
   const maxMB = state.settings.maxLoadSizeMB
   return maxMB > 0 && item.size_bytes > maxMB * 1024 * 1024 && !state.settings.loadSkippedOnView
 })
@@ -162,7 +177,41 @@ function formatSize(bytes?: number): string {
 async function loadCurrentImage() {
   const item = currentItem.value
   if (!item) return
-  // 非图片文件：尝试以文本方式读取
+
+  // 视频：显示 1280 档缩略图，并读取时长（不播放）
+  if (isVideo.value) {
+    const seq = ++loadingSeq
+    isLoaded.value = false
+    if (state.settings.privacyMode) {
+      imgSrc.value = await ensurePrivacyIcon()
+      isLoaded.value = true
+      return
+    }
+    if (state.settings.autoCenter) {
+      offset.value = { x: 0, y: 0 }
+    }
+    // 时长很轻（7~87ms），与缩略图并行
+    getVideoDuration(item).catch(() => {})
+    try {
+      const data = await loadPreview(item)
+      if (seq === loadingSeq) {
+        imgSrc.value = data
+        if (item.width !== prevImageSize.value.width || item.height !== prevImageSize.value.height) {
+          scale.value = 1
+        }
+        prevImageSize.value = { width: item.width, height: item.height }
+        isLoaded.value = true
+      }
+    } catch {
+      if (seq === loadingSeq) {
+        imgSrc.value = ''
+        isLoaded.value = true
+      }
+    }
+    return
+  }
+
+  // 非图片、非视频文件：尝试以文本方式读取
   if (!isImage.value) {
     imgSrc.value = ''
     textContent.value = undefined
@@ -413,7 +462,7 @@ function handleClose() {
         @mouseleave="onMouseUp"
       >
         <!-- 非图片文件：尝试文本展示 -->
-        <div v-if="currentItem && !isImage" class="viewer-text-wrap"
+        <div v-if="currentItem && !isImage && !isVideo" class="viewer-text-wrap"
           :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }"
           @click.self="handleClose">
           <template v-if="textContent !== undefined">
@@ -435,7 +484,7 @@ function handleClose() {
         </div>
         <!-- 图片文件：始终保留在 DOM 中，仅切换 src，避免重建元素导致闪烁 -->
         <img
-          v-if="isImage && !isSkipped"
+          v-if="(isImage || isVideo) && !isSkipped"
           ref="imgRef"
           :src="imgSrc || undefined"
           :alt="currentItem?.name"
@@ -461,7 +510,7 @@ function handleClose() {
           </div>
         </div>
         <!-- 加载指示器使用 absolute 覆盖，避免撑开 flex 布局造成位移 -->
-        <div v-if="isImage && !isSkipped && !isLoaded" class="viewer-loading-overlay">
+        <div v-if="(isImage || isVideo) && !isSkipped && !isLoaded" class="viewer-loading-overlay">
           <span class="loading-spinner"></span>
         </div>
       </div>
@@ -503,6 +552,9 @@ function handleClose() {
       <span>{{ Math.round(scale * 100) }}%</span><span class="info-sep">|</span>
       <span>{{ currentIndex + 1 }}/{{ images.length }}</span><span class="info-sep">|</span>
       <span>{{ formatSize(currentItem?.size_bytes) }}</span><span class="info-sep">|</span>
+      <template v-if="isVideo && currentItem?.durationMs">
+        <span>{{ formatDuration(currentItem?.durationMs) }}</span><span class="info-sep">|</span>
+      </template>
       <span>{{ currentItem?.width }}×{{ currentItem?.height }}</span>
       <span v-if="currentMarkLevel && currentMarkColor" class="info-sep">|</span>
       <span v-if="currentMarkLevel && currentMarkColor" class="mark-info-badge" :style="{ backgroundColor: currentMarkColor }">{{ currentMarkLevel }}</span>

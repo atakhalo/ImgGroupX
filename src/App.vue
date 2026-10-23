@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut, isEditableTarget } from './utils/shortcuts'
+import { MEDIA_FILTER_EXTENSIONS, IMAGE_FILTER_EXTENSIONS } from './utils/media'
 import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction, hiddenByMarkEvent, addSelectionToVirtualGroup, removeSelectionFromVirtualGroup, excludeNodeFromVirtualGroup, groupViewerNode, groupViewerIndex, openGroupViewer, closeGroupViewer, addTemporaryVirtualGroup } from './stores/imageStore'
 import type { ImageItem, NavigableEntry, FolderNode } from './types'
 import GridView from './components/GridView.vue'
@@ -419,7 +420,10 @@ async function handleOpenImages() {
     const selected = await open({
       multiple: true,
       title: t('dialog.select_images'),
-      filters: [{ name: t('dialog.image_filter'), extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff', 'jxl', 'avif', 'svg', 'pcx', 'ico'] }],
+      filters: [{
+        name: t('dialog.image_filter'),
+        extensions: state.settings.includeVideos ? MEDIA_FILTER_EXTENSIONS : IMAGE_FILTER_EXTENSIONS,
+      }],
     })
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected]

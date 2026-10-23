@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { ImageItem } from '../types'
-import { state, loadImageBase64, showToast, applyFileChanges, setSuppressWatcher, PRIVACY_ICON_SRC, ensurePrivacyIcon } from '../stores/imageStore'
+import { state, loadImageBase64, loadPreview, showToast, applyFileChanges, setSuppressWatcher, PRIVACY_ICON_SRC, ensurePrivacyIcon } from '../stores/imageStore'
+import { isImageExt, isVideoExt, MEDIA_FILTER_EXTENSIONS } from '../utils/media'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
 import { matchShortcut } from '../utils/shortcuts'
@@ -117,16 +118,26 @@ const cellLabelFontSize = computed(() => {
   return `${10 - (n - 3) * 0.8}px`
 })
 
-/** 可渲染为图片的支持格式 */
-const IMAGE_EXTENSIONS = new Set([
-  'jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif',
-  'tif', 'tiff', 'jxl', 'avif', 'svg', 'pcx', 'ico',
-])
-
-/** 检查是否因大小跳过而未加载 */
-function isSkipped(item: { size_bytes: number }): boolean {
+/** 检查是否因大小跳过而未加载（视频缩略图不整读文件，不受阈值影响） */
+function isSkipped(item: { size_bytes: number; ext?: string }): boolean {
+  if (item.ext && isVideoExt(item.ext)) return false
   const maxMB = state.settings.maxLoadSizeMB
   return maxMB > 0 && item.size_bytes > maxMB * 1024 * 1024 && !state.settings.loadSkippedOnView
+}
+
+/** 加载对比用的像素来源：图片用原图，视频用 1280 档缩略图 */
+async function loadPairSrc(item: ImageItem): Promise<string> {
+  if (state.settings.privacyMode) return PRIVACY_ICON_SRC
+  if (isVideoExt(item.ext)) {
+    try { return await loadPreview(item) } catch { return '' }
+  }
+  if (!isImageExt(item.ext)) return ''
+  try { return await loadImageBase64(item, state.settings.loadSkippedOnView) } catch { return '' }
+}
+
+/** 是否有可展示的像素来源（图片或视频缩略图） */
+function hasPreview(item: ImageItem): boolean {
+  return isImageExt(item.ext) || isVideoExt(item.ext)
 }
 
 // 对数据定义
@@ -137,6 +148,7 @@ interface PairData {
   right: ImageItem
   leftSrc: string
   rightSrc: string
+  /** 是否有可展示的像素来源（图片或视频缩略图） */
   leftIsImage: boolean
   rightIsImage: boolean
 }
@@ -205,19 +217,9 @@ onMounted(async () => {
       const right = props.images[j]
       loadPromises.push(
         (async () => {
-          let leftSrc = '', rightSrc = ''
-          if (state.settings.privacyMode) {
-            leftSrc = PRIVACY_ICON_SRC
-            rightSrc = PRIVACY_ICON_SRC
-          } else {
-            if (IMAGE_EXTENSIONS.has(left.ext)) {
-              try { leftSrc = await loadImageBase64(left, state.settings.loadSkippedOnView) } catch { /* */ }
-            }
-            if (IMAGE_EXTENSIONS.has(right.ext)) {
-              try { rightSrc = await loadImageBase64(right, state.settings.loadSkippedOnView) } catch { /* */ }
-            }
-          }
-          return { i, j, left, right, leftSrc, rightSrc, leftIsImage: IMAGE_EXTENSIONS.has(left.ext), rightIsImage: IMAGE_EXTENSIONS.has(right.ext) } as PairData
+          const leftSrc = await loadPairSrc(left)
+          const rightSrc = await loadPairSrc(right)
+          return { i, j, left, right, leftSrc, rightSrc, leftIsImage: hasPreview(left), rightIsImage: hasPreview(right) } as PairData
         })()
       )
     }
@@ -236,19 +238,9 @@ onMounted(async () => {
         const right = props.images[j] // 列索引对应右图
         extraPromises.push(
           (async () => {
-            let leftSrc = '', rightSrc = ''
-            if (state.settings.privacyMode) {
-              leftSrc = PRIVACY_ICON_SRC
-              rightSrc = PRIVACY_ICON_SRC
-            } else {
-              if (IMAGE_EXTENSIONS.has(left.ext)) {
-                try { leftSrc = await loadImageBase64(left, state.settings.loadSkippedOnView) } catch { /* */ }
-              }
-              if (IMAGE_EXTENSIONS.has(right.ext)) {
-                try { rightSrc = await loadImageBase64(right, state.settings.loadSkippedOnView) } catch { /* */ }
-              }
-            }
-            return { i, j, left, right, leftSrc, rightSrc, leftIsImage: IMAGE_EXTENSIONS.has(left.ext), rightIsImage: IMAGE_EXTENSIONS.has(right.ext) } as PairData
+            const leftSrc = await loadPairSrc(left)
+            const rightSrc = await loadPairSrc(right)
+            return { i, j, left, right, leftSrc, rightSrc, leftIsImage: hasPreview(left), rightIsImage: hasPreview(right) } as PairData
           })()
         )
       }
@@ -430,7 +422,7 @@ async function saveImage(item: ImageItem | null, label: string) {
   try {
     const dest = await save({
       defaultPath: item.name,
-      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff'] }],
+      filters: [{ name: 'Images', extensions: MEDIA_FILTER_EXTENSIONS }],
     })
     if (!dest) return
     const destStr = String(dest).replace(/\\/g, '/')

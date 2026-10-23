@@ -2,6 +2,7 @@ import { reactive, computed, ref, watch } from 'vue'
 import type { ImageInfo, ImageItem, FolderNode, AppSettings, SortBy, SortOrder, FilterTarget, NavigableEntry } from '../types'
 import { getDefaultBindings } from '../utils/shortcuts'
 import { findSubTreeInTree, resolveRelativePathInTree } from '../utils/treePath'
+import { isVideoExt } from '../utils/media'
 import { invoke } from '@tauri-apps/api/core'
 import { open, ask } from '@tauri-apps/plugin-dialog'
 import { t } from '../i18n'
@@ -74,6 +75,7 @@ const defaultSettings: AppSettings = {
   viewerBgMode: 'overlay',
   viewerBgColor: '#202020',
   scanAllFiles: false,
+  includeVideos: true,
   autoPan: true,
   autoCenter: true,
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
@@ -332,7 +334,7 @@ export function getProcessedImages(images: ImageItem[]): ImageItem[] {
 export async function scanFolder(path: string): Promise<void> {
   state.loading = true
   try {
-    const result = await invoke<{ images: ImageInfo[]; total: number; dirs: string[] }>('scan_folder', { path, scanAllFiles: state.settings.scanAllFiles })
+    const result = await invoke<{ images: ImageInfo[]; total: number; dirs: string[] }>('scan_folder', { path, scanAllFiles: state.settings.scanAllFiles, includeVideos: state.settings.includeVideos })
     const items: ImageItem[] = result.images.map(img => ({
       ...img,
       loading: false,
@@ -359,7 +361,7 @@ export async function scanFolder(path: string): Promise<void> {
 export async function scanFolders(paths: string[]): Promise<void> {
   state.loading = true
   try {
-    const results = await invoke<{ images: ImageInfo[]; total: number; dirs: string[] }[]>('scan_folders', { paths, scanAllFiles: state.settings.scanAllFiles })
+    const results = await invoke<{ images: ImageInfo[]; total: number; dirs: string[] }[]>('scan_folders', { paths, scanAllFiles: state.settings.scanAllFiles, includeVideos: state.settings.includeVideos })
     for (let i = 0; i < results.length; i++) {
       const result = results[i]
       const items: ImageItem[] = result.images.map(img => ({
@@ -405,7 +407,7 @@ export async function startProgressiveScan(paths: string[]): Promise<void> {
     return
   }
   try {
-    await invoke('scan_folders_progressive', { paths, scanAllFiles: state.settings.scanAllFiles })
+    await invoke('scan_folders_progressive', { paths, scanAllFiles: state.settings.scanAllFiles, includeVideos: state.settings.includeVideos })
   } catch (e) {
     console.error('启动渐进扫描失败:', e)
     state.loading = false
@@ -503,7 +505,7 @@ export async function setSuppressWatcher(suppress: boolean): Promise<void> {
 /** 获取单文件信息 */
 export async function getFileInfo(path: string): Promise<ImageInfo | null> {
   try {
-    const infos = await invoke<ImageInfo[]>('get_files_info', { paths: [path], scanAllFiles: state.settings.scanAllFiles })
+    const infos = await invoke<ImageInfo[]>('get_files_info', { paths: [path], scanAllFiles: state.settings.scanAllFiles, includeVideos: state.settings.includeVideos })
     return infos[0] || null
   } catch { return null }
 }
@@ -535,7 +537,7 @@ export async function applyFileChanges(changedPaths: string[]): Promise<boolean>
   }
 
   if (toCheck.length > 0) {
-    const existingInfos = await invoke<ImageInfo[]>('get_files_info', { paths: toCheck, scanAllFiles: state.settings.scanAllFiles })
+    const existingInfos = await invoke<ImageInfo[]>('get_files_info', { paths: toCheck, scanAllFiles: state.settings.scanAllFiles, includeVideos: state.settings.includeVideos })
     const existingSet = new Set(existingInfos.map(i => normPath(i.path)))
     for (const p of toCheck) {
       if (!existingSet.has(normPath(p))) {
@@ -554,14 +556,21 @@ export async function applyFileChanges(changedPaths: string[]): Promise<boolean>
   }
 
   // 2. 处理新增/修改：获取文件信息并更新
-const newInfos = await invoke<ImageInfo[]>('get_files_info', { paths: changedPaths, scanAllFiles: state.settings.scanAllFiles })
+const newInfos = await invoke<ImageInfo[]>('get_files_info', { paths: changedPaths, scanAllFiles: state.settings.scanAllFiles, includeVideos: state.settings.includeVideos })
 
   for (const info of newInfos) {
     const n = normPath(info.path)
     // 先按规范化路径查找已有条目
     const idx = state.allImages.findIndex(i => normPath(i.path) === n)
     if (idx >= 0) {
-      Object.assign(state.allImages[idx], info)
+      const existing = state.allImages[idx]
+      // 文件被修改后缩略图/时长缓存必须失效（缓存 key 含修改时间）
+      existing.thumb = undefined
+      existing.preview = undefined
+      existing.thumbFailed = false
+      existing.durationMs = undefined
+      durationCache.delete(existing.path)
+      Object.assign(existing, info)
     } else {
       state.allImages.push({ ...info, loading: false })
     }
@@ -845,7 +854,7 @@ export const navIndexMap = computed(() => {
 export async function scanFilesAsVirtualGroup(filePaths: string[], groupName?: string): Promise<void> {
   state.loading = true
   try {
-    const results = await invoke<{ images: ImageInfo[]; total: number }[]>('scan_folders', { paths: filePaths, scanAllFiles: state.settings.scanAllFiles })
+    const results = await invoke<{ images: ImageInfo[]; total: number }[]>('scan_folders', { paths: filePaths, scanAllFiles: state.settings.scanAllFiles, includeVideos: state.settings.includeVideos })
     const allItems: ImageItem[] = []
     for (const result of results) {
       const items = result.images.map(img => ({
@@ -1199,6 +1208,7 @@ export function requestImageDims(items: ImageItem[]): void {
   if (state.settings.privacyMode) return
   const need: ImageItem[] = []
   for (const item of items) {
+    if (isVideoExt(item.ext)) continue // 视频尺寸由缩略图命令返回
     if (item.width || item.height) continue
     if (dimRequested.has(item.path)) continue
     dimRequested.add(item.path)
@@ -1240,7 +1250,7 @@ async function readDimsBatch(batch: ImageItem[]): Promise<void> {
  */
 export async function requestImageDimsUrgent(items: ImageItem[]): Promise<void> {
   if (state.settings.privacyMode) return
-  const need = items.filter(i => !i.width && !i.height)
+  const need = items.filter(i => !isVideoExt(i.ext) && !i.width && !i.height)
   if (need.length === 0) return
   for (const item of need) dimRequested.add(item.path)
   await readDimsBatch(need)
@@ -1248,6 +1258,7 @@ export async function requestImageDimsUrgent(items: ImageItem[]): Promise<void> 
 
 /** 加载图片base64（按需加载） */
 export async function loadImageBase64(item: ImageItem, force = false): Promise<string> {
+  if (isVideoExt(item.ext)) throw new Error('视频请使用缩略图加载')
   if (item.base64) return item.base64
   // 大小阈值检查（非强制加载时跳过）
   if (!force) {
@@ -1271,9 +1282,91 @@ export async function loadImageBase64(item: ImageItem, force = false): Promise<s
   }
 }
 
+/** 视频缩略图尺寸档位：网格用 320，查看器/对比/壁纸用 1280 */
+export const VIDEO_THUMB_GRID_SIZE = 320
+export const VIDEO_THUMB_PREVIEW_SIZE = 1280
+
+interface VideoThumbResult {
+  data: string
+  width: number
+  height: number
+  cached: boolean
+}
+
+/** 同一视频同一档位的并发请求去重 */
+const videoThumbPending = new Map<string, Promise<string>>()
+
+/**
+ * 加载视频缩略图（data URI）。
+ * 网格传 VIDEO_THUMB_GRID_SIZE，查看器/对比/壁纸传 VIDEO_THUMB_PREVIEW_SIZE。
+ */
+export function loadVideoThumb(item: ImageItem, size = VIDEO_THUMB_GRID_SIZE): Promise<string> {
+  const isPreview = size > VIDEO_THUMB_GRID_SIZE
+  if (isPreview && item.preview) return Promise.resolve(item.preview)
+  if (!isPreview && item.thumb) return Promise.resolve(item.thumb)
+  if (!isPreview && item.thumbFailed) return Promise.reject(new Error('视频缩略图不可用'))
+
+  const key = `${item.path}|${size}`
+  const pending = videoThumbPending.get(key)
+  if (pending) return pending
+
+  const promise = (async () => {
+    try {
+      const res = await invoke<VideoThumbResult>('load_video_thumbnail', { path: item.path, size })
+      // 分辨率按缩略图尺寸显示（比例与视频一致，网格布局不变）
+      if (res.width > 0 && res.height > 0 && (res.width > item.width || res.height > item.height)) {
+        item.width = res.width
+        item.height = res.height
+      }
+      if (isPreview) item.preview = res.data
+      else item.thumb = res.data
+      return res.data
+    } catch (e) {
+      if (!isPreview) item.thumbFailed = true
+      throw e
+    } finally {
+      videoThumbPending.delete(key)
+    }
+  })()
+  videoThumbPending.set(key, promise)
+  return promise
+}
+
+/** 视频时长缓存（会话级；失败也缓存，避免反复请求） */
+const durationCache = new Map<string, number | null>()
+
+/** 读取视频时长（毫秒）；失败返回 undefined */
+export async function getVideoDuration(item: ImageItem): Promise<number | undefined> {
+  if (!isVideoExt(item.ext)) return undefined
+  if (item.durationMs != null) return item.durationMs
+  if (durationCache.has(item.path)) {
+    const cached = durationCache.get(item.path)
+    if (cached != null) item.durationMs = cached
+    return cached ?? undefined
+  }
+  try {
+    const ms = await invoke<number>('get_video_duration', { path: item.path })
+    durationCache.set(item.path, ms)
+    item.durationMs = ms
+    return ms
+  } catch {
+    durationCache.set(item.path, null)
+    return undefined
+  }
+}
+
+/**
+ * 加载可预览图像：图片用原图 base64，视频用 1280 档缩略图。
+ * 用于查看器、对比矩阵、壁纸等"图片语义"操作。
+ */
+export async function loadPreview(item: ImageItem): Promise<string> {
+  if (isVideoExt(item.ext)) return loadVideoThumb(item, VIDEO_THUMB_PREVIEW_SIZE)
+  return loadImageBase64(item)
+}
+
 /** 批量加载base64（带并发控制） */
 export async function loadImageBase64Batch(items: ImageItem[], concurrency = 4): Promise<void> {
-  const toLoad = items.filter(i => !i.base64 && !i.loading)
+  const toLoad = items.filter(i => !isVideoExt(i.ext) && !i.base64 && !i.loading)
   if (toLoad.length === 0) return
 
   let idx = 0
@@ -1291,17 +1384,25 @@ export async function loadImageBase64Batch(items: ImageItem[], concurrency = 4):
 /** 释放base64缓存（保留 keepPaths 中的图片） */
 export function releaseBase64(keepPaths: Set<string>) {
   for (const img of state.allImages) {
-    if (img.base64 && !keepPaths.has(img.path)) {
-      img.base64 = undefined
-    }
+    if (keepPaths.has(img.path)) continue
+    if (img.base64) img.base64 = undefined
+    if (img.thumb) img.thumb = undefined
+    if (img.preview) img.preview = undefined
   }
 }
 
-/** 获取已加载统计 */
+/** 获取已加载统计（视频以网格缩略图是否加载为准） */
 export function getLoadStats(): { total: number; loaded: number; memoryBytes: number } {
   let loaded = 0
   let memoryBytes = 0
   for (const img of state.allImages) {
+    if (isVideoExt(img.ext)) {
+      if (img.thumb) {
+        loaded++
+        memoryBytes += img.thumb.length
+      }
+      continue
+    }
     if (img.base64) {
       loaded++
       // base64 字符串 ≈ 原始字节的 4/3，这里粗略按字符数估算

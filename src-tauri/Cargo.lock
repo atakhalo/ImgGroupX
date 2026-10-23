@@ -2091,6 +2091,7 @@ dependencies = [
  "trash",
  "walkdir",
  "wallpaper",
+ "windows 0.61.3",
 ]
 
 [[package]]
