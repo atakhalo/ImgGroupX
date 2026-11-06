@@ -1516,6 +1516,9 @@ fn get_app_icon() -> Result<String, String> {
 /// 设置壁纸（crop 模式）
 #[tauri::command]
 fn set_wallpaper(path: String) -> Result<(), String> {
+    // SPI_SETDESKWALLPAPER 只认标准 Windows 路径，正斜杠路径会导致设置失败
+    #[cfg(target_os = "windows")]
+    let path = path.replace('/', "\\");
     wallpaper::set_from_path(&path)
         .map_err(|e| format!("设置壁纸失败: {}", e))?;
     wallpaper::set_mode(wallpaper::Mode::Crop)
@@ -1755,6 +1758,29 @@ async fn load_video_thumbnail(path: String, size: u32) -> Result<VideoThumb, Str
         .map_err(|e| format!("缩略图任务失败: {}", e))?
 }
 
+/// 把前端/命令行传入的路径转换为 Windows Shell API 可用的形式。
+///
+/// `SHCreateItemFromParsingName` 只接受反斜杠分隔的路径：正斜杠（如 `E:/dir/a.mp4`）
+/// 或 `\\?\` 前缀会直接返回 `E_INVALIDARG`（0x80070057），导致视频缩略图/时长读取全部失败。
+/// 命令行参数、最近访问记录等来源都可能带正斜杠，这里统一规范化。
+#[cfg(target_os = "windows")]
+fn to_shell_path(path: &str) -> String {
+    let mut p = path.replace('/', "\\");
+    // 去掉 verbatim 前缀：Shell 解析名不支持 \\?\ 形式
+    if let Some(rest) = p.strip_prefix("\\\\?\\UNC\\") {
+        p = format!("\\\\{}", rest);
+    } else if let Some(rest) = p.strip_prefix("\\\\?\\") {
+        p = rest.to_string();
+    }
+    // Shell 解析名要求绝对路径
+    if !Path::new(&p).is_absolute() {
+        if let Ok(cwd) = env::current_dir() {
+            p = cwd.join(&p).to_string_lossy().to_string();
+        }
+    }
+    p
+}
+
 #[cfg(target_os = "windows")]
 fn shell_thumbnail(path: &str, size: i32) -> Result<(u32, u32, Vec<u8>), String> {
     use windows::core::HSTRING;
@@ -1823,8 +1849,9 @@ fn shell_thumbnail(path: &str, size: i32) -> Result<(u32, u32, Vec<u8>), String>
             return Err(format!("COM 初始化失败: {:?}", hr));
         }
         let result = (|| -> Result<(u32, u32, Vec<u8>), String> {
+            let shell_path = to_shell_path(path);
             let factory: IShellItemImageFactory =
-                SHCreateItemFromParsingName(&HSTRING::from(path), None)
+                SHCreateItemFromParsingName(&HSTRING::from(shell_path.as_str()), None)
                     .map_err(|e| format!("读取缩略图失败: {:?}", e))?;
             let hbm = factory
                 .GetImage(
@@ -1879,7 +1906,8 @@ fn read_video_duration(path: &str) -> Result<u64, String> {
             return Err(format!("COM 初始化失败: {:?}", hr));
         }
         let result = (|| -> Result<u64, String> {
-            let item: IShellItem2 = SHCreateItemFromParsingName(&HSTRING::from(path), None)
+            let shell_path = to_shell_path(path);
+            let item: IShellItem2 = SHCreateItemFromParsingName(&HSTRING::from(shell_path.as_str()), None)
                 .map_err(|e| format!("读取文件属性失败: {:?}", e))?;
             let units = item
                 .GetUInt64(&key)
@@ -2117,5 +2145,17 @@ mod tests {
         cache.put("c".into(), thumb(10));
         assert_eq!(cache.map.len(), 2, "数量上限应生效");
         assert!(cache.get("a").is_none(), "最旧的 a 应被淘汰");
+    }
+
+    /// Shell 解析名路径规范化：正斜杠、verbatim 前缀都要转成标准反斜杠绝对路径
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn shell_parsing_name_normalizes() {
+        assert_eq!(to_shell_path(r"E:\a\b.mp4"), r"E:\a\b.mp4");
+        assert_eq!(to_shell_path("E:/a/b.mp4"), r"E:\a\b.mp4");
+        assert_eq!(to_shell_path(r"\\?\E:\a\b.mp4"), r"E:\a\b.mp4");
+        assert_eq!(to_shell_path(r"\\?\UNC\srv\share\a.mp4"), r"\\srv\share\a.mp4");
+        // 相对路径补全为绝对路径（Shell 解析名要求绝对路径）
+        assert!(Path::new(&to_shell_path("a/b.mp4")).is_absolute());
     }
 }

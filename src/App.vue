@@ -272,7 +272,9 @@ onMounted(async () => {
       const isDir = await invoke<boolean>('check_is_dir', { path: cliArgs[0] })
       if (!isDir) {
         // 单图：加载父文件夹，扫描完成后自动打开大图
-        const parentDir = cliArgs[0].replace(/\\/g, '/').replace(/\/[^/]+$/, '')
+        // 注意：父目录必须保留原始分隔符（Windows 反斜杠），正斜杠路径会让
+        // WalkDir 产出混合分隔符路径，Windows Shell 的缩略图接口会拒绝解析
+        const parentDir = cliArgs[0].replace(/[\\/][^\\/]+$/, '')
         if (parentDir) {
           // 规范化待打开路径（统一正斜杠，便于后续匹配）
           pendingOpenImagePath.value = cliArgs[0].replace(/\\/g, '/')
