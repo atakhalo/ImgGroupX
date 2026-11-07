@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { t } from '../i18n'
+import type { CoverRatio } from '../types'
+import { COVER_RATIO_ASPECT, COVER_RATIO_FAMILY, COVER_RATIO_ORDER } from '../utils/coverRatio'
 import { state, showToast } from '../stores/imageStore'
 import { SHORTCUTS, getDefaultBindings, formatKey, getAltKey } from '../utils/shortcuts'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -20,6 +22,7 @@ const tabs = [
   { key: 'viewer', label: 'settings.tab_viewer' },
   { key: 'shortcuts', label: 'settings.tab_shortcuts' },
   { key: 'advanced', label: 'settings.tab_advanced' },
+  { key: 'extensions', label: 'settings.tab_extensions' },
 ]
 
 /** 各标签页对应的设置字段 */
@@ -30,6 +33,7 @@ const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
   advanced: ['scanAllFiles', 'includeVideos', 'skipEmptyFolders', 'folderGroup', 'showGroupTitle', 'showMarks', 'privacyMode', 'customTrashEnabled', 'customTrashPath'],
+  extensions: ['coverRatioEnabled', 'coverRatio', 'coverRatioAutoOrient', 'coverRatioFit'],
 }
 
 const defaultSettings = {
@@ -56,6 +60,7 @@ const defaultSettings = {
   markColors: ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'],
   showMarks: true, showMarkBadge: true, showViewerMarkBorder: true,
   customTrashEnabled: false, customTrashPath: '',
+  coverRatioEnabled: false, coverRatio: '4:3' as const, coverRatioAutoOrient: false, coverRatioFit: 'cover' as const,
   keyBindings: getDefaultBindings(),
   keyAltBindings: getDefaultBindings(true),
 }
@@ -119,6 +124,48 @@ function resetCurrentTab() {
 function resetAll() {
   Object.assign(localSettings.value, defaultSettings)
 }
+
+// ===== 扩展页 =====
+
+/** 各扩展的折叠状态（true=已折叠，默认全部展开） */
+const collapsedExts = ref<Record<string, boolean>>({ coverRatio: false })
+
+function toggleExt(id: string) {
+  collapsedExts.value[id] = !collapsedExts.value[id]
+}
+
+/** 格子比例选项（顺序由共享常量表定义） */
+const coverRatioOptions = COVER_RATIO_ORDER.map(value => ({ value, label: value }))
+
+/** 填充方式选项 */
+const coverRatioFitOptions: { value: 'cover' | 'contain'; labelKey: string }[] = [
+  { value: 'cover', labelKey: 'ext.cover_ratio.fit_cover' },
+  { value: 'contain', labelKey: 'ext.cover_ratio.fit_contain' },
+]
+
+/** 格子比例预览（高固定 72px，按当前设置换算宽） */
+const coverRatioPreview = computed(() => {
+  const s = localSettings.value
+  const height = 72
+  const makeCell = (key: string, ratio: CoverRatio, labelKey: string) => ({
+    key,
+    ratioLabel: ratio,
+    labelKey,
+    style: {
+      width: Math.round(height * COVER_RATIO_ASPECT[ratio]) + 'px',
+      height: height + 'px',
+    },
+  })
+  // 1:1 或未开启自动识别：展示单个格子
+  if (s.coverRatio === '1:1' || !s.coverRatioAutoOrient) {
+    return [makeCell('single', s.coverRatio, '')]
+  }
+  const [portrait, landscape] = COVER_RATIO_FAMILY[s.coverRatio]
+  return [
+    makeCell('portrait', portrait, 'ext.cover_ratio.portrait'),
+    makeCell('landscape', landscape, 'ext.cover_ratio.landscape'),
+  ]
+})
 
 // 快捷键录制
 const recordingId = ref('')
@@ -642,6 +689,81 @@ onUnmounted(() => {
               </a>
             </div>
           </div>
+          <!-- ===== 扩展 ===== -->
+          <div v-show="activeTab === 'extensions'" class="setting-section">
+            <div class="setting-hint">{{ $t('settings.extensions_hint') }}</div>
+
+            <!-- 扩展：封面预览-格子比例 -->
+            <div class="ext-item">
+              <div class="ext-header" @click="toggleExt('coverRatio')">
+                <svg
+                  class="ext-arrow"
+                  :class="{ open: !collapsedExts.coverRatio }"
+                  viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+                >
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+                <div class="ext-title-wrap">
+                  <span class="ext-title">{{ $t('ext.cover_ratio.title') }}</span>
+                  <span class="ext-desc">{{ $t('ext.cover_ratio.desc') }}</span>
+                </div>
+                <span v-if="localSettings.coverRatioEnabled" class="ext-state">{{ $t('ext.enabled') }}</span>
+              </div>
+              <div v-show="!collapsedExts.coverRatio" class="ext-body">
+                <div class="setting-row">
+                  <label class="toggle-label">
+                    <input type="checkbox" v-model="localSettings.coverRatioEnabled" class="toggle-input" />
+                    <span class="toggle-switch"></span>
+                    {{ $t('ext.cover_ratio.enable') }}
+                  </label>
+                </div>
+                <div class="setting-hint">{{ $t('ext.cover_ratio.enable_hint') }}</div>
+
+                <h5 class="ext-sub-title">{{ $t('ext.cover_ratio.ratio') }}</h5>
+                <div class="option-group">
+                  <button
+                    v-for="opt in coverRatioOptions"
+                    :key="opt.value"
+                    class="option-btn"
+                    :class="{ active: localSettings.coverRatio === opt.value }"
+                    @click="localSettings.coverRatio = opt.value"
+                  >{{ opt.label }}</button>
+                </div>
+
+                <div class="setting-row" style="margin-top: 14px;">
+                  <label class="toggle-label">
+                    <input type="checkbox" v-model="localSettings.coverRatioAutoOrient" class="toggle-input" />
+                    <span class="toggle-switch"></span>
+                    {{ $t('ext.cover_ratio.auto_orient') }}
+                  </label>
+                </div>
+                <div class="setting-hint">{{ $t('ext.cover_ratio.auto_orient_hint') }}</div>
+
+                <h5 class="ext-sub-title">{{ $t('ext.cover_ratio.fit') }}</h5>
+                <div class="option-group">
+                  <button
+                    v-for="opt in coverRatioFitOptions"
+                    :key="opt.value"
+                    class="option-btn"
+                    :class="{ active: localSettings.coverRatioFit === opt.value }"
+                    @click="localSettings.coverRatioFit = opt.value"
+                  >{{ $t(opt.labelKey) }}</button>
+                </div>
+                <div class="setting-hint">{{ $t('ext.cover_ratio.fit_hint') }}</div>
+
+                <!-- 比例预览示意 -->
+                <div class="ratio-preview">
+                  <div v-for="cell in coverRatioPreview" :key="cell.key" class="preview-cell-wrap">
+                    <div class="preview-cell" :style="cell.style">
+                      <span class="preview-cell-ratio">{{ cell.ratioLabel }}</span>
+                    </div>
+                    <span v-if="cell.labelKey" class="preview-cell-label">{{ $t(cell.labelKey) }}</span>
+                  </div>
+                  <span class="preview-note">{{ $t('ext.cover_ratio.preview_hint') }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="settings-footer">
           <div class="footer-left">
@@ -1138,5 +1260,125 @@ onUnmounted(() => {
 .toggle-input:checked + .toggle-switch::after {
   transform: translateX(16px);
   background: white;
+}
+
+/* ===== 扩展页 ===== */
+.ext-item {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+
+.ext-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.ext-header:hover { background: rgba(255, 255, 255, 0.05); }
+
+.ext-arrow {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.35);
+  transition: transform 0.15s;
+}
+.ext-arrow.open { transform: rotate(90deg); }
+
+.ext-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.ext-title { font-size: 13px; color: rgba(255, 255, 255, 0.85); }
+.ext-desc { font-size: 11px; color: rgba(255, 255, 255, 0.3); }
+
+.ext-state {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #8ee6a0;
+  background: rgba(80, 200, 120, 0.12);
+  border: 1px solid rgba(80, 200, 120, 0.25);
+  border-radius: 10px;
+  padding: 1px 8px;
+}
+
+.ext-body {
+  padding: 12px 12px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.ext-body .setting-hint { margin-bottom: 4px; }
+
+.ext-sub-title {
+  margin: 16px 0 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+.option-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.option-btn {
+  flex: 1;
+  min-width: 66px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.option-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.85);
+}
+.option-btn.active {
+  background: rgba(100, 108, 255, 0.2);
+  border-color: rgba(100, 108, 255, 0.45);
+  color: #aab0ff;
+}
+
+.ratio-preview {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+.preview-cell-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.preview-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: linear-gradient(135deg, rgba(100, 108, 255, 0.35), rgba(100, 108, 255, 0.08));
+  border: 1px solid rgba(100, 108, 255, 0.3);
+}
+.preview-cell-ratio { font-size: 10px; color: rgba(255, 255, 255, 0.55); }
+.preview-cell-label { font-size: 10px; color: rgba(255, 255, 255, 0.3); }
+.preview-note {
+  flex: 1;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.3);
 }
 </style>

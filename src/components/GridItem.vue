@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ImageItem } from '../types'
 import { state, loadImageBase64, ensurePrivacyIcon, requestImageDimsUrgent, loadVideoThumb, getVideoDuration, VIDEO_THUMB_GRID_SIZE } from '../stores/imageStore'
+import { COVER_RATIO_ASPECT, COVER_RATIO_FAMILY } from '../utils/coverRatio'
 import { isImageExt, isVideoExt, formatDuration } from '../utils/media'
 import { observeOnce, unobserveElement } from '../utils/lazyObserver'
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
@@ -50,8 +51,39 @@ const aspectRatio = computed(() => {
   return 1
 })
 
+/**
+ * 扩展「封面预览-格子比例」的目标宽高比。
+ * null 表示未启用（格子仍按图片原始比例）。
+ */
+const coverRatioAspect = computed<number | null>(() => {
+  const s = state.settings
+  if (!s.coverRatioEnabled) return null
+  const base = COVER_RATIO_ASPECT[s.coverRatio]
+  if (base == null) return null
+  // 1:1 无需区分横竖屏
+  if (s.coverRatio === '1:1') return 1
+  if (s.coverRatioAutoOrient) {
+    const w = props.item.width || 0
+    const h = props.item.height || 0
+    if (w > 0 && h > 0) {
+      // 竖屏图片用竖版比例，横屏图片用横版比例（4:3 ↔ 3:4，16:9 ↔ 9:16）
+      const [portrait, landscape] = COVER_RATIO_FAMILY[s.coverRatio]
+      return COVER_RATIO_ASPECT[w > h ? landscape : portrait]
+    }
+  }
+  return base
+})
+
 const itemWidth = computed(() => {
-  return Math.round(props.gridSize * aspectRatio.value)
+  const ratio = coverRatioAspect.value ?? aspectRatio.value
+  return Math.round(props.gridSize * ratio)
+})
+
+/** 图片填充方式（隐私模式图标始终完整显示） */
+const imgFit = computed(() => {
+  if (coverRatioAspect.value == null) return 'contain'
+  if (state.settings.privacyMode) return 'contain'
+  return state.settings.coverRatioFit === 'contain' ? 'contain' : 'cover'
 })
 
 let loadingPromise: Promise<string> | null = null
@@ -376,6 +408,7 @@ watch(showMetaDialog, async (val) => {
           class="item-img"
           :style="{
             borderRadius: borderRadius + 'px',
+            objectFit: imgFit,
           }"
           @load="isLoaded = true"
           @error="hasError = true; isLoaded = false"

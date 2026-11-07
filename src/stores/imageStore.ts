@@ -92,6 +92,10 @@ const defaultSettings: AppSettings = {
   randomGroupCount: 20,
   customTrashEnabled: false,
   customTrashPath: '',
+  coverRatioEnabled: false,
+  coverRatio: '4:3',
+  coverRatioAutoOrient: false,
+  coverRatioFit: 'cover',
 }
 
 /** 全局状态 */

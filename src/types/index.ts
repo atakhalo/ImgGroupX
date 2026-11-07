@@ -80,6 +80,12 @@ export type FilterTarget = 'name' | 'group' | 'path'
 /** 大图查看器背景模式 */
 export type ViewerBgMode = 'overlay' | 'color'
 
+/** 封面预览-格子比例：目标比例 */
+export type CoverRatio = '4:3' | '3:4' | '16:9' | '9:16' | '1:1'
+
+/** 封面预览-格子比例：图片填充方式 */
+export type CoverRatioFit = 'cover' | 'contain'
+
 /** 导航列表条目类型 */
 export interface NavigableEntry {
   images: ImageItem[]
@@ -187,4 +193,14 @@ export interface AppSettings {
   customTrashEnabled: boolean
   /** 自定义回收站文件夹路径 */
   customTrashPath: string
+
+  // ===== 扩展：封面预览-格子比例 =====
+  /** 是否启用格子比例（统一格子宽高比，按封面方式裁切预览） */
+  coverRatioEnabled: boolean
+  /** 格子比例：4:3 / 3:4 / 16:9 / 9:16 / 1:1 */
+  coverRatio: CoverRatio
+  /** 自动识别竖屏/横屏：竖图用竖版比例（3:4 / 9:16）、横图用横版比例（4:3 / 16:9） */
+  coverRatioAutoOrient: boolean
+  /** 图片填充方式 */
+  coverRatioFit: CoverRatioFit
 }
