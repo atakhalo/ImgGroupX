@@ -457,6 +457,7 @@ function handleCtxSaveRight() { const p = ctx.value.pair; if (p) { closeCtx(); s
         <!-- 底层（右图） -->
         <div class="sp-layer sp-bottom" @click.self="handleClose">
           <img v-if="pairDataList[0].rightSrc" :src="pairDataList[0].rightSrc" class="sp-img"
+            draggable="false" @dragstart.prevent
             :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }" />
           <div v-else-if="!pairDataList[0].rightIsImage || isSkipped(pairDataList[0].right)" class="sp-placeholder">
             <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
@@ -470,6 +471,7 @@ function handleCtxSaveRight() { const p = ctx.value.pair; if (p) { closeCtx(); s
         <!-- 顶层（左图，clip裁剪） -->
         <div class="sp-layer sp-top" :style="{ clipPath: `inset(0 ${(1 - splitRatio) * 100}% 0 0)` }" @click.self="handleClose">
           <img v-if="pairDataList[0].leftSrc" :src="pairDataList[0].leftSrc" class="sp-img"
+            draggable="false" @dragstart.prevent
             :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }" />
           <div v-else-if="!pairDataList[0].leftIsImage || isSkipped(pairDataList[0].left)" class="sp-placeholder">
             <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
@@ -506,6 +508,7 @@ function handleCtxSaveRight() { const p = ctx.value.pair; if (p) { closeCtx(); s
             <template v-if="pair.i !== pair.j">
               <div class="cell-layer cell-bottom">
                 <img v-if="pair.rightSrc" :src="pair.rightSrc" class="cell-img"
+                  draggable="false" @dragstart.prevent
                   :style="{ transform: `translate(${localOffset.x}px, ${localOffset.y}px) scale(${localScale})` }" />
                 <div v-else-if="!pair.rightIsImage || isSkipped(pair.right)" class="cell-placeholder">
                   <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
@@ -519,6 +522,7 @@ function handleCtxSaveRight() { const p = ctx.value.pair; if (p) { closeCtx(); s
               <div class="cell-layer cell-top"
                 :style="{ clipPath: `inset(0 ${(1 - splitRatio) * 100}% 0 0)` }">
                 <img v-if="pair.leftSrc" :src="pair.leftSrc" class="cell-img"
+                  draggable="false" @dragstart.prevent
                   :style="{ transform: `translate(${localOffset.x}px, ${localOffset.y}px) scale(${localScale})` }" />
                 <div v-else-if="!pair.leftIsImage || isSkipped(pair.left)" class="cell-placeholder">
                   <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">

@@ -14,6 +14,8 @@ const props = defineProps<{
   gridSize: number
   borderRadius: number
   isSelected?: boolean
+  /** 手动排序激活时禁止原生拖拽（拖拽用于排序，不拖出到外部窗口） */
+  nativeDragDisabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -406,6 +408,8 @@ watch(showMetaDialog, async (val) => {
           :src="imgSrc"
           :alt="item.name"
           class="item-img"
+          :draggable="!nativeDragDisabled"
+          @dragstart="nativeDragDisabled && $event.preventDefault()"
           :style="{
             borderRadius: borderRadius + 'px',
             objectFit: imgFit,
@@ -441,6 +445,7 @@ watch(showMetaDialog, async (val) => {
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   position: relative;
+  user-select: none;
 }
 
 .grid-item:hover {
@@ -548,6 +553,7 @@ watch(showMetaDialog, async (val) => {
   display: block;
   object-fit: contain;
   transition: opacity 0.3s;
+  user-select: none;
 }
 
 .video-badge {

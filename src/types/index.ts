@@ -203,4 +203,8 @@ export interface AppSettings {
   coverRatioAutoOrient: boolean
   /** 图片填充方式 */
   coverRatioFit: CoverRatioFit
+
+  // ===== 扩展：手动排序 =====
+  /** 是否启用手动排序扩展（开启后分组背景右键菜单出现「手动排序」） */
+  manualSortEnabled: boolean
 }

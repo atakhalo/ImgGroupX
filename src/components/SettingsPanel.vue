@@ -33,7 +33,7 @@ const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
   advanced: ['scanAllFiles', 'includeVideos', 'skipEmptyFolders', 'folderGroup', 'showGroupTitle', 'showMarks', 'privacyMode', 'customTrashEnabled', 'customTrashPath'],
-  extensions: ['coverRatioEnabled', 'coverRatio', 'coverRatioAutoOrient', 'coverRatioFit'],
+  extensions: ['coverRatioEnabled', 'coverRatio', 'coverRatioAutoOrient', 'coverRatioFit', 'manualSortEnabled'],
 }
 
 const defaultSettings = {
@@ -61,6 +61,7 @@ const defaultSettings = {
   showMarks: true, showMarkBadge: true, showViewerMarkBorder: true,
   customTrashEnabled: false, customTrashPath: '',
   coverRatioEnabled: false, coverRatio: '4:3' as const, coverRatioAutoOrient: false, coverRatioFit: 'cover' as const,
+  manualSortEnabled: false,
   keyBindings: getDefaultBindings(),
   keyAltBindings: getDefaultBindings(true),
 }
@@ -128,7 +129,7 @@ function resetAll() {
 // ===== 扩展页 =====
 
 /** 各扩展的折叠状态（true=已折叠，默认全部展开） */
-const collapsedExts = ref<Record<string, boolean>>({ coverRatio: false })
+const collapsedExts = ref<Record<string, boolean>>({ coverRatio: false, manualSort: false })
 
 function toggleExt(id: string) {
   collapsedExts.value[id] = !collapsedExts.value[id]
@@ -761,6 +762,35 @@ onUnmounted(() => {
                   </div>
                   <span class="preview-note">{{ $t('ext.cover_ratio.preview_hint') }}</span>
                 </div>
+              </div>
+            </div>
+
+            <!-- 扩展：手动排序 -->
+            <div class="ext-item">
+              <div class="ext-header" @click="toggleExt('manualSort')">
+                <svg
+                  class="ext-arrow"
+                  :class="{ open: !collapsedExts.manualSort }"
+                  viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+                >
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+                <div class="ext-title-wrap">
+                  <span class="ext-title">{{ $t('ext.manual_sort.title') }}</span>
+                  <span class="ext-desc">{{ $t('ext.manual_sort.desc') }}</span>
+                </div>
+                <span v-if="localSettings.manualSortEnabled" class="ext-state">{{ $t('ext.enabled') }}</span>
+              </div>
+              <div v-show="!collapsedExts.manualSort" class="ext-body">
+                <div class="setting-row">
+                  <label class="toggle-label">
+                    <input type="checkbox" v-model="localSettings.manualSortEnabled" class="toggle-input" />
+                    <span class="toggle-switch"></span>
+                    {{ $t('ext.manual_sort.enable') }}
+                  </label>
+                </div>
+                <div class="setting-hint">{{ $t('ext.manual_sort.enable_hint') }}</div>
+                <div class="setting-hint">{{ $t('ext.manual_sort.usage') }}</div>
               </div>
             </div>
           </div>

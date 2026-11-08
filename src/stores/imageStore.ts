@@ -96,6 +96,7 @@ const defaultSettings: AppSettings = {
   coverRatio: '4:3',
   coverRatioAutoOrient: false,
   coverRatioFit: 'cover',
+  manualSortEnabled: false,
 }
 
 /** 全局状态 */
@@ -122,6 +123,12 @@ export const state = reactive({
   selectedFolderPaths: new Set<string>(),
   /** 被隐藏的标记等级（0=未标记，1-5=标记等级）：对应图片不显示 */
   hiddenMarkLevels: [] as number[],
+  /**
+   * 是否处于手动排序模式（全局操作状态）。
+   * 与「分组是否已手动排序」（manualSortOrders 中的记录）分离：
+   * 进入模式后拖拽图片才会给分组建立/更新手动顺序，退出模式不会清除已有顺序。
+   */
+  manualSortMode: false,
   /** 设置 */
   settings: { ...defaultSettings },
   /** 加载状态 */
@@ -214,6 +221,123 @@ export function sortImages(images: ImageItem[], sortBy: SortBy, sortOrder: SortO
     return sortOrder === 'asc' ? cmp : -cmp
   })
 }
+
+// ===== 扩展：手动排序 =====
+
+/**
+ * 手动排序：分组唯一键 → 图片路径顺序（会话级）。
+ * 键必须与 FolderGroup 的 manualSortKey、navigableList 中的键一致：
+ *  - 真实目录树：节点绝对路径
+ *  - 虚拟分组：`vg:${分组内部路径}:${节点路径}`
+ */
+export const manualSortOrders = reactive(new Map<string, string[]>())
+
+/** 是否正在用指针拖拽图片排序（窗口级拖入提示需忽略此时产生的事件） */
+export const manualSortDragging = ref(false)
+
+/** 分组是否已启用手动排序 */
+export function isManualSortActive(key: string | undefined | null): boolean {
+  return !!key && state.settings.manualSortEnabled && manualSortOrders.has(key)
+}
+
+/** 启用手动排序：以当前排序为初始顺序 */
+export function enableManualSort(key: string, images: ImageItem[]) {
+  if (!key) return
+  manualSortOrders.set(
+    key,
+    sortImages(images, state.settings.sortBy, state.settings.sortOrder).map(i => i.path)
+  )
+}
+
+/**
+ * 确保分组已建立手动顺序（拖动开始时调用）。
+ * 进入手动排序模式后，第一次拖动某分组图片即以当前排序作为该分组的初始顺序。
+ */
+export function ensureManualSort(key: string, images: ImageItem[]) {
+  if (!key || manualSortOrders.has(key)) return
+  enableManualSort(key, images)
+}
+
+/** 进入手动排序模式（全局操作，不清除任何分组已有的手动顺序） */
+export function enterManualSortMode() {
+  if (!state.settings.manualSortEnabled) return
+  state.manualSortMode = true
+}
+
+/** 退出手动排序模式（只退出操作状态，保留所有已建立的手动排序） */
+export function exitManualSortMode() {
+  state.manualSortMode = false
+}
+
+/** 取消手动排序（恢复按设置排序） */
+export function disableManualSort(key: string) {
+  manualSortOrders.delete(key)
+}
+
+/** 手动顺序的路径→索引缓存（顺序数组变化时重建，避免每次渲染都为整组建 Map） */
+const manualOrderIndexCache = new WeakMap<string[], Map<string, number>>()
+function manualOrderIndexOf(order: string[]): Map<string, number> {
+  const cached = manualOrderIndexCache.get(order)
+  if (cached) return cached
+  const map = new Map<string, number>()
+  for (let i = 0; i < order.length; i++) map.set(order[i], i)
+  manualOrderIndexCache.set(order, map)
+  return map
+}
+
+/** 手动排序的完整顺序：记录中仍存在的图片 + 其余图片按当前设置排序追加到末尾 */
+function buildManualOrder(key: string, images: ImageItem[]): string[] {
+  const present = new Set(images.map(i => i.path))
+  const result: string[] = []
+  const seen = new Set<string>()
+  for (const p of manualSortOrders.get(key) || []) {
+    if (present.has(p) && !seen.has(p)) {
+      result.push(p)
+      seen.add(p)
+    }
+  }
+  for (const img of sortImages(images, state.settings.sortBy, state.settings.sortOrder)) {
+    if (!seen.has(img.path)) {
+      result.push(img.path)
+      seen.add(img.path)
+    }
+  }
+  return result
+}
+
+/**
+ * 拖拽重排：把 fromPath 移动到 beforePath 之前（beforePath 为 null 表示移到末尾）。
+ * 返回是否真的改变了顺序。
+ */
+export function reorderManualSort(
+  key: string,
+  images: ImageItem[],
+  fromPath: string,
+  beforePath: string | null
+): boolean {
+  if (!key || !manualSortOrders.has(key)) return false
+  const order = buildManualOrder(key, images)
+  const from = order.indexOf(fromPath)
+  if (from < 0) return false
+  order.splice(from, 1)
+  const target = beforePath ? order.indexOf(beforePath) : -1
+  order.splice(target >= 0 ? target : order.length, 0, fromPath)
+  const current = manualSortOrders.get(key)
+  if (current && current.length === order.length && current.every((p, i) => p === order[i])) {
+    return false
+  }
+  manualSortOrders.set(key, order)
+  return true
+}
+
+// 关闭扩展时清空所有手动排序状态，避免留下看不见的排序覆盖
+watch(() => state.settings.manualSortEnabled, (enabled) => {
+  if (!enabled) {
+    manualSortOrders.clear()
+    state.manualSortMode = false
+  }
+})
+
 
 /** 递归统计节点图片总数（WeakMap 缓存，避免排序比较时反复递归子树） */
 const nodeImageCountCache = new WeakMap<FolderNode, number>()
@@ -319,8 +443,8 @@ export function filterImages(images: ImageItem[], regex: string, target: FilterT
   }
 }
 
-/** 获取处理后的图片列表（排序+筛选） */
-export function getProcessedImages(images: ImageItem[]): ImageItem[] {
+/** 获取处理后的图片列表（排序+筛选）；manualKey 存在时优先使用该分组的手动顺序 */
+export function getProcessedImages(images: ImageItem[], manualKey?: string): ImageItem[] {
   let result = [...images]
   // 隐藏指定标记的图片（0=未标记）
   if (state.hiddenMarkLevels.length > 0) {
@@ -329,6 +453,21 @@ export function getProcessedImages(images: ImageItem[]): ImageItem[] {
   }
   // 筛选
   result = filterImages(result, state.settings.filterRegex, state.settings.filterTarget, state.virtualGroups)
+  // 手动排序：按记录顺序排列，未记录的图片按当前设置排序追加到末尾（扩展开启时生效）
+  const manualOrder = manualKey && state.settings.manualSortEnabled
+    ? manualSortOrders.get(manualKey)
+    : undefined
+  if (manualOrder && manualOrder.length > 0) {
+    const pos = manualOrderIndexOf(manualOrder)
+    const ordered: ImageItem[] = []
+    const rest: ImageItem[] = []
+    for (const img of result) {
+      if (pos.has(img.path)) ordered.push(img)
+      else rest.push(img)
+    }
+    ordered.sort((a, b) => pos.get(a.path)! - pos.get(b.path)!)
+    return [...ordered, ...sortImages(rest, state.settings.sortBy, state.settings.sortOrder)]
+  }
   // 排序
   result = sortImages(result, state.settings.sortBy, state.settings.sortOrder)
   return result
@@ -805,14 +944,14 @@ export const navigableList = computed<NavigableEntry[]>(() => {
         const hierarchy = parentHierarchy ? parentHierarchy + ' / ' + node.name : node.name
         if (node.children.length > 0) walk(node.children, hierarchy)
         if (node.images.length > 0) {
-          list.push({ images: getProcessedImages(node.images), path: node.path, displayPath: hierarchy, scopeId, groupName: vg.name })
+          list.push({ images: getProcessedImages(node.images, `vg:${vg.path}:${node.path}`), path: node.path, displayPath: hierarchy, scopeId, groupName: vg.name })
         }
       }
     }
     walk(vg.children, '')
     // 一级图片放在最后
     if (vg.images.length > 0) {
-      list.push({ images: getProcessedImages(vg.images), path: vg.path, displayPath: '', scopeId, groupName: vg.name })
+      list.push({ images: getProcessedImages(vg.images, `vg:${vg.path}:${vg.path}`), path: vg.path, displayPath: '', scopeId, groupName: vg.name })
     }
   }
 
@@ -829,7 +968,7 @@ export const navigableList = computed<NavigableEntry[]>(() => {
         const display = parentDisplay ? parentDisplay + ' / ' + node.name : node.name
         if (node.children.length > 0) walkReal(node.children, display, rootPath)
         if (node.images.length > 0) {
-          list.push({ images: getProcessedImages(node.images), path: toAbsPath(rootPath, node.path), displayPath: display, scopeId: 'tree', groupName: '' })
+          list.push({ images: getProcessedImages(node.images, toAbsPath(rootPath, node.path)), path: toAbsPath(rootPath, node.path), displayPath: display, scopeId: 'tree', groupName: '' })
         }
       }
     }
@@ -2126,6 +2265,9 @@ export function clearAll() {
   state.loadedRootPaths = []
   // 清空后不再保留标记隐藏状态，避免下次加载时图片莫名缺失
   state.hiddenMarkLevels = []
+  // 手动排序顺序依附于当前分组内容，清空时一并丢弃
+  manualSortOrders.clear()
+  state.manualSortMode = false
 }
 
 /** 加载配置（忽略已存盘的 filterRegex，始终从空值开始） */

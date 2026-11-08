@@ -3,11 +3,14 @@ import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { ImageItem } from '../types'
 import { state, getProcessedImages, releaseBase64, getLoadStats, requestImageDims } from '../stores/imageStore'
 import { observeVisibility, unobserveVisibility } from '../utils/lazyObserver'
+import { useManualSortDrag } from '../utils/manualSortDrag'
 import GridItem from './GridItem.vue'
 
 const props = defineProps<{
   images: ImageItem[]
   bgColor?: string
+  /** 所属分组的手动排序键（存在且已激活时可按手动顺序显示并拖拽排序） */
+  manualSortKey?: string
 }>()
 
 const emit = defineEmits<{
@@ -25,7 +28,15 @@ const MIN_KEEP = 100
 
 const displayLimit = ref(INITIAL_LIMIT)
 
-const processedImages = computed(() => getProcessedImages(props.images))
+const processedImages = computed(() => getProcessedImages(props.images, props.manualSortKey))
+
+/** 全局手动排序模式是否开启 */
+const manualSortModeActive = computed(() =>
+  state.settings.manualSortEnabled && state.manualSortMode
+)
+
+/** 本网格是否可手动排序（模式开启且属于某个分组） */
+const manualSortAvailable = computed(() => manualSortModeActive.value && !!props.manualSortKey)
 
 
 
@@ -41,6 +52,14 @@ let sentinelObserver: IntersectionObserver | null = null
 /** 网格是否出现在视口附近（决定是否读取图片尺寸） */
 const containerRef = ref<HTMLElement | null>(null)
 const inViewport = ref(false)
+
+/** 手动排序：指针拖拽重排（全局手动排序模式下生效） */
+useManualSortDrag({
+  container: containerRef,
+  enabled: () => manualSortAvailable.value,
+  sortKey: () => props.manualSortKey,
+  images: () => props.images,
+})
 
 function setupSentinel() {
   if (!sentinelRef.value) return
@@ -140,6 +159,7 @@ watch(
   <div
     ref="containerRef"
     class="grid-container"
+    :class="{ 'manual-sort-active': manualSortAvailable }"
     :style="{
       gap: state.settings.gap + 'px',
       backgroundColor: props.bgColor || state.settings.bgColor,
@@ -155,6 +175,8 @@ watch(
         v-for="item in visibleImages"
         :key="item.path"
         :item="item"
+        :data-path="item.path"
+        :nativeDragDisabled="manualSortAvailable"
         :gridSize="state.settings.gridSize"
         :borderRadius="state.settings.borderRadius"
         :isSelected="isSelected(item)"
@@ -187,6 +209,15 @@ watch(
   overflow-y: auto;
   display: flex;
   justify-content: center;
+}
+
+/* 手动排序激活时，格子可拖拽 */
+.grid-container.manual-sort-active .grid-item {
+  cursor: grab;
+}
+
+.grid-container.manual-sort-active .grid-item:active {
+  cursor: grabbing;
 }
 
 .grid-inner {

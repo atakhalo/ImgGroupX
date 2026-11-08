@@ -112,6 +112,13 @@ const messages: Record<Lang, Record<string, string>> = {
     'ext.cover_ratio.landscape': '横屏',
     'ext.cover_ratio.preview_hint': '示意：格子高度固定，宽度随比例变化',
 
+    // 扩展：手动排序
+    'ext.manual_sort.title': '手动排序',
+    'ext.manual_sort.desc': '进入手动排序模式，拖拽图片自由调整顺序',
+    'ext.manual_sort.enable': '启用手动排序',
+    'ext.manual_sort.enable_hint': '开启后，内容区右键菜单中会显示「手动排序 / 退出手动排序」。进入手动排序模式后，拖拽分组内的图片即可调整顺序，拖拽时显示插入位置；被调整过的分组标题会出现「手动排序」标记。',
+    'ext.manual_sort.usage': '排序记录仅在本次运行中有效；退出手动排序模式不会清除已调整的顺序，点击分组标题的标记可取消该分组的手动排序，关闭本扩展会清除全部。未进入手动排序模式时，图片仍可直接拖到浏览器或其他窗口。',
+
     // 控制栏
     'control.open': '打开',
     'control.images': '图片',
@@ -191,6 +198,10 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.new_subfolder_exists': '同名文件夹已存在',
     'folder.random_extract': '随机抽取为新分组',
     'folder.collapse': '折叠',
+    'folder.manual_sort': '手动排序',
+    'folder.manual_sort_off': '退出手动排序',
+    'folder.manual_sort_badge': '手动排序',
+    'folder.manual_sort_badge_tip': '当前分组已手动排序，点击取消手动排序',
 
     // 空状态
     'empty.drop_hint': '拖入图片或文件夹到此处',
@@ -256,6 +267,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.trash_moved_custom': '已将 {n} 项移入自定义回收站',
     'hint.trash_failed': '移入回收站失败（{n} 项）：{msg}',
     'hint.trash_open_failed': '打开回收站文件夹失败：{path}',
+    'hint.manual_sort_mode_on': '已进入手动排序模式：拖拽图片调整顺序',
+    'hint.manual_sort_mode_off': '已退出手动排序模式（已调整的顺序会保留）',
+    'hint.manual_sort_cleared': '已取消该分组的手动排序',
 
     // 分组查看器
     'group_viewer.close': '关闭分组查看器',
@@ -449,6 +463,13 @@ const messages: Record<Lang, Record<string, string>> = {
     'ext.cover_ratio.portrait': 'Portrait',
     'ext.cover_ratio.landscape': 'Landscape',
     'ext.cover_ratio.preview_hint': 'Preview: fixed height, width follows the ratio',
+
+    // Extension: manual sort
+    'ext.manual_sort.title': 'Manual Sort',
+    'ext.manual_sort.desc': 'Enter manual sort mode and drag images to arrange them freely',
+    'ext.manual_sort.enable': 'Enable manual sort',
+    'ext.manual_sort.enable_hint': 'When enabled, the content right-click menu shows "Manual Sort / Exit Manual Sort". In manual sort mode, drag images inside a group to reorder them; an insertion marker shows where the image will land, and adjusted groups get a "Manual Sort" badge in their title.',
+    'ext.manual_sort.usage': 'Sorting is kept for this session only; exiting manual sort mode keeps the adjusted order, click the group title badge to cancel that group, and disabling this extension clears everything. Outside manual sort mode, images can still be dragged out to a browser or other windows.',
     'settings.auto_pan': 'Auto Pan',
     'settings.auto_pan_hint': 'Automatically enable pan mode when zoomed in beyond 100%',
     'settings.auto_center': 'Auto Center on Switch',
@@ -551,6 +572,10 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.new_subfolder_exists': 'A folder with the same name already exists',
     'folder.random_extract': 'Random Extract as New Group',
     'folder.collapse': 'Collapse',
+    'folder.manual_sort': 'Manual Sort',
+    'folder.manual_sort_off': 'Exit Manual Sort',
+    'folder.manual_sort_badge': 'Manual Sort',
+    'folder.manual_sort_badge_tip': 'This group is manually sorted; click to cancel manual sorting',
 
     'empty.drop_hint': 'Drop images or folders here',
     'empty.format_hint': 'Supports JPG, PNG, WebP formats',
@@ -608,6 +633,9 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.trash_moved_custom': 'Moved {n} item(s) to custom recycle bin',
     'hint.trash_failed': 'Failed to move {n} item(s) to recycle bin: {msg}',
     'hint.trash_open_failed': 'Failed to open recycle bin folder: {path}',
+    'hint.manual_sort_mode_on': 'Manual sort mode on: drag images to reorder',
+    'hint.manual_sort_mode_off': 'Manual sort mode off (adjusted order is kept)',
+    'hint.manual_sort_cleared': 'Manual sorting for this group has been cleared',
 
     // Group viewer
     'group_viewer.close': 'Close group viewer',

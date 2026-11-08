@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut, isEditableTarget } from './utils/shortcuts'
 import { MEDIA_FILTER_EXTENSIONS, IMAGE_FILTER_EXTENSIONS } from './utils/media'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction, hiddenByMarkEvent, addSelectionToVirtualGroup, removeSelectionFromVirtualGroup, excludeNodeFromVirtualGroup, groupViewerNode, groupViewerIndex, openGroupViewer, closeGroupViewer, addTemporaryVirtualGroup } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction, enterManualSortMode, exitManualSortMode, manualSortDragging, hiddenByMarkEvent, addSelectionToVirtualGroup, removeSelectionFromVirtualGroup, excludeNodeFromVirtualGroup, groupViewerNode, groupViewerIndex, openGroupViewer, closeGroupViewer, addTemporaryVirtualGroup } from './stores/imageStore'
 import type { ImageItem, NavigableEntry, FolderNode } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -69,7 +69,7 @@ function handleContentCtxMenu(e: MouseEvent) {
   // 分组内容背景右键时会预先登记折叠动作（同一事件才生效）
   const pending = ctxFoldAction.value
   ctxFold.value = pending && pending.ev === e ? pending.run : null
-  contentCtx.value = { show: true, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 200) }
+  contentCtx.value = { show: true, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 330) }
   // 打开时刷新剪贴板文件状态（不阻塞菜单显示）
   refreshClipboardHasFiles()
 }
@@ -82,6 +82,24 @@ function ctxCollapseGroup() {
   const run = ctxFold.value
   closeContentCtx()
   run?.()
+}
+/** 手动排序模式开关（全局操作；退出时不清除任何分组已有的手动排序） */
+function ctxToggleManualSortMode() {
+  closeContentCtx()
+  if (state.manualSortMode) {
+    exitManualSortMode()
+    showToast(t('hint.manual_sort_mode_off'))
+  } else {
+    enterManualSortMode()
+    showToast(t('hint.manual_sort_mode_on'))
+  }
+}
+/** 退出手动排序模式（右下角提示按钮使用；保留已建立的手动排序） */
+function ctxExitManualSort() {
+  closeContentCtx()
+  if (!state.manualSortMode) return
+  exitManualSortMode()
+  showToast(t('hint.manual_sort_mode_off'))
 }
 function ctxSwitchToViewMode() {
   closeContentCtx()
@@ -222,10 +240,46 @@ async function closeApp() {
 
 function preventCtx(e: MouseEvent) { e.preventDefault() }
 
+/**
+ * 是否正在把应用内的图片拖出到其他窗口（浏览器、资源管理器等）。
+ * 拖出时窗口级拖放目标也会收到事件，需要忽略，否则会误显示「拖入图片或文件夹」。
+ */
+const nativeDragOut = ref(false)
+let nativeDragOutTimer: ReturnType<typeof setTimeout> | null = null
+
+function onDocumentDragStart(e: DragEvent) {
+  // 手动排序拖拽会在容器上 preventDefault，不视为拖出
+  if (e.defaultPrevented) return
+  const target = e.target as HTMLElement | null
+  if (target?.closest('.grid-item')) {
+    nativeDragOut.value = true
+    // 极端情况下 dragend 未触发，超时兜底复位
+    if (nativeDragOutTimer) clearTimeout(nativeDragOutTimer)
+    nativeDragOutTimer = setTimeout(() => {
+      nativeDragOut.value = false
+      nativeDragOutTimer = null
+    }, 15000)
+  }
+}
+
+function endNativeDragOut() {
+  if (!nativeDragOut.value) return
+  nativeDragOut.value = false
+  if (nativeDragOutTimer) {
+    clearTimeout(nativeDragOutTimer)
+    nativeDragOutTimer = null
+  }
+}
+
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
   // 全局取消浏览器默认右键菜单
   document.addEventListener('contextmenu', preventCtx)
+  // 跟踪图片拖出，避免拖出时误显示「拖入图片或文件夹」
+  document.addEventListener('dragstart', onDocumentDragStart)
+  document.addEventListener('dragend', endNativeDragOut)
+  document.addEventListener('drop', endNativeDragOut)
+  document.addEventListener('mouseup', endNativeDragOut)
   document.addEventListener('click', onRecentMenuClickOutside)
   setupDragDrop()
   await loadConfig()
@@ -283,9 +337,11 @@ onMounted(async () => {
           const tryOpenImage = () => {
             if (!pendingOpenImagePath.value) return
             const target = pendingOpenImagePath.value
+            const normCase = (p: string) => p.replace(/\\/g, '/').toLowerCase()
+            // 优先精确匹配；再按 Windows 路径大小写不敏感兜底（CLI 参数与扫描结果可能盘符大小写不同）
             const item = state.allImages.find(i =>
               i.path.replace(/\\/g, '/') === target
-            )
+            ) ?? state.allImages.find(i => normCase(i.path) === normCase(target))
             if (item) viewImage(item)
             pendingOpenImagePath.value = ''
             stopWatch()
@@ -308,7 +364,12 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('contextmenu', preventCtx)
+  document.removeEventListener('dragstart', onDocumentDragStart)
+  document.removeEventListener('dragend', endNativeDragOut)
+  document.removeEventListener('drop', endNativeDragOut)
+  document.removeEventListener('mouseup', endNativeDragOut)
   document.removeEventListener('click', onRecentMenuClickOutside)
+  if (nativeDragOutTimer) clearTimeout(nativeDragOutTimer)
   if (unlistenDragDrop) unlistenDragDrop()
   if (unlistenFsChange) unlistenFsChange()
 })
@@ -329,10 +390,15 @@ async function setupDragDrop() {
   try {
     unlistenDragDrop = await getCurrentWindow().onDragDropEvent((event) => {
       const evt = event.payload
-      if (evt.type === 'enter' || evt.type === 'over') {
-        isDragOver.value = true
-      } else if (evt.type === 'leave') {
+      // 内部拖拽排序期间，忽略窗口级拖放事件（避免误显示「拖入图片或文件夹」）
+      if (evt.type === 'leave') {
         isDragOver.value = false
+        return
+      }
+      if (manualSortDragging.value || nativeDragOut.value) return
+      if (evt.type === 'enter') {
+        // 只有携带真实文件路径才视为外部文件拖入
+        isDragOver.value = Array.isArray(evt.paths) && evt.paths.length > 0
       } else if (evt.type === 'drop') {
         isDragOver.value = false
         if (evt.paths && evt.paths.length > 0) {
@@ -861,6 +927,23 @@ async function handleRefresh() {
               </svg>
               <span>选择模式</span>
             </button>
+            <!-- 手动排序：共用一个菜单项，按当前状态显示进入/退出（与查看模式同组，全局操作） -->
+            <button
+              v-if="state.settings.manualSortEnabled"
+              class="content-ctx-item"
+              @click="ctxToggleManualSortMode"
+            >
+              <svg v-if="!state.manualSortMode" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 6h13M8 12h13M8 18h13" />
+                <path d="M3 6h.01M3 12h.01M3 18h.01" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              <span>{{ state.manualSortMode ? $t('folder.manual_sort_off') : $t('folder.manual_sort') }}</span>
+            </button>
             <!-- 粘贴为临时分组（分组模式且剪贴板含文件时显示） -->
             <button
               v-if="state.folderGroup && clipboardHasFiles"
@@ -1067,6 +1150,11 @@ async function handleRefresh() {
     <!-- 冒泡提示 -->
     <div v-if="toastState.visible" class="toast-bubble">{{ toastState.text }}</div>
 
+    <!-- 手动排序模式提示：仅保留退出按钮 -->
+    <div v-if="state.manualSortMode" class="manual-sort-mode-tip">
+      <button class="manual-sort-mode-exit" @click="ctxExitManualSort">{{ $t('folder.manual_sort_off') }}</button>
+    </div>
+
     <!-- 拖入提示 -->
     <div v-if="isDragOver" class="drop-overlay">
       <div class="drop-hint">
@@ -1100,6 +1188,41 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+
+/* ===== 手动排序拖拽 ===== */
+body.manual-sort-drag-active {
+  user-select: none;
+  cursor: grabbing;
+}
+/* 手动排序激活的分组内，格子显示可拖拽光标 */
+.manual-sort-active .grid-item {
+  cursor: grab;
+}
+body.manual-sort-drag-active .grid-item {
+  cursor: grabbing !important;
+}
+.manual-sort-source {
+  opacity: 0.35;
+}
+.manual-sort-ghost {
+  border-radius: 6px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
+  transition: none !important;
+  will-change: transform;
+}
+.manual-sort-ghost .grid-item {
+  transition: none !important;
+}
+.manual-sort-indicator {
+  position: fixed;
+  width: 3px;
+  border-radius: 2px;
+  background: #4fc3f7;
+  box-shadow: 0 0 10px rgba(79, 195, 247, 0.95);
+  pointer-events: none;
+  z-index: 100001;
+  display: none;
+}
 </style>
 
 <style scoped>
@@ -1312,6 +1435,32 @@ html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: h
   border: 1px solid rgba(255,255,255,0.1);
   backdrop-filter: blur(8px);
   animation: toast-in 0.25s ease-out;
+}
+
+/* 手动排序模式提示：底部居中的「退出手动排序」按钮 */
+.manual-sort-mode-tip {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 104px;
+  z-index: 120;
+}
+.manual-sort-mode-exit {
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(79, 195, 247, 0.45);
+  background: rgba(18, 28, 46, 0.95);
+  color: #bfe8ff;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  user-select: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.manual-sort-mode-exit:hover {
+  background: rgba(79, 195, 247, 0.28);
+  border-color: rgba(79, 195, 247, 0.7);
 }
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(12px); }

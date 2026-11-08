@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { state, openInExplorer, saveVirtualGroup, getProcessedImages, requestImageDims, startProgressiveScan, renameVirtualGroup, createSubFolder, openRandomExtractDialog, showToast, ctxFoldAction } from '../stores/imageStore'
+import { state, openInExplorer, saveVirtualGroup, getProcessedImages, requestImageDims, startProgressiveScan, renameVirtualGroup, createSubFolder, openRandomExtractDialog, showToast, ctxFoldAction, isManualSortActive, disableManualSort } from '../stores/imageStore'
 import { observeVisibility, unobserveVisibility } from '../utils/lazyObserver'
+import { useManualSortDrag } from '../utils/manualSortDrag'
 import { t } from '../i18n'
 import GridView from './GridView.vue'
 import GridItem from './GridItem.vue'
@@ -314,12 +315,46 @@ const wrapChildren = computed(() => {
   return true
 })
 
-/** 紧凑模式下统一网格中的图片列表（排序+筛选） */
-const processedImages = computed(() => getProcessedImages(props.node.images))
+/** 紧凑模式下统一网格中的图片列表（排序+筛选；手动排序时按记录顺序） */
+const manualSortKey = computed(() => {
+  // 虚拟分组（含分组查看器）用「分组内部路径 + 节点路径」，真实树用节点绝对路径
+  if (props.vgIndex !== undefined) {
+    const vg = state.virtualGroups[props.vgIndex]
+    const scope = vg ? vg.path : `idx:${props.vgIndex}`
+    return `vg:${scope}:${props.node.path}`
+  }
+  return getNodeAbsolutePath()
+})
+
+/** 当前分组是否已被标记为手动排序（有顺序记录；与全局排序模式无关） */
+const manualSortActive = computed(() =>
+  state.settings.manualSortEnabled && isManualSortActive(manualSortKey.value)
+)
+
+/** 全局手动排序模式是否开启（开启时本分组图片可拖拽排序） */
+const manualSortModeActive = computed(() =>
+  state.settings.manualSortEnabled && state.manualSortMode
+)
+
+const processedImages = computed(() => getProcessedImages(props.node.images, manualSortKey.value))
 
 /** 统一网格是否出现在视口附近（决定是否读取图片尺寸） */
 const unifiedGridRef = ref<HTMLElement | null>(null)
 const unifiedInViewport = ref(false)
+
+/** 统一网格中的手动排序拖拽（与 GridView 使用同一套指针拖拽逻辑） */
+useManualSortDrag({
+  container: unifiedGridRef,
+  enabled: () => manualSortModeActive.value,
+  sortKey: () => manualSortKey.value,
+  images: () => props.node.images,
+})
+
+/** 取消当前分组的手动排序（点击标题上的「手动排序」标记） */
+function handleDisableManualSort() {
+  disableManualSort(manualSortKey.value)
+  showToast(t('hint.manual_sort_cleared'))
+}
 
 watch(unifiedGridRef, (el, oldEl) => {
   unobserveVisibility(oldEl)
@@ -418,6 +453,7 @@ function handleBodyCtxMenu(e: MouseEvent) {
   const target = e.target as HTMLElement
   // 图片、标题栏各自有自己的右键菜单
   if (target.closest('.grid-item') || target.closest('.folder-header')) return
+  // 内层分组已认领本次右键
   if (ctxFoldAction.value?.ev === e) return
   if (!props.getExpanded(props.node, getExpandKey())) return
   ctxFoldAction.value = { ev: e, run: () => emit('toggle', props.node, getExpandKey()) }
@@ -745,6 +781,19 @@ function getNodeGridContainerBg(depth: number): string {
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
             </svg>
           </button>
+          <!-- 手动排序状态标记：点击取消该分组的手动排序（与勾选框同区） -->
+          <span
+            v-if="manualSortActive"
+            class="manual-sort-badge"
+            :title="$t('folder.manual_sort_badge_tip')"
+            @click.stop="handleDisableManualSort"
+          >
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 6h13M8 12h13M8 18h13" />
+              <path d="M3 6h.01M3 12h.01M3 18h.01" />
+            </svg>
+            <span>{{ $t('folder.manual_sort_badge') }}</span>
+          </span>
           <!-- 选择勾选框（隐藏时保留宽度） -->
           <span
             class="folder-select-box"
@@ -1042,7 +1091,7 @@ function getNodeGridContainerBg(depth: number): string {
       v-if="useUnifiedGrid && !isEmptyFolder && getExpanded(node, getExpandKey())"
       ref="unifiedGridRef"
       class="folder-content-grid"
-      :class="{ 'folder-content-collapsed': !getExpanded(node, getExpandKey()) }"
+      :class="{ 'folder-content-collapsed': !getExpanded(node, getExpandKey()), 'manual-sort-active': manualSortModeActive }"
       :style="{
         gap: getExpanded(node, getExpandKey()) ? state.settings.gap + 'px' : '0',
         backgroundColor: getNodeGridContainerBg(realDepth),
@@ -1078,6 +1127,8 @@ function getNodeGridContainerBg(depth: number): string {
         v-for="item in processedImages"
         :key="item.path"
         :item="item"
+        :data-path="item.path"
+        :nativeDragDisabled="manualSortModeActive"
         :gridSize="state.settings.gridSize"
         :borderRadius="state.settings.borderRadius"
         :isSelected="isImageSelected(item)"
@@ -1157,6 +1208,7 @@ function getNodeGridContainerBg(depth: number): string {
         >
           <GridView
             :images="node.images"
+            :manualSortKey="manualSortKey"
             :bgColor="getNodeGridContainerBg(realDepth)"
             @viewImage="(item: ImageItem, scope: ImageItem[]) => { const _k = getNavKey(); const _ii = scope.findIndex(i => i.path === item.path); emit('viewImage', item, scope, _k, _ii >= 0 ? _ii : 0) }"
             @selectImage="(item: ImageItem, ctrl: boolean) => emit('selectImage', item, ctrl)"
@@ -1357,6 +1409,36 @@ function getNodeGridContainerBg(depth: number): string {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* 手动排序激活标记（点击取消） */
+.manual-sort-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #8fd8ff;
+  background: rgba(79, 195, 247, 0.15);
+  border: 1px solid rgba(79, 195, 247, 0.35);
+  cursor: pointer;
+  flex-shrink: 0;
+  user-select: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.manual-sort-badge:hover {
+  background: rgba(79, 195, 247, 0.3);
+  border-color: rgba(79, 195, 247, 0.6);
+}
+
+/* 紧凑模式统一网格中的可拖拽图片 */
+.folder-content-grid.manual-sort-active .grid-item {
+  cursor: grab;
+}
+.folder-content-grid.manual-sort-active .grid-item:active {
+  cursor: grabbing;
 }
 
 .folder-select-actions {

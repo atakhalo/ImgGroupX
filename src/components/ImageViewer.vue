@@ -493,7 +493,8 @@ function handleClose() {
           :style="[{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }, markBorderStyle]"
           @load="isLoaded = true"
           @error="isLoaded = true"
-          :draggable="!panMode"
+          draggable="false"
+          @dragstart.prevent
         />
         <!-- 大小跳过的图片显示占位符 -->
         <div v-if="isImage && isSkipped" class="viewer-text-wrap"

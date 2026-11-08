@@ -1247,10 +1247,46 @@ fn load_config() -> Result<serde_json::Value, String> {
     Ok(json)
 }
 
+/// 规范化命令行路径参数。
+///
+/// 命令行里的路径可能是相对路径（如 `a.png`、`.\sub\b.png`）或使用正斜杠，
+/// 而拖入/打开文件夹得到的路径是绝对、反斜杠形式。形式不一致会导致：
+/// 前端提取父目录失败、扫描结果与待打开图片路径匹配不上、
+/// 以及 Windows Shell 缩略图接口拒绝解析。这里统一为绝对路径（Windows 下反斜杠）。
+fn normalize_cli_path(arg: &str) -> String {
+    let path = Path::new(arg);
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        match env::current_dir() {
+            Ok(cwd) => cwd.join(path),
+            Err(_) => path.to_path_buf(),
+        }
+    };
+    #[cfg(target_os = "windows")]
+    let result = {
+        let mut s = absolute.to_string_lossy().replace('/', "\\");
+        // 去掉 verbatim 前缀：后续扫描、Shell 缩略图与前端路径匹配都不使用 \\?\ 形式
+        if let Some(rest) = s.strip_prefix("\\\\?\\UNC\\") {
+            s = format!("\\\\{}", rest);
+        } else if let Some(rest) = s.strip_prefix("\\\\?\\") {
+            s = rest.to_string();
+        }
+        s
+    };
+    #[cfg(not(target_os = "windows"))]
+    let result = absolute.to_string_lossy().to_string();
+    result
+}
+
 /// 获取命令行传入的路径参数（跳过第一个为exe路径）
 #[tauri::command]
 fn get_cli_args() -> Vec<String> {
-    std::env::args().skip(1).collect()
+    std::env::args()
+        .skip(1)
+        .filter(|arg| !arg.trim().is_empty())
+        .map(|arg| normalize_cli_path(&arg))
+        .collect()
 }
 
 /// 设置是否抑制文件变更事件（自身操作时忽略）
