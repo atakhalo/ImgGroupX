@@ -227,4 +227,8 @@ export interface AppSettings {
   batchRenameEnabled: boolean
   /** 批量重命名规则预设列表 */
   batchRenamePresets: BatchRenamePreset[]
+
+  // ===== 扩展：标记保存 =====
+  /** 是否启用标记保存扩展（开启后标记数据保存到 imggroup-data/marks.yaml，并在启动时读取） */
+  markSaveEnabled: boolean
 }

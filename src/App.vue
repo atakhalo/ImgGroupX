@@ -19,6 +19,7 @@ import { open, ask } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { hasFiles, readFiles } from 'tauri-plugin-clipboard-api'
+import { initUpdateCheck } from './utils/update'
 
 const folderPanelRef = ref<InstanceType<typeof FolderPanel>>()
 
@@ -284,6 +285,8 @@ onMounted(async () => {
   setupDragDrop()
   await loadConfig()
   settingsReady = true
+  // 启动时检查更新（一天一次，有新版时在设置按钮显示红点）
+  initUpdateCheck()
   // 加载最近访问记录
   loadRecent()
   // 剪贴板文件状态（用于右键菜单"粘贴为临时分组"）

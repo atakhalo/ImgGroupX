@@ -177,6 +177,24 @@ const messages: Record<Lang, Record<string, string>> = {
     'ext.batch_rename.var_date': '今天日期（默认 YYYYMMDD，可指定格式）',
     'ext.batch_rename.var_n': '文件总数',
 
+    // 扩展：标记保存
+    'ext.mark_save.title': '标记保存',
+    'ext.mark_save.desc': '标记数据保存到文件，启动时自动读取',
+    'ext.mark_save.enable': '启用标记保存',
+    'ext.mark_save.enable_hint': '开启后，1-5 级标记会保存到 imggroup-data/marks.yaml，下次启动时自动恢复；在格图X内移动或重命名文件时标记会跟随。',
+    'ext.mark_save.usage': '标记与文件路径绑定：复制出的新文件不带标记；删除文件时对应标记会一并清除。外部程序移动/重命名的文件无法跟随。',
+    'ext.mark_save.storage': '数据占用',
+    'ext.mark_save.path': '路径',
+    'ext.mark_save.size': '占用',
+    'ext.mark_save.count': '标记数',
+    'ext.mark_save.count_value': '{n} 条',
+    'ext.mark_save.refresh': '刷新',
+    'ext.mark_save.clear': '清除',
+    'ext.mark_save.clear_confirm': '确定清除所有已保存的标记数据吗？当前视图中的标记也会被清除，此操作不可撤销。',
+    'ext.mark_save.cleared': '已清除标记数据',
+    'ext.mark_save.clear_failed': '清除标记数据失败：{msg}',
+    'ext.mark_save.save_failed': '保存标记数据失败：{msg}',
+
     // 控制栏
     'control.open': '打开',
     'control.images': '图片',
@@ -424,6 +442,20 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.tab_advanced': '高级',
     'settings.tab_shortcuts': '快捷键',
 
+    // 更新提示
+    'update.current_version': '当前版本',
+    'update.latest_version': '最新版本',
+    'update.checking': '检查中…',
+    'update.check_failed': '检查更新失败，请检查网络后重试',
+    'update.up_to_date': '已是最新版本',
+    'update.available': '发现新版本',
+    'update.view_release': '查看更新',
+    'update.ignore': '忽略该版本',
+    'update.ignored': '已忽略版本 v{version}',
+    'update.unignore': '取消忽略',
+    'update.recheck': '重新检查',
+    'update.badge_tip': '发现新版本 v{version}',
+
     // 控制栏标题
     'control.open_folder': '打开文件夹',
     'control.open_images': '打开图片',
@@ -589,6 +621,25 @@ const messages: Record<Lang, Record<string, string>> = {
     'ext.batch_rename.var_mdate': 'Modified date (default YYYYMMDD, format supported)',
     'ext.batch_rename.var_date': 'Today (default YYYYMMDD, format supported)',
     'ext.batch_rename.var_n': 'Total file count',
+
+    // Extensions: mark persistence
+    'ext.mark_save.title': 'Mark Persistence',
+    'ext.mark_save.desc': 'Save marks to a file and load them on startup',
+    'ext.mark_save.enable': 'Enable mark persistence',
+    'ext.mark_save.enable_hint': 'When enabled, level 1-5 marks are saved to imggroup-data/marks.yaml and restored on the next launch; marks follow files moved or renamed inside ImgGroupX.',
+    'ext.mark_save.usage': 'Marks are bound to file paths: copied files do not inherit marks, and deleting a file removes its mark. Files moved or renamed outside ImgGroupX cannot be tracked.',
+    'ext.mark_save.storage': 'Storage',
+    'ext.mark_save.path': 'Path',
+    'ext.mark_save.size': 'Size',
+    'ext.mark_save.count': 'Marks',
+    'ext.mark_save.count_value': '{n} entries',
+    'ext.mark_save.refresh': 'Refresh',
+    'ext.mark_save.clear': 'Clear',
+    'ext.mark_save.clear_confirm': 'Clear all saved mark data? Marks in the current view will also be removed. This cannot be undone.',
+    'ext.mark_save.cleared': 'Mark data cleared',
+    'ext.mark_save.clear_failed': 'Failed to clear mark data: {msg}',
+    'ext.mark_save.save_failed': 'Failed to save mark data: {msg}',
+
     'settings.auto_pan': 'Auto Pan',
     'settings.auto_pan_hint': 'Automatically enable pan mode when zoomed in beyond 100%',
     'settings.auto_center': 'Auto Center on Switch',
@@ -848,6 +899,20 @@ const messages: Record<Lang, Record<string, string>> = {
     'settings.tab_viewer': 'Viewer',
     'settings.tab_advanced': 'Advanced',
     'settings.tab_shortcuts': 'Shortcuts',
+
+    // Update notice
+    'update.current_version': 'Current',
+    'update.latest_version': 'Latest',
+    'update.checking': 'Checking…',
+    'update.check_failed': 'Update check failed. Check your network and retry.',
+    'update.up_to_date': 'You are up to date',
+    'update.available': 'New version available',
+    'update.view_release': 'View release',
+    'update.ignore': 'Ignore this version',
+    'update.ignored': 'Ignored version v{version}',
+    'update.unignore': 'Unignore',
+    'update.recheck': 'Check again',
+    'update.badge_tip': 'New version v{version} available',
 
     'control.open_folder': 'Open Folder',
     'control.open_images': 'Open Images',

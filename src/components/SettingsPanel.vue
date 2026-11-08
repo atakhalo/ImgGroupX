@@ -3,9 +3,10 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { t } from '../i18n'
 import type { CoverRatio } from '../types'
 import { COVER_RATIO_ASPECT, COVER_RATIO_FAMILY, COVER_RATIO_ORDER } from '../utils/coverRatio'
-import { state, showToast } from '../stores/imageStore'
+import { state, showToast, markStorageInfo, refreshMarkStorageInfo, clearMarkStorage } from '../stores/imageStore'
+import { updateState, hasUpdate, latestIgnored, checkForUpdate, ignoreLatestVersion, unignoreVersion } from '../utils/update'
 import { SHORTCUTS, getDefaultBindings, formatKey, getAltKey } from '../utils/shortcuts'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, ask } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 
 const emit = defineEmits<{
@@ -33,7 +34,7 @@ const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
   advanced: ['scanAllFiles', 'includeVideos', 'skipEmptyFolders', 'folderGroup', 'showGroupTitle', 'showMarks', 'privacyMode', 'customTrashEnabled', 'customTrashPath'],
-  extensions: ['coverRatioEnabled', 'coverRatio', 'coverRatioAutoOrient', 'coverRatioFit', 'manualSortEnabled', 'batchRenameEnabled', 'batchRenamePresets'],
+  extensions: ['coverRatioEnabled', 'coverRatio', 'coverRatioAutoOrient', 'coverRatioFit', 'manualSortEnabled', 'batchRenameEnabled', 'batchRenamePresets', 'markSaveEnabled'],
 }
 
 const defaultSettings = {
@@ -68,6 +69,7 @@ const defaultSettings = {
     { name: '序号_尺寸', pattern: '{i}_{w}x{h}', start: 1, digits: 0, includeSub: true },
     { name: '原名_序号', pattern: '{origin}_{i}', start: 1, digits: 0, includeSub: true },
   ] as { name: string; pattern: string; start: number; digits: number; includeSub: boolean }[],
+  markSaveEnabled: false,
   keyBindings: getDefaultBindings(),
   keyAltBindings: getDefaultBindings(true),
 }
@@ -117,6 +119,13 @@ function openExternal(url: string) {
   invoke('open_in_explorer', { path: url }).catch(() => {
     window.open(url, '_blank')
   })
+}
+
+/** 手动重新检查更新（跳过一天一次的冷却） */
+async function recheckUpdate() {
+  await checkForUpdate({ force: true })
+  if (updateState.error) showToast(t('update.check_failed'))
+  else if (!hasUpdate.value) showToast(t('update.up_to_date'))
 }
 
 /** 按当前标签页重置 */
@@ -215,8 +224,31 @@ function resetShortcut(id: string, isAlt = false) {
   }
 }
 
+/** 标记数据占用：字节数格式化 */
+function formatStorageSize(bytes: number): string {
+  if (!bytes) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
+}
+
+/** 清除标记数据（磁盘文件 + 当前视图中的标记） */
+async function clearMarkStorageData() {
+  const ok = await ask(t('ext.mark_save.clear_confirm'), {
+    title: t('ext.mark_save.title'),
+    kind: 'warning',
+  })
+  if (!ok) return
+  await clearMarkStorage()
+  await refreshMarkStorageInfo()
+}
+
 onMounted(() => {
   document.addEventListener('keydown', onRecordKeydown, true)
+  // 打开设置时查询一次标记数据占用
+  refreshMarkStorageInfo()
+  // 打开设置时顺便检查更新（受一天一次的冷却限制，命中缓存不重复请求）
+  void checkForUpdate()
 })
 
 onUnmounted(() => {
@@ -246,7 +278,13 @@ onUnmounted(() => {
             class="settings-tab"
             :class="{ active: activeTab === tab.key }"
             @click="activeTab = tab.key"
-          >{{ $t(tab.label) }}</button>
+          >
+            <span class="settings-tab-inner">
+              {{ $t(tab.label) }}
+              <!-- 有新版本时在「高级」标签上提示 -->
+              <span v-if="tab.key === 'advanced' && hasUpdate" class="tab-dot"></span>
+            </span>
+          </button>
         </div>
 
         <div class="settings-body">
@@ -605,6 +643,73 @@ onUnmounted(() => {
 
           <!-- ===== 高级 ===== -->
           <div v-show="activeTab === 'advanced'" class="setting-section">
+            <!-- GitHub（含更新提示） -->
+            <h4 style="margin-top: 0; display: flex; align-items: center; gap: 6px;">
+              GitHub
+              <span v-if="hasUpdate" class="github-dot"></span>
+            </h4>
+            <div class="setting-row" style="flex-wrap: wrap;">
+              <a
+                href="https://github.com/atakhalo/ImgGroupX"
+                target="_blank"
+                class="github-link"
+                @click.prevent="openExternal('https://github.com/atakhalo/ImgGroupX')"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                <span>github.com/atakhalo/ImgGroupX</span>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;flex-shrink:0;">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </a>
+            </div>
+
+            <!-- 版本信息：当前版本 / 最新版本 / 忽略该版本 -->
+            <div class="update-info">
+              <div class="update-version-row">
+                <span class="update-version">
+                  {{ $t('update.current_version') }}
+                  <b>v{{ updateState.currentVersion || '—' }}</b>
+                </span>
+                <span class="update-sep">·</span>
+                <span class="update-version">
+                  {{ $t('update.latest_version') }}
+                  <b :class="{ 'is-new': hasUpdate }">{{
+                    updateState.latestVersion
+                      ? 'v' + updateState.latestVersion
+                      : (updateState.checking ? $t('update.checking') : '—')
+                  }}</b>
+                </span>
+                <button
+                  class="update-icon-btn"
+                  :class="{ spinning: updateState.checking }"
+                  :disabled="updateState.checking"
+                  :title="$t('update.recheck')"
+                  @click="recheckUpdate"
+                >
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10" />
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                  </svg>
+                </button>
+              </div>
+
+              <div v-if="hasUpdate" class="update-actions">
+                <span class="update-new-tip">{{ $t('update.available') }}</span>
+                <button class="update-btn primary" @click="openExternal(updateState.releaseUrl)">{{ $t('update.view_release') }}</button>
+                <button class="update-btn" @click="ignoreLatestVersion">{{ $t('update.ignore') }}</button>
+              </div>
+              <div v-else-if="latestIgnored" class="update-actions">
+                <span class="update-muted">{{ $t('update.ignored', { version: updateState.latestVersion }) }}</span>
+                <button class="update-btn" @click="unignoreVersion">{{ $t('update.unignore') }}</button>
+              </div>
+              <div v-else-if="updateState.error" class="update-hint">{{ $t('update.check_failed') }}</div>
+              <div v-else-if="!updateState.checking && updateState.latestVersion" class="update-hint">{{ $t('update.up_to_date') }}</div>
+            </div>
+
             <!-- 扫描设置 -->
             <h4>{{ $t('settings.scan_all_files') }}</h4>
             <div class="setting-row">
@@ -678,27 +783,6 @@ onUnmounted(() => {
               </div>
               <div class="setting-hint" v-if="!(localSettings.customTrashPath || '').trim()">{{ $t('settings.custom_trash_empty_hint') }}</div>
             </template>
-
-            <!-- GitHub -->
-            <h4 style="margin-top: 24px;">GitHub</h4>
-            <div class="setting-row" style="flex-wrap: wrap;">
-              <a
-                href="https://github.com/atakhalo/ImgGroupX"
-                target="_blank"
-                class="github-link"
-                @click.prevent="openExternal('https://github.com/atakhalo/ImgGroupX')"
-              >
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-                </svg>
-                <span>github.com/atakhalo/ImgGroupX</span>
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;flex-shrink:0;">
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
-              </a>
-            </div>
           </div>
           <!-- ===== 扩展 ===== -->
           <div v-show="activeTab === 'extensions'" class="setting-section">
@@ -882,6 +966,59 @@ onUnmounted(() => {
                 >{{ $t('ext.batch_rename.add_preset') }}</button>
               </div>
             </div>
+
+            <!-- 扩展：标记保存 -->
+            <div class="ext-item">
+              <div class="ext-header" @click="toggleExt('markSave')">
+                <svg
+                  class="ext-arrow"
+                  :class="{ open: !isExtCollapsed('markSave') }"
+                  viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+                >
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+                <div class="ext-title-wrap">
+                  <span class="ext-title">{{ $t('ext.mark_save.title') }}</span>
+                  <span class="ext-desc">{{ $t('ext.mark_save.desc') }}</span>
+                </div>
+                <span v-if="localSettings.markSaveEnabled" class="ext-state">{{ $t('ext.enabled') }}</span>
+              </div>
+              <div v-show="!isExtCollapsed('markSave')" class="ext-body">
+                <div class="setting-row">
+                  <label class="toggle-label">
+                    <input type="checkbox" v-model="localSettings.markSaveEnabled" class="toggle-input" />
+                    <span class="toggle-switch"></span>
+                    {{ $t('ext.mark_save.enable') }}
+                  </label>
+                </div>
+                <div class="setting-hint">{{ $t('ext.mark_save.enable_hint') }}</div>
+                <div class="setting-hint">{{ $t('ext.mark_save.usage') }}</div>
+
+                <h5 class="ext-sub-title">{{ $t('ext.mark_save.storage') }}</h5>
+                <div class="mark-storage">
+                  <div class="mark-storage-line">
+                    <span class="mark-storage-label">{{ $t('ext.mark_save.path') }}</span>
+                    <span class="mark-storage-value" :title="markStorageInfo.path">{{ markStorageInfo.path || '—' }}</span>
+                  </div>
+                  <div class="mark-storage-line">
+                    <span class="mark-storage-label">{{ $t('ext.mark_save.size') }}</span>
+                    <span class="mark-storage-value">{{ formatStorageSize(markStorageInfo.sizeBytes) }}</span>
+                  </div>
+                  <div class="mark-storage-line">
+                    <span class="mark-storage-label">{{ $t('ext.mark_save.count') }}</span>
+                    <span class="mark-storage-value">{{ $t('ext.mark_save.count_value', { n: markStorageInfo.count }) }}</span>
+                  </div>
+                  <div class="mark-storage-actions">
+                    <button class="settings-btn secondary" @click="refreshMarkStorageInfo">{{ $t('ext.mark_save.refresh') }}</button>
+                    <button
+                      class="settings-btn danger"
+                      :disabled="!markStorageInfo.exists"
+                      @click="clearMarkStorageData"
+                    >{{ $t('ext.mark_save.clear') }}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="settings-footer">
@@ -994,6 +1131,23 @@ onUnmounted(() => {
 .settings-tab.active {
   background: rgba(100,108,255,0.15);
   color: #aab0ff;
+}
+
+.settings-tab-inner {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 高级标签上的新版本红点 */
+.tab-dot {
+  position: absolute;
+  top: -1px;
+  right: -9px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff4d4f;
 }
 
 .setting-section {
@@ -1298,6 +1452,128 @@ onUnmounted(() => {
   opacity: 1;
 }
 
+/* GitHub 标题旁的新版本红点 */
+.github-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff4d4f;
+}
+
+/* 版本与更新提示 */
+.update-info {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+}
+
+.update-version-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.update-version b {
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+  font-family: monospace;
+  margin-left: 2px;
+}
+
+.update-version b.is-new {
+  color: #ffd166;
+}
+
+.update-sep {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.update-icon-btn {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.update-icon-btn:hover:not(:disabled) {
+  color: #aab0ff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.update-icon-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.update-icon-btn.spinning svg {
+  animation: update-spin 0.9s linear infinite;
+}
+
+@keyframes update-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.update-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.update-new-tip {
+  font-size: 12px;
+  color: #ffd166;
+}
+
+.update-muted {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.update-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.update-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.6);
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.update-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: white;
+}
+
+.update-btn.primary {
+  background: rgba(100, 108, 255, 0.15);
+  border-color: rgba(100, 108, 255, 0.3);
+  color: #aab0ff;
+}
+
+.update-btn.primary:hover {
+  background: rgba(100, 108, 255, 0.25);
+}
+
 .settings-footer {
   padding: 12px 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -1466,6 +1742,58 @@ onUnmounted(() => {
   border-color: rgba(100, 108, 255, 0.45);
   color: #aab0ff;
 }
+
+/* 标记保存扩展：占用信息 */
+.mark-storage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+}
+
+.mark-storage-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mark-storage-label {
+  flex-shrink: 0;
+  width: 56px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.mark-storage-value {
+  flex: 1;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.7);
+  word-break: break-all;
+}
+
+.mark-storage-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.mark-storage-actions .settings-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+}
+
+.settings-btn.danger {
+  background: rgba(231, 76, 60, 0.12);
+  border-color: rgba(231, 76, 60, 0.28);
+  color: #f1948a;
+}
+.settings-btn.danger:hover:not(:disabled) { background: rgba(231, 76, 60, 0.22); color: #ffb3a7; }
+.settings-btn.danger:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .ratio-preview {
   display: flex;

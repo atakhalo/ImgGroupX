@@ -869,9 +869,10 @@ fn copy_files(files: Vec<Vec<String>>, dest_dir: String) -> Result<Vec<Vec<Strin
 
 /// 移动文件列表到目标目录（优先重命名，跨卷时回退到复制+删除，自动处理重名）
 /// 移动完成后会清理 cleanup_dirs 中指定的目录及其下所有空的子目录
+/// 返回实际移动的文件：[源路径, 目标路径] 列表（目标路径可能因重名自动追加后缀）
 #[tauri::command]
-fn move_files(files: Vec<Vec<String>>, dest_dir: String, cleanup_dirs: Vec<String>) -> Result<Vec<String>, String> {
-    let mut moved = Vec::new();
+fn move_files(files: Vec<Vec<String>>, dest_dir: String, cleanup_dirs: Vec<String>) -> Result<Vec<Vec<String>>, String> {
+    let mut moved: Vec<Vec<String>> = Vec::new();
     for pair in &files {
         if pair.len() < 2 { continue; }
         let source = &pair[0];
@@ -905,7 +906,7 @@ fn move_files(files: Vec<Vec<String>>, dest_dir: String, cleanup_dirs: Vec<Strin
         // 优先尝试重命名（同文件系统，瞬间完成）
         match fs::rename(source, &final_path) {
             Ok(()) => {
-                moved.push(source.clone());
+                moved.push(vec![source.clone(), final_path.to_string_lossy().to_string()]);
             }
             Err(e) => {
                 // 跨卷时 rename 失败，回退到复制+删除（保留创建时间等元数据）
@@ -928,7 +929,7 @@ fn move_files(files: Vec<Vec<String>>, dest_dir: String, cleanup_dirs: Vec<Strin
                 }
                 fs::remove_file(source)
                     .map_err(|_| format!("移动-删除源文件失败 ({}): {}", source, e))?;
-                moved.push(source.clone());
+                moved.push(vec![source.clone(), final_path.to_string_lossy().to_string()]);
             }
         }
     }
@@ -1581,6 +1582,121 @@ fn save_config(settings: serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
+// ===== 扩展：标记数据保存 =====
+
+/// 标记数据目录（软件 exe 所在目录下的 imggroup-data）
+fn marks_data_dir() -> PathBuf {
+    let exe = env::current_exe().unwrap_or_default();
+    exe.parent()
+        .unwrap_or(Path::new("."))
+        .join("imggroup-data")
+}
+
+/// 标记数据文件路径（imggroup-data/marks.yaml）
+///
+/// 采用单文件存储：所有标记以「规范化路径 → 标记等级」的形式保存在同一个 YAML 中。
+/// 如果后续拆分为多个文件（例如按根目录分文件），统一放到 imggroup-data/marks/ 目录下。
+fn marks_file_path() -> PathBuf {
+    marks_data_dir().join("marks.yaml")
+}
+
+/// 标记数据占用信息（设置面板展示）
+#[derive(Debug, Serialize)]
+pub struct MarksUsage {
+    /// 数据文件完整路径
+    pub path: String,
+    /// 数据文件是否存在
+    pub exists: bool,
+    /// 数据文件占用字节数
+    pub size_bytes: u64,
+    /// 已保存的标记条数
+    pub count: usize,
+}
+
+/// 统计标记条数（兼容 `{ marks: {路径: 等级} }` 与直接 `{路径: 等级}` 两种结构）
+fn marks_count(value: &serde_json::Value) -> usize {
+    if let Some(map) = value.get("marks").and_then(|m| m.as_object()) {
+        return map.len();
+    }
+    value.as_object().map(|o| o.len()).unwrap_or(0)
+}
+
+/// 构造占用信息（条数由调用方提供，避免重复解析文件）
+fn marks_usage_with_count(count: usize) -> MarksUsage {
+    let path = marks_file_path();
+    let meta = fs::metadata(&path).ok();
+    MarksUsage {
+        path: path.to_string_lossy().to_string(),
+        exists: meta.is_some(),
+        size_bytes: meta.map(|m| m.len()).unwrap_or(0),
+        count,
+    }
+}
+
+/// 读取标记数据（文件不存在或为空时返回空对象）
+#[tauri::command]
+fn load_marks() -> Result<serde_json::Value, String> {
+    let path = marks_file_path();
+    if !path.exists() {
+        return Ok(serde_json::Value::Object(serde_json::Map::new()));
+    }
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    if content.trim().is_empty() {
+        return Ok(serde_json::Value::Object(serde_json::Map::new()));
+    }
+    let yaml_value: serde_yaml::Value =
+        serde_yaml::from_str(&content).map_err(|e| format!("解析标记数据失败: {}", e))?;
+    serde_json::to_value(yaml_value).map_err(|e| e.to_string())
+}
+
+/// 保存标记数据，返回保存后的占用信息
+#[tauri::command]
+fn save_marks(data: serde_json::Value) -> Result<MarksUsage, String> {
+    let dir = marks_data_dir();
+    fs::create_dir_all(&dir).map_err(|e| format!("创建标记目录失败: {}", e))?;
+    let count = marks_count(&data);
+    let yaml_value: serde_yaml::Value =
+        serde_json::from_value(data).map_err(|e| format!("标记数据格式错误: {}", e))?;
+    let yaml_str = serde_yaml::to_string(&yaml_value).map_err(|e| e.to_string())?;
+    // 先写临时文件再替换，避免写入中断把已有标记数据截断
+    let path = marks_file_path();
+    let tmp = path.with_file_name("marks.yaml.tmp");
+    fs::write(&tmp, yaml_str).map_err(|e| format!("写入标记文件失败: {}", e))?;
+    if let Err(e) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("写入标记文件失败: {}", e));
+    }
+    Ok(marks_usage_with_count(count))
+}
+
+/// 查询标记数据占用（文件大小与标记条数）
+#[tauri::command]
+fn get_marks_usage() -> Result<MarksUsage, String> {
+    let path = marks_file_path();
+    if !path.exists() {
+        return Ok(marks_usage_with_count(0));
+    }
+    let count = match fs::read_to_string(&path) {
+        Ok(content) if !content.trim().is_empty() => serde_yaml::from_str::<serde_yaml::Value>(&content)
+            .ok()
+            .and_then(|v| serde_json::to_value(v).ok())
+            .map(|v| marks_count(&v))
+            .unwrap_or(0),
+        _ => 0,
+    };
+    Ok(marks_usage_with_count(count))
+}
+
+/// 清除标记数据文件
+#[tauri::command]
+fn clear_marks() -> Result<MarksUsage, String> {
+    let path = marks_file_path();
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| format!("清除标记文件失败: {}", e))?;
+    }
+    Ok(marks_usage_with_count(0))
+}
+
 /// 回退解析只需要文件头，避免大文件整读
 const DIMENSION_HEAD_LIMIT: u64 = 256 * 1024;
 
@@ -2158,6 +2274,10 @@ pub fn run() {
             open_with_program,
             load_config,
             save_config,
+            load_marks,
+            save_marks,
+            get_marks_usage,
+            clear_marks,
             load_recent,
             save_recent,
             get_cli_args,
@@ -2188,6 +2308,50 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 标记数据：保存 → 读取 → 占用统计 → 清除 的完整往返
+    #[test]
+    fn marks_roundtrip() {
+        let usage = save_marks(serde_json::json!({
+            "version": 1,
+            "marks": {
+                "e:/pics/a.jpg": 3,
+                "e:/pics/b.png": 5
+            }
+        }))
+        .expect("保存标记数据失败");
+        assert!(usage.exists);
+        assert_eq!(usage.count, 2);
+        assert!(usage.size_bytes > 0);
+        // 前端按 size_bytes 字段读取占用（与 ImageInfo 等命令保持 snake_case）
+        let usage_json = serde_json::to_value(&usage).expect("占用信息序列化失败");
+        assert!(usage_json.get("size_bytes").is_some());
+        assert!(usage_json.get("path").is_some());
+
+        let loaded = load_marks().expect("读取标记数据失败");
+        assert_eq!(loaded["marks"]["e:/pics/a.jpg"], 3);
+        assert_eq!(loaded["marks"]["e:/pics/b.png"], 5);
+
+        // 覆盖保存（临时文件 + rename 替换），验证已有文件可被更新
+        let usage_overwrite = save_marks(serde_json::json!({
+            "version": 1,
+            "marks": {
+                "e:/pics/a.jpg": 4,
+                "e:/pics/b.png": 5
+            }
+        }))
+        .expect("覆盖保存标记数据失败");
+        assert_eq!(usage_overwrite.count, 2);
+        let loaded2 = load_marks().expect("再次读取标记数据失败");
+        assert_eq!(loaded2["marks"]["e:/pics/a.jpg"], 4);
+
+        let usage2 = get_marks_usage().expect("统计标记占用失败");
+        assert_eq!(usage2.count, 2);
+
+        let cleared = clear_marks().expect("清除标记数据失败");
+        assert!(!cleared.exists);
+        assert_eq!(cleared.count, 0);
+    }
 
     const TEST_ROOT: &str = r"E:\4-产出\20-ai图";
 

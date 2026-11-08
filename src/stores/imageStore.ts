@@ -103,6 +103,7 @@ const defaultSettings: AppSettings = {
     { name: '序号_尺寸', pattern: '{i}_{w}x{h}', start: 1, digits: 0, includeSub: true },
     { name: '原名_序号', pattern: '{origin}_{i}', start: 1, digits: 0, includeSub: true },
   ],
+  markSaveEnabled: false,
 }
 
 /** 全局状态 */
@@ -206,6 +207,11 @@ function addImagesUnique(newItems: ImageItem[]) {
   // 重新扫描到的图片一律无尺寸，允许重新读取（文件可能已被替换）
   for (const item of toAdd) {
     if (!item.width && dimRequested.has(item.path)) dimRequested.delete(item.path)
+    // 标记保存扩展启用时，从持久化映射恢复标记
+    if (state.settings.markSaveEnabled) {
+      const level = markStore.get(normPath(item.path))
+      if (level) item.markLevel = level
+    }
   }
 }
 
@@ -343,6 +349,257 @@ watch(() => state.settings.manualSortEnabled, (enabled) => {
     state.manualSortMode = false
   }
 })
+
+
+// ===== 扩展：标记保存 =====
+
+/**
+ * 标记持久化映射：规范化路径（小写 + 正斜杠）→ 标记等级。
+ * 映射中还保留当前未加载图片的标记，切换文件夹后仍可恢复。
+ */
+const markStore = new Map<string, import('../types').MarkLevel>()
+
+/** 标记文件占用信息（设置面板展示） */
+export const markStorageInfo = reactive({
+  /** 数据文件完整路径 */
+  path: '',
+  /** 数据文件是否存在 */
+  exists: false,
+  /** 数据文件占用字节数 */
+  sizeBytes: 0,
+  /** 已保存的标记条数 */
+  count: 0,
+})
+
+/** 标记保存防抖计时器 */
+let markSaveTimer: ReturnType<typeof setTimeout> | null = null
+/** 标记保存是否正在进行（避免并发写文件） */
+let markSaveRunning = false
+/** 保存期间是否又产生了新变更 */
+let markSavePending = false
+/** 防抖时长（毫秒）：连续标记时合并为一次写入 */
+const MARK_SAVE_DELAY = 150
+/** 配置加载是否已完成（未完成前不响应扩展开关副作用） */
+let markPersistenceReady = false
+/** 上一次已处理的「启用标记保存」值（避免启动时重复触发） */
+let lastMarkSaveEnabled = false
+/** 保存失败是否已提示过（避免连续失败时反复弹提示） */
+let markSaveFailedNotified = false
+
+/**
+ * 把当前视图中图片的标记同步到持久化映射：
+ * 有标记则记录，无标记则移除（当前视图为准，避免启用扩展时旧标记复活）。
+ * 返回当前视图中出现过的路径集合，供合并磁盘数据时跳过。
+ */
+function collectLoadedMarksToStore(): Set<string> {
+  const seen = new Set<string>()
+  const put = (img: ImageItem) => {
+    const key = normPath(img.path)
+    seen.add(key)
+    if (img.markLevel) markStore.set(key, img.markLevel)
+    else markStore.delete(key)
+  }
+  for (const img of state.allImages) put(img)
+  for (const vg of state.virtualGroups) walkNodeImages(vg, put)
+  return seen
+}
+
+/** 把持久化映射中的标记应用到当前视图（不覆盖已有标记） */
+function applyMarkStoreToLoadedImages(): void {
+  const apply = (img: ImageItem) => {
+    if (img.markLevel) return
+    const level = markStore.get(normPath(img.path))
+    if (level) img.markLevel = level
+  }
+  for (const img of state.allImages) apply(img)
+  for (const vg of state.virtualGroups) walkNodeImages(vg, apply)
+}
+
+/** 读取磁盘上的标记数据；skipKeys 中的路径以内存状态为准（不覆盖） */
+async function loadMarksFromDisk(skipKeys?: Set<string>): Promise<void> {
+  try {
+    const data = await invoke<{ marks?: Record<string, number> }>('load_marks')
+    const marks = data && typeof data === 'object' ? data.marks : undefined
+    if (!marks || typeof marks !== 'object') return
+    for (const [path, rawLevel] of Object.entries(marks)) {
+      const level = Number(rawLevel)
+      if (!Number.isInteger(level) || level < 1 || level > 5) continue
+      const key = normPath(path)
+      if (skipKeys?.has(key)) continue
+      markStore.set(key, level as import('../types').MarkLevel)
+    }
+  } catch (e) {
+    console.error('读取标记数据失败:', e)
+  }
+}
+
+/** 读取标记文件占用信息（设置面板展示时调用） */
+export async function refreshMarkStorageInfo(): Promise<void> {
+  try {
+    const info = await invoke<{ path: string; exists: boolean; size_bytes: number; count: number }>('get_marks_usage')
+    markStorageInfo.path = info.path
+    markStorageInfo.exists = info.exists
+    markStorageInfo.sizeBytes = info.size_bytes
+    markStorageInfo.count = info.count
+  } catch (e) {
+    console.error('查询标记占用失败:', e)
+  }
+}
+
+/** 把持久化映射写入磁盘（仅扩展启用时；force 用于关闭扩展前落盘） */
+async function flushMarks(force = false): Promise<void> {
+  if (!force && !state.settings.markSaveEnabled) return
+  const marks: Record<string, number> = {}
+  for (const [path, level] of markStore) marks[path] = level
+  try {
+    const info = await invoke<{ path: string; exists: boolean; size_bytes: number; count: number }>(
+      'save_marks',
+      { data: { version: 1, marks } },
+    )
+    markStorageInfo.path = info.path
+    markStorageInfo.exists = info.exists
+    markStorageInfo.sizeBytes = info.size_bytes
+    markStorageInfo.count = info.count
+    markSaveFailedNotified = false
+  } catch (e) {
+    console.error('保存标记数据失败:', e)
+    // 首次失败时提示（例如程序目录不可写），避免连续失败反复弹提示
+    if (!markSaveFailedNotified) {
+      markSaveFailedNotified = true
+      showToast(t('ext.mark_save.save_failed', { msg: String(e) }), 6000)
+    }
+  }
+}
+
+/** 调度标记保存（防抖；保存期间的变更会在本轮结束后补写） */
+function scheduleMarksSave(): void {
+  if (!state.settings.markSaveEnabled) return
+  markSavePending = true
+  if (markSaveRunning || markSaveTimer) return
+  markSaveTimer = setTimeout(() => {
+    markSaveTimer = null
+    void runMarksSave()
+  }, MARK_SAVE_DELAY)
+}
+
+/** 实际执行保存：循环直到没有待写变更 */
+async function runMarksSave(): Promise<void> {
+  if (markSaveRunning) return
+  markSaveRunning = true
+  try {
+    while (markSavePending) {
+      markSavePending = false
+      await flushMarks()
+    }
+  } finally {
+    markSaveRunning = false
+  }
+}
+
+/** 标记变化时同步维护持久化映射并调度保存 */
+function rememberMark(path: string, level: import('../types').MarkLevel): void {
+  if (!state.settings.markSaveEnabled) return
+  const key = normPath(path)
+  if (level === 0) markStore.delete(key)
+  else markStore.set(key, level)
+  scheduleMarksSave()
+}
+
+/** 文件路径变化（重命名/移动）时迁移标记 */
+function moveMark(oldPath: string, newPath: string): void {
+  if (!state.settings.markSaveEnabled) return
+  const oldKey = normPath(oldPath)
+  const level = markStore.get(oldKey)
+  if (level === undefined) return
+  markStore.delete(oldKey)
+  markStore.set(normPath(newPath), level)
+  scheduleMarksSave()
+}
+
+/** 文件被删除时移除其标记 */
+function forgetMarks(paths: Iterable<string>): void {
+  if (!state.settings.markSaveEnabled) return
+  let changed = false
+  for (const p of paths) {
+    if (markStore.delete(normPath(p))) changed = true
+  }
+  if (changed) scheduleMarksSave()
+}
+
+/** 标记保存初始化（配置加载完成后调用） */
+export async function initMarkPersistence(): Promise<void> {
+  markPersistenceReady = true
+  lastMarkSaveEnabled = state.settings.markSaveEnabled
+  if (!state.settings.markSaveEnabled) return
+  await loadMarksFromDisk()
+  applyMarkStoreToLoadedImages()
+  await refreshMarkStorageInfo()
+}
+
+/** 启用/关闭标记保存扩展时同步内存与磁盘状态 */
+watch(() => state.settings.markSaveEnabled, async (enabled) => {
+  if (!markPersistenceReady) return
+  if (enabled === lastMarkSaveEnabled) return
+  lastMarkSaveEnabled = enabled
+  if (enabled) {
+    // 当前视图中的标记状态为准（无标记的图片不恢复文件里的旧标记），
+    // 未加载图片的标记则从磁盘合并，避免打开开关前的标记丢失
+    const loadedKeys = collectLoadedMarksToStore()
+    await loadMarksFromDisk(loadedKeys)
+    applyMarkStoreToLoadedImages()
+    await refreshMarkStorageInfo()
+    if (markStore.size > 0) scheduleMarksSave()
+  } else {
+    if (markSaveTimer) {
+      clearTimeout(markSaveTimer)
+      markSaveTimer = null
+    }
+    // 关闭前把尚未写入的变更保存一次，避免刚标记就关闭扩展导致丢失
+    if (markSavePending && !markSaveRunning) {
+      markSavePending = false
+      await flushMarks(true)
+    }
+  }
+})
+
+/** 递归清除节点树中的标记 */
+function clearNodeMarks(nodes: FolderNode[]): void {
+  for (const node of nodes) {
+    for (const img of node.images) delete img.markLevel
+    clearNodeMarks(node.children)
+  }
+}
+
+/**
+ * 清除标记数据：删除磁盘上的标记文件，同时清空当前视图中的标记。
+ * 设置面板「扩展 → 标记保存」中的「清除」按钮调用。
+ */
+export async function clearMarkStorage(): Promise<void> {
+  if (markSaveTimer) {
+    clearTimeout(markSaveTimer)
+    markSaveTimer = null
+  }
+  // 等待正在进行的保存结束，避免清除后旧数据又被写回
+  while (markSaveRunning) {
+    await new Promise(resolve => setTimeout(resolve, 30))
+  }
+  markSavePending = false
+  try {
+    const info = await invoke<{ path: string; exists: boolean; size_bytes: number; count: number }>('clear_marks')
+    markStorageInfo.path = info.path
+    markStorageInfo.exists = info.exists
+    markStorageInfo.sizeBytes = info.size_bytes
+    markStorageInfo.count = info.count
+  } catch (e) {
+    console.error('清除标记数据失败:', e)
+    showToast(t('ext.mark_save.clear_failed', { msg: String(e) }))
+    return
+  }
+  markStore.clear()
+  for (const img of state.allImages) delete img.markLevel
+  clearNodeMarks(state.virtualGroups)
+  showToast(t('ext.mark_save.cleared'))
+}
 
 
 /** 递归统计节点图片总数（WeakMap 缓存，避免排序比较时反复递归子树） */
@@ -702,6 +959,8 @@ export async function applyFileChanges(changedPaths: string[]): Promise<boolean>
     for (const vg of state.virtualGroups) {
       vg.images = vg.images.filter(i => !pathsToRemove.has(i.path))
     }
+    // 文件已不存在：同步清理其持久化标记
+    forgetMarks(pathsToRemove)
   }
 
   // 2. 处理新增/修改：获取文件信息并更新
@@ -721,7 +980,13 @@ const newInfos = await invoke<ImageInfo[]>('get_files_info', { paths: changedPat
       durationCache.delete(existing.path)
       Object.assign(existing, info)
     } else {
-      state.allImages.push({ ...info, loading: false })
+      const item: ImageItem = { ...info, loading: false }
+      // 标记保存扩展启用时，新出现的文件按持久化映射恢复标记
+      if (state.settings.markSaveEnabled) {
+        const level = markStore.get(normPath(info.path))
+        if (level) item.markLevel = level
+      }
+      state.allImages.push(item)
     }
   }
 
@@ -742,7 +1007,8 @@ export async function refreshFolders(): Promise<void> {
   state.allImages = []
   state.scannedDirs.clear()
   state.selectedPaths.clear()
-  // 全量重扫会重建图片对象（标记信息丢失），同步复位标记隐藏，避免刷新后视图全空
+  // 全量重扫会重建图片对象；标记保存扩展启用时由 addImagesUnique 从持久化映射恢复，
+  // 未启用时标记信息丢失，同步复位标记隐藏，避免刷新后视图全空
   state.hiddenMarkLevels = []
   for (const vg of state.virtualGroups) {
     vg.images = []
@@ -1299,6 +1565,8 @@ export function setImageMark(path: string, level: import('../types').MarkLevel) 
     state.selectedPaths.delete(path)
     hiddenByMarkEvent.value = { path, seq: ++hiddenByMarkSeq }
   }
+  // 标记保存扩展启用时写入持久化映射
+  rememberMark(path, level)
 }
 
 /** 为所有选中图片（含文件夹节点内图片）设置标记 */
@@ -1661,6 +1929,8 @@ export async function deleteImages(paths: string[]): Promise<void> {
     const pathSet = new Set(outcome.moved)
     state.allImages = state.allImages.filter(img => !pathSet.has(img.path))
     for (const p of pathSet) state.selectedPaths.delete(p)
+    // 已移入回收站：同步清理其持久化标记
+    forgetMarks(pathSet)
     // 从虚拟分组中递归移除（含子节点中的图片），仅丢弃完全为空的分组
     for (const vg of state.virtualGroups) {
       pruneNodeImages(vg, pathSet)
@@ -1713,6 +1983,8 @@ export async function renameImage(item: ImageItem, newName: string): Promise<voi
       state.selectedPaths.delete(oldPath)
       state.selectedPaths.add(result)
     }
+    // 标记跟随路径迁移
+    moveMark(oldPath, result)
     showToast(`已重命名为 ${item.name}`)
   } catch (e: any) {
     const msg = e.message || e
@@ -1770,6 +2042,8 @@ export async function applyBatchRename(entries: BatchRenameEntry[]): Promise<Bat
     const newByOld = new Map<string, string>()
     for (const pair of pairs) {
       newByOld.set(normPath(pair.oldPath), pair.newPath)
+      // 标记跟随重命名迁移
+      moveMark(pair.oldPath, pair.newPath)
     }
 
     const updated = new Set<ImageItem>()
@@ -2010,6 +2284,8 @@ export async function deleteSelectedContents(): Promise<string[]> {
   for (const vg of state.virtualGroups) {
     vg.images = vg.images.filter(img => !removedSet.has(img.path))
   }
+  // 已删除的图片同步清理持久化标记
+  forgetMarks(removedSet)
   state.selectedFolderPaths.clear()
   // 清理空根路径及对应的排除记录
   const removedRoots = state.loadedRootPaths.filter(r => {
@@ -2213,10 +2489,15 @@ export async function moveSelectedImages(): Promise<void> {
   // 计算选中的文件夹节点的绝对路径，用于移动后清理空目录
   const cleanupDirs = computeSelectedFolderAbsolutePaths()
   await setSuppressWatcher(true)
-  const movedPaths: string[] = await invoke('move_files', { files, destDir, cleanupDirs })
+  // 后端返回 [源路径, 实际目标路径]（重名时目标路径会追加后缀）
+  const movedPairs: [string, string][] = await invoke('move_files', { files, destDir, cleanupDirs })
   await setSuppressWatcher(false)
 
+  // 标记跟随文件移动迁移
+  for (const [src, dest] of movedPairs) moveMark(src, dest)
+
   // 从 state 中移除实际已移动的图片（后端会跳过同路径文件）
+  const movedPaths = movedPairs.map(([src]) => src)
   const movedSet = new Set(movedPaths)
   state.allImages = state.allImages.filter(img => !movedSet.has(img.path))
   for (const p of movedSet) state.selectedPaths.delete(p)
@@ -2229,7 +2510,7 @@ export async function moveSelectedImages(): Promise<void> {
 //   state.selectMode = 'view'
 
   // 自动刷新：扫描目标路径，将新增文件加入视图
-  const destPaths = files.map(([_, rel]) => destDir + '/' + rel)
+  const destPaths = movedPairs.map(([_, dest]) => dest)
   applyFileChanges(destPaths).catch(() => {})
 
   showToast(t('hint.moved_to_folder', { n: movedPaths.length, path: destDir }))
@@ -2278,9 +2559,14 @@ export async function moveImagesToFolder(destDir: string): Promise<void> {
 
   const cleanupDirs = computeSelectedFolderAbsolutePaths()
   await setSuppressWatcher(true)
-  const movedPaths: string[] = await invoke('move_files', { files, destDir, cleanupDirs })
+  // 后端返回 [源路径, 实际目标路径]（重名时目标路径会追加后缀）
+  const movedPairs: [string, string][] = await invoke('move_files', { files, destDir, cleanupDirs })
   await setSuppressWatcher(false)
 
+  // 标记跟随文件移动迁移
+  for (const [src, dest] of movedPairs) moveMark(src, dest)
+
+  const movedPaths = movedPairs.map(([src]) => src)
   const movedSet = new Set(movedPaths)
   state.allImages = state.allImages.filter(img => !movedSet.has(img.path))
   for (const p of movedSet) state.selectedPaths.delete(p)
@@ -2293,7 +2579,7 @@ export async function moveImagesToFolder(destDir: string): Promise<void> {
 	//   state.selectMode = 'view'
 
   // 自动刷新：扫描目标路径，将新增文件加入视图
-  const destPaths = files.map(([_, rel]) => destDir + '/' + rel)
+  const destPaths = movedPairs.map(([_, dest]) => dest)
   applyFileChanges(destPaths).catch(() => {})
 
   showToast(t('hint.moved_to_folder', { n: movedPaths.length, path: destDir }))
@@ -2361,6 +2647,8 @@ export async function loadConfig(): Promise<void> {
   } catch {
     // 首次运行或文件不存在，使用默认配置
   }
+  // 标记保存扩展：启用时从磁盘读取标记数据（扫描开始前完成）
+  await initMarkPersistence()
 }
 
 /** 保存配置（排除筛选正则等瞬态字段） */

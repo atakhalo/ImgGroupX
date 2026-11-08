@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { state, hiddenMarkCount, showAllMarks } from '../stores/imageStore'
+import { hasUpdate, updateState } from '../utils/update'
 import type { SortBy, GroupSortBy } from '../types'
 
 const regexInput = ref(state.settings.filterRegex)
@@ -201,11 +202,16 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <button class="settings-btn" :title="$t('settings.title')" @click="emit('openSettings')">
+      <button
+        class="settings-btn"
+        :title="hasUpdate ? $t('update.badge_tip', { version: updateState.latestVersion }) : $t('settings.title')"
+        @click="emit('openSettings')"
+      >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3" />
           <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
         </svg>
+        <span v-if="hasUpdate" class="settings-update-dot"></span>
       </button>
     </div>
   </div>
@@ -424,10 +430,24 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  position: relative;
 }
 
 .settings-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   color: white;
+}
+
+/* 有新版本时的小红点 */
+.settings-update-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff4d4f;
+  box-shadow: 0 0 0 2px rgba(26, 26, 46, 0.9);
+  pointer-events: none;
 }
 </style>
