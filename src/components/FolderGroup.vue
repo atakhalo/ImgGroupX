@@ -8,6 +8,7 @@ import { t } from '../i18n'
 import GridView from './GridView.vue'
 import GridItem from './GridItem.vue'
 import FolderGroup from './FolderGroup.vue'
+import BatchRenamePanel from './BatchRenamePanel.vue'
 
 defineOptions({
   name: 'FolderGroup',
@@ -437,7 +438,7 @@ function openHeaderCtxMenu(e: MouseEvent) {
   headerCtxMenu.value = {
     show: true,
     x: Math.min(e.clientX, window.innerWidth - 200),
-    y: Math.min(e.clientY, window.innerHeight - 350),
+    y: Math.min(e.clientY, Math.max(0, window.innerHeight - 440)),
   }
 }
 
@@ -516,6 +517,27 @@ async function confirmNewFolder() {
 function cancelNewFolder() {
   newFolderDialogShow.value = false
   newFolderInput.value = ''
+}
+
+/** 批量重命名面板状态 */
+const batchRenameShow = ref(false)
+const batchRenameDirect = ref<ImageItem[]>([])
+const batchRenameAll = ref<ImageItem[]>([])
+
+/** 按当前显示顺序（排序 + 筛选）递归收集节点内的图片 */
+function collectProcessedImages(node: FolderNode): ImageItem[] {
+  const result: ImageItem[] = [...getProcessedImages(node.images)]
+  for (const child of node.children) {
+    result.push(...collectProcessedImages(child))
+  }
+  return result
+}
+
+function handleBatchRename() {
+  if (!realFolderPath.value) return
+  batchRenameDirect.value = getProcessedImages(props.node.images)
+  batchRenameAll.value = collectProcessedImages(props.node)
+  batchRenameShow.value = true
 }
 
 /** 虚拟分组重命名弹窗状态 */
@@ -1034,6 +1056,20 @@ function getNodeGridContainerBg(depth: number): string {
           </svg>
           <span>{{ $t('folder.new_subfolder') }}</span>
         </button>
+        <!-- 批量重命名（扩展启用后显示） -->
+        <button
+          v-if="realFolderPath && state.settings.batchRenameEnabled"
+          class="ctx-menu-item"
+          @click="handleBatchRename(), closeHeaderCtxMenu()"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 7h9M4 12h6M4 17h9"/>
+            <path d="M17 5v14"/>
+            <path d="M14 8l3-3 3 3"/>
+            <path d="M20 16l-3 3-3-3"/>
+          </svg>
+          <span>{{ $t('folder.batch_rename') }}</span>
+        </button>
         <div class="ctx-separator"></div>
         <button class="ctx-menu-item ctx-danger" @click="handleRemove(), closeHeaderCtxMenu()">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -1043,6 +1079,15 @@ function getNodeGridContainerBg(depth: number): string {
         </button>
       </div>
     </Teleport>
+
+    <!-- 批量重命名面板 -->
+    <BatchRenamePanel
+      v-if="batchRenameShow"
+      :folder-name="state.settings.privacyMode && props.anonName ? props.anonName : node.name"
+      :direct-images="batchRenameDirect"
+      :all-images="batchRenameAll"
+      @close="batchRenameShow = false"
+    />
 
     <!-- 新建子目录弹窗 -->
     <Teleport to="body">
@@ -1623,6 +1668,8 @@ function getNodeGridContainerBg(depth: number): string {
 /* 标题栏右键菜单 */
 .folder-header-ctx-menu {
   min-width: 170px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 
 /* ===== 紧凑模式 ===== */

@@ -95,6 +95,20 @@ export interface NavigableEntry {
   groupName: string
 }
 
+/** 批量重命名规则预设 */
+export interface BatchRenamePreset {
+  /** 预设名称 */
+  name: string
+  /** 命名规则（可含变量，如 {i}_{origin}_{w}x{h}） */
+  pattern: string
+  /** 起始序号 */
+  start: number
+  /** 序号补零位数（0=不补零） */
+  digits: number
+  /** 是否包含子文件夹内图片 */
+  includeSub: boolean
+}
+
 /** 应用设置 */
 export interface AppSettings {
   /** 格子圆角 */
@@ -207,4 +221,10 @@ export interface AppSettings {
   // ===== 扩展：手动排序 =====
   /** 是否启用手动排序扩展（开启后分组背景右键菜单出现「手动排序」） */
   manualSortEnabled: boolean
+
+  // ===== 扩展：批量重命名 =====
+  /** 是否启用批量重命名扩展（开启后分组标题右键菜单出现「批量重命名」） */
+  batchRenameEnabled: boolean
+  /** 批量重命名规则预设列表 */
+  batchRenamePresets: BatchRenamePreset[]
 }

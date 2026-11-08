@@ -97,6 +97,12 @@ const defaultSettings: AppSettings = {
   coverRatioAutoOrient: false,
   coverRatioFit: 'cover',
   manualSortEnabled: false,
+  batchRenameEnabled: false,
+  batchRenamePresets: [
+    { name: '序号_原名', pattern: '{i}_{origin}', start: 1, digits: 0, includeSub: true },
+    { name: '序号_尺寸', pattern: '{i}_{w}x{h}', start: 1, digits: 0, includeSub: true },
+    { name: '原名_序号', pattern: '{origin}_{i}', start: 1, digits: 0, includeSub: true },
+  ],
 }
 
 /** 全局状态 */
@@ -1722,6 +1728,79 @@ export async function renameImage(item: ImageItem, newName: string): Promise<voi
   } finally {
     await setSuppressWatcher(false)
     await applyFileChanges([oldPath, item.path])
+  }
+}
+
+/** 批量重命名执行项 */
+export interface BatchRenameEntry {
+  item: ImageItem
+  /** 新文件名（不含扩展名，扩展名保持原样） */
+  newName: string
+}
+
+/** 批量重命名结果 */
+export interface BatchRenameOutcome {
+  /** 成功重命名数量 */
+  ok: number
+  /** 失败数量 */
+  failed: number
+}
+
+/** 递归遍历节点中的图片 */
+function walkNodeImages(node: FolderNode, fn: (img: ImageItem) => void): void {
+  for (const img of node.images) fn(img)
+  for (const child of node.children) walkNodeImages(child, fn)
+}
+
+/**
+ * 执行批量重命名。
+ * 后端采用两阶段改名（原名 → 临时名 → 目标名），支持批内互换；任一项校验失败时不修改任何文件。
+ * 成功后同步更新图片条目、选中状态与目录树。
+ */
+export async function applyBatchRename(entries: BatchRenameEntry[]): Promise<BatchRenameOutcome> {
+  const valid = entries.filter(e => !!e.newName && !!e.item?.path)
+  if (valid.length === 0) return { ok: 0, failed: 0 }
+
+  await setSuppressWatcher(true)
+  try {
+    const pairs = await invoke<{ oldPath: string; newPath: string }[]>('rename_files', {
+      items: valid.map(e => ({ oldPath: e.item.path, newName: e.newName })),
+    })
+    // 先构建旧路径 → 新路径映射，再统一更新，避免批内互换时路径被反复覆盖
+    const newByOld = new Map<string, string>()
+    for (const pair of pairs) {
+      newByOld.set(normPath(pair.oldPath), pair.newPath)
+    }
+
+    const updated = new Set<ImageItem>()
+    const updateItem = (img: ImageItem) => {
+      if (updated.has(img)) return
+      const newPath = newByOld.get(normPath(img.path))
+      if (!newPath) return
+      const oldPath = img.path
+      const norm = newPath.replace(/\\/g, '/')
+      updated.add(img)
+      img.path = newPath
+      // 同目录内改名，dir 不变
+      img.name = norm.split('/').pop() || img.name
+      if (state.selectedPaths.has(oldPath)) {
+        state.selectedPaths.delete(oldPath)
+        state.selectedPaths.add(newPath)
+      }
+    }
+
+    for (const img of state.allImages) updateItem(img)
+    for (const vg of state.virtualGroups) walkNodeImages(vg, updateItem)
+    for (const entry of valid) updateItem(entry.item)
+
+    showToast(t('hint.batch_rename_done', { n: updated.size }))
+    return { ok: updated.size, failed: valid.length - updated.size }
+  } catch (e: any) {
+    const msg = e?.message || e
+    showToast(t('hint.batch_rename_failed', { msg: String(msg) }))
+    return { ok: 0, failed: valid.length }
+  } finally {
+    await setSuppressWatcher(false)
   }
 }
 

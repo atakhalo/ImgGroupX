@@ -1154,6 +1154,162 @@ fn rename_file(old_path: String, new_name: String) -> Result<String, String> {
     Ok(new_path.to_string_lossy().to_string())
 }
 
+/// 批量重命名请求项（new_name 不含扩展名，扩展名保持原样）
+#[derive(serde::Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct RenameRequest {
+    old_path: String,
+    new_name: String,
+}
+
+/// 批量重命名结果项
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct RenameResult {
+    old_path: String,
+    new_path: String,
+}
+
+/// 路径比较用的规范化 key（统一分隔符并忽略大小写，Windows 语义）
+fn norm_path_key(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+/// 生成同目录下不冲突的临时文件名（两阶段改名的中间名）
+fn temp_rename_path(dir: &Path, index: usize, ext: &str) -> PathBuf {
+    let mut n = 0usize;
+    loop {
+        let candidate = dir.join(format!(
+            ".igtx-brn-{}-{}-{}{}",
+            std::process::id(),
+            index,
+            n,
+            ext
+        ));
+        if !candidate.exists() {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+/// 批量重命名文件（仅修改文件名，扩展名保持原样）
+///
+/// 采用两阶段改名（原名 → 临时名 → 目标名），支持批内互换（如 a↔b）和
+/// 仅大小写变化的重命名。任一项校验失败时不修改任何文件；执行中失败会尽量回滚。
+#[tauri::command]
+fn rename_files(items: Vec<RenameRequest>) -> Result<Vec<RenameResult>, String> {
+    if items.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 1. 校验并生成改名计划：(原路径, 目标路径, 扩展名)
+    let mut plans: Vec<(PathBuf, PathBuf, String)> = Vec::with_capacity(items.len());
+    for item in &items {
+        let old = PathBuf::from(&item.old_path);
+        if !old.exists() || !old.is_file() {
+            return Err(format!("文件不存在: {}", item.old_path));
+        }
+        let name = item.new_name.trim();
+        if name.is_empty() {
+            return Err(format!("新文件名为空: {}", item.old_path));
+        }
+        if name.chars().any(|c| {
+            c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+        }) {
+            return Err(format!("新文件名包含非法字符: {}", name));
+        }
+        // Windows 会静默去掉文件名末尾的点和空格，提前拒绝以免结果与预览不一致
+        if name.ends_with('.') || name.ends_with(' ') {
+            return Err(format!("新文件名不能以点或空格结尾: {}", name));
+        }
+        let parent = old.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let ext = old
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| format!(".{}", e))
+            .unwrap_or_default();
+        let new_path = parent.join(format!("{}{}", name, ext));
+        plans.push((old, new_path, ext));
+    }
+
+    // 2. 冲突校验：目标名批内重复、或与批外已存在文件重名
+    let old_keys: std::collections::HashSet<String> =
+        plans.iter().map(|(old, _, _)| norm_path_key(old)).collect();
+    let mut new_keys: HashMap<String, String> = HashMap::new();
+    for (old, new_path, _) in &plans {
+        let key = norm_path_key(new_path);
+        if let Some(prev) = new_keys.get(&key) {
+            return Err(format!(
+                "目标文件名重复：{} 与 {} 都会重命名为同一名称",
+                prev,
+                old.to_string_lossy()
+            ));
+        }
+        new_keys.insert(key.clone(), old.to_string_lossy().to_string());
+        // 目标已存在且不是本批文件（本批文件稍后会先移到临时名）
+        if new_path.exists() && !old_keys.contains(&key) {
+            return Err(format!("目标文件已存在: {}", new_path.display()));
+        }
+    }
+
+    // 3. 第一阶段：全部改成临时名（同目录下），释放所有原文件名
+    let mut staged: Vec<(PathBuf, PathBuf, PathBuf)> = Vec::with_capacity(plans.len());
+    for (index, (old, new_path, ext)) in plans.iter().enumerate() {
+        let parent = old.parent().unwrap_or(Path::new("."));
+        let tmp = temp_rename_path(parent, index, ext);
+        if let Err(e) = fs::rename(old, &tmp) {
+            for (staged_tmp, staged_old, _) in staged.iter().rev() {
+                let _ = fs::rename(staged_tmp, staged_old);
+            }
+            return Err(format!("重命名失败 ({}): {}", old.display(), e));
+        }
+        staged.push((tmp, old.clone(), new_path.clone()));
+    }
+
+    // 4. 第二阶段：临时名 → 目标名
+    let mut completed: Vec<usize> = Vec::with_capacity(staged.len());
+    let mut failure: Option<(usize, std::io::Error)> = None;
+    for (index, (tmp, _, new_path)) in staged.iter().enumerate() {
+        match fs::rename(tmp, new_path) {
+            Ok(()) => completed.push(index),
+            Err(e) => {
+                failure = Some((index, e));
+                break;
+            }
+        }
+    }
+
+    if let Some((fail_index, err)) = failure {
+        let mut rollback_errors: Vec<String> = Vec::new();
+        for &index in completed.iter().rev() {
+            let (_, old, new_path) = &staged[index];
+            if let Err(e) = fs::rename(new_path, old) {
+                rollback_errors.push(format!("{} → {}: {}", new_path.display(), old.display(), e));
+            }
+        }
+        for index in fail_index..staged.len() {
+            let (tmp, old, _) = &staged[index];
+            if let Err(e) = fs::rename(tmp, old) {
+                rollback_errors.push(format!("{} → {}: {}", tmp.display(), old.display(), e));
+            }
+        }
+        let mut message = format!("重命名失败 ({}): {}", staged[fail_index].2.display(), err);
+        if !rollback_errors.is_empty() {
+            message.push_str(&format!("；部分文件回滚失败: {}", rollback_errors.join("; ")));
+        }
+        return Err(message);
+    }
+
+    Ok(plans
+        .iter()
+        .map(|(old, new_path, _)| RenameResult {
+            old_path: old.to_string_lossy().to_string(),
+            new_path: new_path.to_string_lossy().to_string(),
+        })
+        .collect())
+}
+
 /// 检查路径是否为目录
 #[tauri::command]
 fn check_is_dir(path: String) -> bool {
@@ -2018,6 +2174,7 @@ pub fn run() {
             cancel_scan,
             read_file_text,
             rename_file,
+            rename_files,
             get_app_icon,
             set_wallpaper,
             load_video_thumbnail,
@@ -2145,6 +2302,94 @@ mod tests {
         let r = move_to_custom_trash(vec![p(&base.join("missing.jpg"))], tr.clone()).unwrap();
         assert!(r.moved.is_empty());
         assert_eq!(r.failed.len(), 1);
+
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    /// 批量重命名：扩展名保留、批内互换、仅大小写变化；重复目标/批外重名/非法名被拒绝且不改动文件
+    #[test]
+    fn rename_files_batch() {
+        let base = std::env::temp_dir().join(format!("imggroupx_rename_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let p = |name: &str| base.join(name).to_string_lossy().to_string();
+        for name in ["a.jpg", "b.jpg", "c.png"] {
+            fs::write(base.join(name), b"x").unwrap();
+        }
+
+        // 扩展名保留：请求名不带扩展名
+        let r = rename_files(vec![RenameRequest {
+            old_path: p("c.png"),
+            new_name: "cover_1".into(),
+        }])
+        .unwrap();
+        assert_eq!(r.len(), 1);
+        assert!(base.join("cover_1.png").exists(), "扩展名应保留");
+        assert!(!base.join("c.png").exists());
+
+        // 批内互换 a ↔ b
+        let r = rename_files(vec![
+            RenameRequest { old_path: p("a.jpg"), new_name: "b".into() },
+            RenameRequest { old_path: p("b.jpg"), new_name: "a".into() },
+        ])
+        .unwrap();
+        assert_eq!(r.len(), 2);
+        assert!(base.join("a.jpg").exists());
+        assert!(base.join("b.jpg").exists());
+        // 内容未混淆（两文件内容一致，这里只验证都还在）
+
+        // 仅大小写变化（Windows 上必须两阶段改名）
+        let r = rename_files(vec![RenameRequest {
+            old_path: p("a.jpg"),
+            new_name: "A".into(),
+        }])
+        .unwrap();
+        assert_eq!(r.len(), 1);
+        assert!(base.join("A.jpg").exists());
+
+        // 目标重复 → 拒绝，文件保持原样
+        let err = rename_files(vec![
+            RenameRequest { old_path: p("A.jpg"), new_name: "same".into() },
+            RenameRequest { old_path: p("b.jpg"), new_name: "same".into() },
+        ])
+        .unwrap_err();
+        assert!(err.contains("重复"), "应提示目标重复: {}", err);
+        assert!(base.join("A.jpg").exists());
+        assert!(base.join("b.jpg").exists());
+
+        // 与批外文件重名 → 拒绝
+        fs::write(base.join("keep.jpg"), b"x").unwrap();
+        let err = rename_files(vec![RenameRequest {
+            old_path: p("A.jpg"),
+            new_name: "keep".into(),
+        }])
+        .unwrap_err();
+        assert!(err.contains("已存在"), "应提示目标已存在: {}", err);
+
+        // 非法字符 → 拒绝
+        let err = rename_files(vec![RenameRequest {
+            old_path: p("A.jpg"),
+            new_name: "a/b".into(),
+        }])
+        .unwrap_err();
+        assert!(err.contains("非法字符"), "应提示非法字符: {}", err);
+
+        // 空名 → 拒绝
+        let err = rename_files(vec![RenameRequest {
+            old_path: p("A.jpg"),
+            new_name: "   ".into(),
+        }])
+        .unwrap_err();
+        assert!(err.contains("为空"), "应提示名称为空: {}", err);
+
+        // 中间临时文件不应残留
+        let leftovers: Vec<String> = fs::read_dir(&base)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.starts_with(".igtx-brn-"))
+            .collect();
+        assert!(leftovers.is_empty(), "不应残留临时文件: {:?}", leftovers);
 
         fs::remove_dir_all(&base).unwrap();
     }

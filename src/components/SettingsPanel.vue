@@ -33,7 +33,7 @@ const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
   advanced: ['scanAllFiles', 'includeVideos', 'skipEmptyFolders', 'folderGroup', 'showGroupTitle', 'showMarks', 'privacyMode', 'customTrashEnabled', 'customTrashPath'],
-  extensions: ['coverRatioEnabled', 'coverRatio', 'coverRatioAutoOrient', 'coverRatioFit', 'manualSortEnabled'],
+  extensions: ['coverRatioEnabled', 'coverRatio', 'coverRatioAutoOrient', 'coverRatioFit', 'manualSortEnabled', 'batchRenameEnabled', 'batchRenamePresets'],
 }
 
 const defaultSettings = {
@@ -62,6 +62,12 @@ const defaultSettings = {
   customTrashEnabled: false, customTrashPath: '',
   coverRatioEnabled: false, coverRatio: '4:3' as const, coverRatioAutoOrient: false, coverRatioFit: 'cover' as const,
   manualSortEnabled: false,
+  batchRenameEnabled: false,
+  batchRenamePresets: [
+    { name: '序号_原名', pattern: '{i}_{origin}', start: 1, digits: 0, includeSub: true },
+    { name: '序号_尺寸', pattern: '{i}_{w}x{h}', start: 1, digits: 0, includeSub: true },
+    { name: '原名_序号', pattern: '{origin}_{i}', start: 1, digits: 0, includeSub: true },
+  ] as { name: string; pattern: string; start: number; digits: number; includeSub: boolean }[],
   keyBindings: getDefaultBindings(),
   keyAltBindings: getDefaultBindings(true),
 }
@@ -128,11 +134,15 @@ function resetAll() {
 
 // ===== 扩展页 =====
 
-/** 各扩展的折叠状态（true=已折叠，默认全部展开） */
-const collapsedExts = ref<Record<string, boolean>>({ coverRatio: false, manualSort: false })
+/** 各扩展的折叠状态（true=已折叠；默认全部折叠，未记录的扩展视为折叠） */
+const collapsedExts = ref<Record<string, boolean>>({})
+
+function isExtCollapsed(id: string): boolean {
+  return collapsedExts.value[id] !== false
+}
 
 function toggleExt(id: string) {
-  collapsedExts.value[id] = !collapsedExts.value[id]
+  collapsedExts.value[id] = !isExtCollapsed(id)
 }
 
 /** 格子比例选项（顺序由共享常量表定义） */
@@ -699,7 +709,7 @@ onUnmounted(() => {
               <div class="ext-header" @click="toggleExt('coverRatio')">
                 <svg
                   class="ext-arrow"
-                  :class="{ open: !collapsedExts.coverRatio }"
+                  :class="{ open: !isExtCollapsed('coverRatio') }"
                   viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
                 >
                   <polyline points="9 18 15 12 9 6" />
@@ -710,7 +720,7 @@ onUnmounted(() => {
                 </div>
                 <span v-if="localSettings.coverRatioEnabled" class="ext-state">{{ $t('ext.enabled') }}</span>
               </div>
-              <div v-show="!collapsedExts.coverRatio" class="ext-body">
+              <div v-show="!isExtCollapsed('coverRatio')" class="ext-body">
                 <div class="setting-row">
                   <label class="toggle-label">
                     <input type="checkbox" v-model="localSettings.coverRatioEnabled" class="toggle-input" />
@@ -770,7 +780,7 @@ onUnmounted(() => {
               <div class="ext-header" @click="toggleExt('manualSort')">
                 <svg
                   class="ext-arrow"
-                  :class="{ open: !collapsedExts.manualSort }"
+                  :class="{ open: !isExtCollapsed('manualSort') }"
                   viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
                 >
                   <polyline points="9 18 15 12 9 6" />
@@ -781,7 +791,7 @@ onUnmounted(() => {
                 </div>
                 <span v-if="localSettings.manualSortEnabled" class="ext-state">{{ $t('ext.enabled') }}</span>
               </div>
-              <div v-show="!collapsedExts.manualSort" class="ext-body">
+              <div v-show="!isExtCollapsed('manualSort')" class="ext-body">
                 <div class="setting-row">
                   <label class="toggle-label">
                     <input type="checkbox" v-model="localSettings.manualSortEnabled" class="toggle-input" />
@@ -791,6 +801,85 @@ onUnmounted(() => {
                 </div>
                 <div class="setting-hint">{{ $t('ext.manual_sort.enable_hint') }}</div>
                 <div class="setting-hint">{{ $t('ext.manual_sort.usage') }}</div>
+              </div>
+            </div>
+
+            <!-- 扩展：批量重命名 -->
+            <div class="ext-item">
+              <div class="ext-header" @click="toggleExt('batchRename')">
+                <svg
+                  class="ext-arrow"
+                  :class="{ open: !isExtCollapsed('batchRename') }"
+                  viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+                >
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+                <div class="ext-title-wrap">
+                  <span class="ext-title">{{ $t('ext.batch_rename.title') }}</span>
+                  <span class="ext-desc">{{ $t('ext.batch_rename.desc') }}</span>
+                </div>
+                <span v-if="localSettings.batchRenameEnabled" class="ext-state">{{ $t('ext.enabled') }}</span>
+              </div>
+              <div v-show="!isExtCollapsed('batchRename')" class="ext-body">
+                <div class="setting-row">
+                  <label class="toggle-label">
+                    <input type="checkbox" v-model="localSettings.batchRenameEnabled" class="toggle-input" />
+                    <span class="toggle-switch"></span>
+                    {{ $t('ext.batch_rename.enable') }}
+                  </label>
+                </div>
+                <div class="setting-hint">{{ $t('ext.batch_rename.enable_hint') }}</div>
+                <div class="setting-hint">{{ $t('ext.batch_rename.vars_hint') }}</div>
+                <div class="setting-hint">{{ $t('ext.batch_rename.regex_hint') }}</div>
+                <div class="setting-hint">{{ $t('ext.batch_rename.date_hint') }}</div>
+
+                <h5 class="ext-sub-title">{{ $t('ext.batch_rename.presets') }}</h5>
+                <div class="setting-hint">{{ $t('ext.batch_rename.presets_hint') }}</div>
+                <div
+                  v-for="(preset, i) in localSettings.batchRenamePresets"
+                  :key="i"
+                  class="brn-preset-edit"
+                >
+                  <div class="brn-preset-line">
+                    <input
+                      v-model="preset.name"
+                      type="text"
+                      class="preset-input"
+                      :placeholder="$t('ext.batch_rename.preset_name_placeholder')"
+                    />
+                    <button class="preset-remove" @click="localSettings.batchRenamePresets.splice(i, 1)">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                  <input
+                    v-model="preset.pattern"
+                    type="text"
+                    class="preset-input brn-preset-pattern"
+                    spellcheck="false"
+                    :placeholder="$t('ext.batch_rename.pattern_placeholder')"
+                  />
+                  <div class="brn-preset-opts">
+                    <label class="brn-preset-opt">
+                      {{ $t('ext.batch_rename.start') }}
+                      <input v-model.number="preset.start" type="number" min="0" class="brn-preset-num" />
+                    </label>
+                    <label class="brn-preset-opt">
+                      {{ $t('ext.batch_rename.digits') }}
+                      <input v-model.number="preset.digits" type="number" min="0" max="10" class="brn-preset-num" />
+                    </label>
+                    <label class="brn-preset-opt brn-preset-check">
+                      <input v-model="preset.includeSub" type="checkbox" />
+                      {{ $t('ext.batch_rename.include_sub') }}
+                    </label>
+                  </div>
+                </div>
+                <button
+                  class="preset-add"
+                  @click="localSettings.batchRenamePresets.push({ name: '', pattern: '{i}_{origin}', start: 1, digits: 0, includeSub: true })"
+                >{{ $t('ext.batch_rename.add_preset') }}</button>
               </div>
             </div>
           </div>
@@ -1411,4 +1500,50 @@ onUnmounted(() => {
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.3);
 }
+
+/* ===== 扩展：批量重命名预设编辑 ===== */
+.brn-preset-edit {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.15);
+}
+.brn-preset-line {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.brn-preset-pattern {
+  flex: none;
+  width: 100%;
+  font-family: Consolas, 'Courier New', monospace;
+  margin-bottom: 6px;
+}
+.brn-preset-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.brn-preset-opt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+.brn-preset-check { cursor: pointer; user-select: none; }
+.brn-preset-check input { accent-color: #646cff; }
+.brn-preset-num {
+  width: 54px;
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 11px;
+  outline: none;
+}
+.brn-preset-num:focus { border-color: rgba(100, 108, 255, 0.4); }
 </style>
