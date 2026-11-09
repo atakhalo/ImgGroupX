@@ -524,19 +524,41 @@ const batchRenameShow = ref(false)
 const batchRenameDirect = ref<ImageItem[]>([])
 const batchRenameAll = ref<ImageItem[]>([])
 
-/** 按当前显示顺序（排序 + 筛选）递归收集节点内的图片 */
-function collectProcessedImages(node: FolderNode): ImageItem[] {
-  const result: ImageItem[] = [...getProcessedImages(node.images)]
-  for (const child of node.children) {
-    result.push(...collectProcessedImages(child))
+/** 节点路径转绝对路径（真实树子节点 path 是相对根目录的路径；已是绝对路径时原样返回） */
+function toAbsPath(path: string): string {
+  const norm = path.replace(/\\/g, '/')
+  if (/^[A-Za-z]:\//.test(norm) || norm.startsWith('/')) return norm
+  return props.rootPath.replace(/\\/g, '/').replace(/\/$/, '') + '/' + norm
+}
+
+/** 子节点的手动排序 key（与子组件内部的 manualSortKey 规则保持一致） */
+function childManualSortKey(child: FolderNode): string {
+  if (props.vgIndex !== undefined) {
+    const vg = state.virtualGroups[props.vgIndex]
+    const scope = vg ? vg.path : `idx:${props.vgIndex}`
+    return `vg:${scope}:${child.path}`
   }
+  return toAbsPath(child.path)
+}
+
+/**
+ * 按当前显示顺序（手动排序 + 设置排序 + 筛选）递归收集节点内的图片。
+ * 与视图/导航列表一致：先子文件夹内的图片，再本节点图片；
+ * 每个节点各自套用自己的手动排序记录，保证批量重命名 {i} 序号与看到的顺序一致。
+ */
+function collectProcessedImages(node: FolderNode, nodeKey: string): ImageItem[] {
+  const result: ImageItem[] = []
+  for (const child of node.children) {
+    result.push(...collectProcessedImages(child, childManualSortKey(child)))
+  }
+  result.push(...getProcessedImages(node.images, nodeKey))
   return result
 }
 
 function handleBatchRename() {
   if (!realFolderPath.value) return
-  batchRenameDirect.value = getProcessedImages(props.node.images)
-  batchRenameAll.value = collectProcessedImages(props.node)
+  batchRenameDirect.value = getProcessedImages(props.node.images, manualSortKey.value)
+  batchRenameAll.value = collectProcessedImages(props.node, manualSortKey.value)
   batchRenameShow.value = true
 }
 

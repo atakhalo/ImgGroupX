@@ -2067,6 +2067,20 @@ export async function applyBatchRename(entries: BatchRenameEntry[]): Promise<Bat
     for (const vg of state.virtualGroups) walkNodeImages(vg, updateItem)
     for (const entry of valid) updateItem(entry.item)
 
+    // 手动排序记录跟随路径迁移，否则重命名后顺序会回落到默认排序
+    if (manualSortOrders.size > 0) {
+      for (const [key, order] of manualSortOrders) {
+        let changed = false
+        const next = order.map(p => {
+          const newPath = newByOld.get(normPath(p))
+          if (!newPath) return p
+          changed = true
+          return newPath
+        })
+        if (changed) manualSortOrders.set(key, next)
+      }
+    }
+
     showToast(t('hint.batch_rename_done', { n: updated.size }))
     return { ok: updated.size, failed: valid.length - updated.size }
   } catch (e: any) {
