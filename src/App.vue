@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut, isEditableTarget } from './utils/shortcuts'
 import { MEDIA_FILTER_EXTENSIONS, IMAGE_FILTER_EXTENSIONS } from './utils/media'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, saveRecent, recordRecentFolder, recordRecentFile, removeRecent, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction, enterManualSortMode, exitManualSortMode, manualSortDragging, hiddenByMarkEvent, addSelectionToVirtualGroup, removeSelectionFromVirtualGroup, excludeNodeFromVirtualGroup, groupViewerNode, groupViewerIndex, openGroupViewer, closeGroupViewer, addTemporaryVirtualGroup } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, recordRecentFolder, recordRecentFile, removeRecent, clearRecentRecords, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction, enterManualSortMode, exitManualSortMode, manualSortDragging, hiddenByMarkEvent, addSelectionToVirtualGroup, removeSelectionFromVirtualGroup, excludeNodeFromVirtualGroup, groupViewerNode, groupViewerIndex, openGroupViewer, closeGroupViewer, addTemporaryVirtualGroup } from './stores/imageStore'
 import type { ImageItem, NavigableEntry, FolderNode } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -145,8 +145,22 @@ const pendingOpenImagePath = ref('')
 const showRecentMenu = ref(false)
 const recentMenuRef = ref<HTMLElement | null>(null)
 
-function toggleRecentMenu() {
-  showRecentMenu.value = !showRecentMenu.value
+/** 每次打开菜单前重新读取 data-user.yaml，多开时拿到其他实例写入的最新记录 */
+let recentMenuLoading = false
+async function toggleRecentMenu() {
+  if (showRecentMenu.value) {
+    showRecentMenu.value = false
+    return
+  }
+  if (recentMenuLoading) return
+  recentMenuLoading = true
+  try {
+    await loadRecent()
+  } finally {
+    recentMenuLoading = false
+  }
+  // 读取期间若菜单已被别的途径打开，就不再重复设置
+  showRecentMenu.value = true
 }
 
 function onRecentMenuClickOutside(e: MouseEvent) {
@@ -159,24 +173,22 @@ function onRecentMenuClickOutside(e: MouseEvent) {
 async function handleRecentOpen(kind: 'folder' | 'file', path: string) {
   showRecentMenu.value = false
   if (kind === 'folder') {
-    recordRecentFolder(path)
+    await recordRecentFolder(path)
     await startProgressiveScan([path])
   } else {
-    recordRecentFile(path)
+    await recordRecentFile(path)
     await scanFilesAsVirtualGroup([path])
   }
 }
 
 /** 从最近记录中移除（不打开） */
-function handleRecentRemove(kind: 'folder' | 'file', path: string) {
-  removeRecent(kind === 'folder' ? 'folders' : 'files', path)
+async function handleRecentRemove(kind: 'folder' | 'file', path: string) {
+  await removeRecent(kind === 'folder' ? 'folders' : 'files', path)
 }
 
 /** 清空最近记录 */
 async function clearRecent() {
-  state.recentFolders = []
-  state.recentFiles = []
-  await saveRecent()
+  await clearRecentRecords()
 }
 
 let unlistenDragDrop: (() => void) | null = null
@@ -338,9 +350,9 @@ onMounted(async () => {
           // 规范化待打开路径（统一正斜杠，便于后续匹配）
           pendingOpenImagePath.value = cliArgs[0].replace(/\\/g, '/')
           // 记录最近打开的图片（与「打开图片」对话框、拖放的行为保持一致）
-          recordRecentFile(cliArgs[0])
+          await recordRecentFile(cliArgs[0])
           // 同时记录所在文件夹：参数单图实际也加载了父目录，便于之后整体浏览
-          recordRecentFolder(parentDir)
+          await recordRecentFolder(parentDir)
           await startProgressiveScan([parentDir])
           // 等待扫描完成（loading=false）后自动打开大图
           const tryOpenImage = () => {
@@ -435,12 +447,12 @@ async function handleDroppedPaths(paths: string[]) {
   }
   // 文件夹走渐进式扫描
   if (folders.length > 0) {
-    for (const p of folders) recordRecentFolder(p)
+    for (const p of folders) await recordRecentFolder(p)
     await startProgressiveScan(folders)
   }
   // 文件走虚拟分组
   if (files.length > 0) {
-    for (const p of files) recordRecentFile(p)
+    for (const p of files) await recordRecentFile(p)
     await scanFilesAsVirtualGroup(files)
   }
 }
@@ -484,7 +496,7 @@ async function handleOpenFolder() {
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected]
       // 记录最近打开的文件夹
-      for (const p of paths) recordRecentFolder(p)
+      for (const p of paths) await recordRecentFolder(p)
       await startProgressiveScan(paths)
     }
   } catch (e) {
@@ -505,7 +517,7 @@ async function handleOpenImages() {
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected]
       // 记录最近打开的图片
-      for (const p of paths) recordRecentFile(p)
+      for (const p of paths) await recordRecentFile(p)
       await scanFilesAsVirtualGroup(paths)
     }
   } catch (e) {

@@ -1373,6 +1373,10 @@ fn load_recent() -> Result<serde_json::Value, String> {
         return Ok(serde_json::Value::Object(serde_json::Map::new()));
     }
     let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    // 多开时可能撞上其他实例正在写入：空内容按「暂无记录」处理，避免解析报错
+    if content.trim().is_empty() {
+        return Ok(serde_json::Value::Object(serde_json::Map::new()));
+    }
     let yaml_value: serde_yaml::Value =
         serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
     let json = serde_json::to_value(yaml_value).map_err(|e| e.to_string())?;
@@ -1380,13 +1384,21 @@ fn load_recent() -> Result<serde_json::Value, String> {
 }
 
 /// 保存最近访问记录
+///
+/// 多开时其他实例可能同时读写该文件：先写进程独立的临时文件，再原子替换目标文件，
+/// 保证读取方只会看到完整的旧内容或新内容，不会读到写了一半的 YAML。
 #[tauri::command]
 fn save_recent(data: serde_json::Value) -> Result<(), String> {
     let path = data_path();
     let yaml_value: serde_yaml::Value =
         serde_json::from_value(data).map_err(|e| e.to_string())?;
     let yaml_str = serde_yaml::to_string(&yaml_value).map_err(|e| e.to_string())?;
-    fs::write(&path, yaml_str).map_err(|e| e.to_string())?;
+    let tmp_path = path.with_extension(format!("{}.tmp", std::process::id()));
+    fs::write(&tmp_path, yaml_str).map_err(|e| e.to_string())?;
+    if let Err(e) = fs::rename(&tmp_path, &path) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(e.to_string());
+    }
     Ok(())
 }
 

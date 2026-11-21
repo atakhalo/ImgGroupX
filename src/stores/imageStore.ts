@@ -2678,17 +2678,36 @@ export async function saveConfig(): Promise<void> {
 /** 最近记录最多保留条数 */
 const RECENT_LIMIT = 20
 
-/** 加载最近访问记录（来自 data-user.yaml） */
-export async function loadRecent(): Promise<void> {
+/**
+ * 读取 data-user.yaml 并同步到内存（不加队列，仅供内部调用）。
+ * 读取失败时保留现有列表：多开时另一实例可能正在写入，
+ * 不能因为一次读取失败就把界面上的历史全部清空。
+ */
+async function fetchRecent(): Promise<void> {
   try {
     const data = await invoke<{ folders?: string[]; files?: string[] }>('load_recent')
     state.recentFolders = Array.isArray(data?.folders) ? data.folders : []
     state.recentFiles = Array.isArray(data?.files) ? data.files : []
   } catch {
-    // 首次运行或文件不存在
-    state.recentFolders = []
-    state.recentFiles = []
+    // 文件不存在（首次运行）或读取/解析失败：保留当前内存列表
   }
+}
+
+/**
+ * 最近记录的「读最新 → 改内存 → 写回」串行队列。
+ * 多开或连续记录时，避免基于旧快照整体覆盖文件、把其他实例的记录冲掉。
+ */
+let recentQueue: Promise<unknown> = Promise.resolve()
+
+function queueRecent<T>(task: () => Promise<T>): Promise<T> {
+  const result = recentQueue.then(task, task)
+  recentQueue = result.catch(() => undefined)
+  return result
+}
+
+/** 加载最近访问记录（来自 data-user.yaml），与记录写入串行，拿到最新内容 */
+export function loadRecent(): Promise<void> {
+  return queueRecent(fetchRecent)
 }
 
 /** 保存最近访问记录到 data-user.yaml */
@@ -2702,23 +2721,41 @@ export async function saveRecent(): Promise<void> {
   }
 }
 
-/** 记录最近打开的文件夹（去重、最新在前、限制条数） */
-export function recordRecentFolder(path: string): void {
+/** 记录最近打开的文件夹（去重、最新在前、限制条数；写入前先合并其他实例的最新记录） */
+export function recordRecentFolder(path: string): Promise<void> {
   const norm = normPath(path)
-  state.recentFolders = [norm, ...state.recentFolders.filter(p => p !== norm)].slice(0, RECENT_LIMIT)
-  saveRecent()
+  return queueRecent(async () => {
+    await fetchRecent()
+    state.recentFolders = [norm, ...state.recentFolders.filter(p => p !== norm)].slice(0, RECENT_LIMIT)
+    await saveRecent()
+  })
 }
 
-/** 记录最近打开的图片（去重、最新在前、限制条数） */
-export function recordRecentFile(path: string): void {
+/** 记录最近打开的图片（去重、最新在前、限制条数；写入前先合并其他实例的最新记录） */
+export function recordRecentFile(path: string): Promise<void> {
   const norm = normPath(path)
-  state.recentFiles = [norm, ...state.recentFiles.filter(p => p !== norm)].slice(0, RECENT_LIMIT)
-  saveRecent()
+  return queueRecent(async () => {
+    await fetchRecent()
+    state.recentFiles = [norm, ...state.recentFiles.filter(p => p !== norm)].slice(0, RECENT_LIMIT)
+    await saveRecent()
+  })
 }
 
-/** 移除最近记录（文件夹或图片） */
-export function removeRecent(kind: 'folders' | 'files', path: string): void {
-  if (kind === 'folders') state.recentFolders = state.recentFolders.filter(p => p !== path)
-  else state.recentFiles = state.recentFiles.filter(p => p !== path)
-  saveRecent()
+/** 移除最近记录（文件夹或图片；先合并其他实例的最新记录再移除） */
+export function removeRecent(kind: 'folders' | 'files', path: string): Promise<void> {
+  return queueRecent(async () => {
+    await fetchRecent()
+    if (kind === 'folders') state.recentFolders = state.recentFolders.filter(p => p !== path)
+    else state.recentFiles = state.recentFiles.filter(p => p !== path)
+    await saveRecent()
+  })
+}
+
+/** 清空最近记录（显式清空，不合并其他实例的记录） */
+export function clearRecentRecords(): Promise<void> {
+  return queueRecent(async () => {
+    state.recentFolders = []
+    state.recentFiles = []
+    await saveRecent()
+  })
 }
