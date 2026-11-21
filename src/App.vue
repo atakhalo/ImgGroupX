@@ -288,7 +288,9 @@ onMounted(async () => {
   // 启动时检查更新（一天一次，有新版时在设置按钮显示红点）
   initUpdateCheck()
   // 加载最近访问记录
-  loadRecent()
+  // 必须等待加载完成：后面的命令行参数处理会写入最近记录，
+  // 若加载晚于写入完成会把新记录覆盖回旧列表（导致参数打开的图片不进历史）
+  await loadRecent()
   // 剪贴板文件状态（用于右键菜单"粘贴为临时分组"）
   refreshClipboardHasFiles()
 
@@ -335,6 +337,10 @@ onMounted(async () => {
         if (parentDir) {
           // 规范化待打开路径（统一正斜杠，便于后续匹配）
           pendingOpenImagePath.value = cliArgs[0].replace(/\\/g, '/')
+          // 记录最近打开的图片（与「打开图片」对话框、拖放的行为保持一致）
+          recordRecentFile(cliArgs[0])
+          // 同时记录所在文件夹：参数单图实际也加载了父目录，便于之后整体浏览
+          recordRecentFolder(parentDir)
           await startProgressiveScan([parentDir])
           // 等待扫描完成（loading=false）后自动打开大图
           const tryOpenImage = () => {
