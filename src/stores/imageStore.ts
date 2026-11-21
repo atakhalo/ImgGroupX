@@ -993,6 +993,71 @@ const newInfos = await invoke<ImageInfo[]>('get_files_info', { paths: changedPat
   return true
 }
 
+/** 刷新前记录虚拟分组的图片路径（含子节点），用于全量刷新后按路径重建 */
+function snapshotVirtualGroupImages(): Map<FolderNode, string[]> {
+  const snapshot = new Map<FolderNode, string[]>()
+  const walk = (node: FolderNode) => {
+    snapshot.set(node, node.images.map(i => i.path))
+    for (const child of node.children) walk(child)
+  }
+  for (const vg of state.virtualGroups) walk(vg)
+  return snapshot
+}
+
+/**
+ * 全量刷新后按路径重建虚拟分组的图片内容。
+ * - 根路径内的图片：复用本次扫描出的新 ImageItem；
+ * - 「打开图片」创建、不在任何根路径下的图片：单独读取文件信息后重建，并放回 allImages
+ *   （与「打开图片」时的行为一致）；
+ * - 已不存在的文件：从分组中丢弃；分组节点本身保留（清空后由用户决定是否删除）。
+ */
+async function restoreVirtualGroupImages(snapshot: Map<FolderNode, string[]>): Promise<void> {
+  if (snapshot.size === 0) return
+  // 新扫描结果：规范化路径 → 新图片对象
+  const byPath = new Map<string, ImageItem>()
+  for (const img of state.allImages) byPath.set(normPath(img.path), img)
+
+  // 收集快照中未出现在新扫描结果里的路径（可能来自「打开图片」，也可能已被删除）
+  const missing: string[] = []
+  const seen = new Set<string>()
+  for (const paths of snapshot.values()) {
+    for (const p of paths) {
+      const n = normPath(p)
+      if (seen.has(n)) continue
+      seen.add(n)
+      if (!byPath.has(n)) missing.push(p)
+    }
+  }
+  if (missing.length > 0) {
+    try {
+      const infos = await invoke<ImageInfo[]>('get_files_info', {
+        paths: missing,
+        scanAllFiles: state.settings.scanAllFiles,
+        includeVideos: state.settings.includeVideos,
+      })
+      const recovered: ImageItem[] = infos.map(info => ({ ...info, loading: false }))
+      if (recovered.length > 0) {
+        // 与「打开图片」时的行为保持一致：放回 allImages，并由 addImagesUnique 恢复标记
+        addImagesUnique(recovered)
+        for (const item of recovered) byPath.set(normPath(item.path), item)
+      }
+    } catch {
+      // 读取失败（如文件已被删除）时按缺失处理，保留分组中的其余图片
+    }
+  }
+
+  const walk = (node: FolderNode) => {
+    const paths = snapshot.get(node)
+    if (paths) {
+      node.images = paths
+        .map(p => byPath.get(normPath(p)))
+        .filter((i): i is ImageItem => !!i)
+    }
+    for (const child of node.children) walk(child)
+  }
+  for (const vg of state.virtualGroups) walk(vg)
+}
+
 /** 刷新所有已加载文件夹 */
 export async function refreshFolders(): Promise<void> {
   if (state.loadedRootPaths.length === 0) return
@@ -1010,6 +1075,8 @@ export async function refreshFolders(): Promise<void> {
   // 全量重扫会重建图片对象；标记保存扩展启用时由 addImagesUnique 从持久化映射恢复，
   // 未启用时标记信息丢失，同步复位标记隐藏，避免刷新后视图全空
   state.hiddenMarkLevels = []
+  // 记录虚拟分组当前的图片路径，扫描完成后按路径重建（避免临时分组被清空）
+  const vgSnapshot = snapshotVirtualGroupImages()
   for (const vg of state.virtualGroups) {
     vg.images = []
   }
@@ -1023,6 +1090,9 @@ export async function refreshFolders(): Promise<void> {
   } catch (e) {
     console.error('刷新失败:', e)
   } finally {
+    // 全量重扫重建了 ImageItem，把虚拟分组的图片重新关联到新对象上。
+    // 放在 finally 里：即使扫描失败也按快照尽量恢复，避免刷新把分组内容清空
+    await restoreVirtualGroupImages(vgSnapshot)
     state.loading = false
   }
 }
