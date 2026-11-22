@@ -65,6 +65,7 @@ const defaultSettings: AppSettings = {
   childTitleBgColor: '#23234d',
   nodeGridGapV: 4,
   nodeGridGapH: 4,
+  firstLevelImagesFirst: true,
   compactMode: false,
   rootCompactMode: false,
   compactHeader: false,
@@ -1287,24 +1288,31 @@ export function buildFullTree(): FolderNode[] {
 /** 所有可导航节点的扁平有序列表（computed，响应式缓存） */
 export const navigableList = computed<NavigableEntry[]>(() => {
   const list: NavigableEntry[] = []
+  /** 节点内一级图片是否排在子分组之前（设置项，默认开启） */
+  const imagesFirst = state.settings.firstLevelImagesFirst
 
   // 1. 虚拟分组（保持原始顺序，navKey 与 FolderGroup 的 vgIndex 一致）
   for (let vi = 0; vi < state.virtualGroups.length; vi++) {
     const vg = state.virtualGroups[vi]
     const scopeId = `vg:${vi}`
-    // 子节点（后序遍历：子→父；保持虚拟分组原始顺序，与 FolderPanel 展示一致）
+    // 子节点：一级图片在前（默认）或后，与网格显示顺序一致
     function walk(nodes: FolderNode[], parentHierarchy: string) {
       for (const node of nodes) {
         const hierarchy = parentHierarchy ? parentHierarchy + ' / ' + node.name : node.name
+        if (imagesFirst && node.images.length > 0) {
+          list.push({ images: getProcessedImages(node.images, `vg:${vg.path}:${node.path}`), path: node.path, displayPath: hierarchy, scopeId, groupName: vg.name })
+        }
         if (node.children.length > 0) walk(node.children, hierarchy)
-        if (node.images.length > 0) {
+        if (!imagesFirst && node.images.length > 0) {
           list.push({ images: getProcessedImages(node.images, `vg:${vg.path}:${node.path}`), path: node.path, displayPath: hierarchy, scopeId, groupName: vg.name })
         }
       }
     }
+    if (imagesFirst && vg.images.length > 0) {
+      list.push({ images: getProcessedImages(vg.images, `vg:${vg.path}:${vg.path}`), path: vg.path, displayPath: '', scopeId, groupName: vg.name })
+    }
     walk(vg.children, '')
-    // 一级图片放在最后
-    if (vg.images.length > 0) {
+    if (!imagesFirst && vg.images.length > 0) {
       list.push({ images: getProcessedImages(vg.images, `vg:${vg.path}:${vg.path}`), path: vg.path, displayPath: '', scopeId, groupName: vg.name })
     }
   }
@@ -1320,8 +1328,11 @@ export const navigableList = computed<NavigableEntry[]>(() => {
     function walkReal(nodes: FolderNode[], parentDisplay: string, rootPath: string) {
       for (const node of sortFolderTreeCopy(nodes)) {
         const display = parentDisplay ? parentDisplay + ' / ' + node.name : node.name
+        if (imagesFirst && node.images.length > 0) {
+          list.push({ images: getProcessedImages(node.images, toAbsPath(rootPath, node.path)), path: toAbsPath(rootPath, node.path), displayPath: display, scopeId: 'tree', groupName: '' })
+        }
         if (node.children.length > 0) walkReal(node.children, display, rootPath)
-        if (node.images.length > 0) {
+        if (!imagesFirst && node.images.length > 0) {
           list.push({ images: getProcessedImages(node.images, toAbsPath(rootPath, node.path)), path: toAbsPath(rootPath, node.path), displayPath: display, scopeId: 'tree', groupName: '' })
         }
       }

@@ -614,15 +614,22 @@ function childManualSortKey(child: FolderNode): string {
 
 /**
  * 按当前显示顺序（手动排序 + 设置排序 + 筛选）递归收集节点内的图片。
- * 与视图/导航列表一致：先子文件夹内的图片，再本节点图片；
+ * 与视图/导航列表一致：一级图片在前（默认）或子文件夹在前；
  * 每个节点各自套用自己的手动排序记录，保证批量重命名 {i} 序号与看到的顺序一致。
  */
 function collectProcessedImages(node: FolderNode, nodeKey: string): ImageItem[] {
   const result: ImageItem[] = []
-  for (const child of node.children) {
-    result.push(...collectProcessedImages(child, childManualSortKey(child)))
+  if (state.settings.firstLevelImagesFirst) {
+    result.push(...getProcessedImages(node.images, nodeKey))
+    for (const child of node.children) {
+      result.push(...collectProcessedImages(child, childManualSortKey(child)))
+    }
+  } else {
+    for (const child of node.children) {
+      result.push(...collectProcessedImages(child, childManualSortKey(child)))
+    }
+    result.push(...getProcessedImages(node.images, nodeKey))
   }
-  result.push(...getProcessedImages(node.images, nodeKey))
   return result
 }
 
@@ -1230,7 +1237,7 @@ function getNodeGridContainerBg(depth: number): string {
       v-if="useUnifiedGrid && !isEmptyFolder && getExpanded(node, getExpandKey())"
       ref="unifiedGridRef"
       class="folder-content-grid"
-      :class="{ 'folder-content-collapsed': !getExpanded(node, getExpandKey()), 'manual-sort-active': manualSortModeActive }"
+      :class="{ 'folder-content-collapsed': !getExpanded(node, getExpandKey()), 'manual-sort-active': manualSortModeActive, 'images-first': state.settings.firstLevelImagesFirst }"
       :style="{
         gap: getExpanded(node, getExpandKey()) ? state.settings.gap + 'px' : '0',
         backgroundColor: getNodeGridContainerBg(realDepth),
@@ -1278,7 +1285,7 @@ function getNodeGridContainerBg(depth: number): string {
 
     <!-- 非紧凑模式：子节点 + 图片分区域布局 -->
     <template v-if="!useUnifiedGrid">
-      <div v-if="!isEmptyFolder" class="folder-noncompact-body" :style="{ borderRadius: '20px', background: getNodeGridContainerBg(realDepth) }" @contextmenu="handleBodyCtxMenu">
+      <div v-if="!isEmptyFolder" class="folder-noncompact-body" :class="{ 'images-first': state.settings.firstLevelImagesFirst }" :style="{ borderRadius: '20px', background: getNodeGridContainerBg(realDepth) }" @contextmenu="handleBodyCtxMenu">
         <div
           v-if="node.children.length"
           class="folder-children-section"
@@ -1791,6 +1798,10 @@ function getNodeGridContainerBg(depth: number): string {
   overflow: hidden;
 }
 
+/* 一级图片在前：用 order 交换图片与子分组（默认 DOM 为子分组在前） */
+.folder-content-grid.images-first > .grid-item { order: 0; }
+.folder-content-grid.images-first > .folder-group { order: 1; }
+
 /* 折叠状态：不可见，宽度保留（用 max-height 而非 height 避免影响 min-width 计算） */
 .folder-content-collapsed {
   visibility: hidden;
@@ -1807,6 +1818,14 @@ function getNodeGridContainerBg(depth: number): string {
   overflow: hidden;
   transition: background 0.2s;
 }
+
+/* 一级图片在前：改为纵向 flex，用 order 交换图片区与子分组区 */
+.folder-noncompact-body.images-first {
+  display: flex;
+  flex-direction: column;
+}
+.folder-noncompact-body.images-first > .folder-grid-wrapper { order: 0; }
+.folder-noncompact-body.images-first > .folder-children-section { order: 1; }
 
 /* 折叠状态：图片网格不可见，高度为 0，宽度保留 */
 .folder-grid-collapsed {

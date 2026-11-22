@@ -153,6 +153,8 @@ export interface AppSettings {
   nodeGridGapV: number
   /** 节点网格水平间距 */
   nodeGridGapH: number
+  /** 一级图片是否显示在子分组之前（默认开启） */
+  firstLevelImagesFirst: boolean
   /** 紧凑模式（非根节点自适应宽度排列） */
   compactMode: boolean
   /** 根节点紧凑（紧凑模式时根节点和虚拟分组一级节点也参与） */

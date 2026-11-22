@@ -29,7 +29,7 @@ const tabs = [
 /** 各标签页对应的设置字段 */
 const tabFields: Record<string, (keyof typeof state.settings)[]> = {
   general: ['language', 'maxLoadSizeMB', 'loadSkippedOnView', 'randomGroupEnabled', 'randomGroupCount', 'filterPresets', 'filterRegex', 'filterTarget', 'sortBy', 'sortOrder', 'groupSortBy', 'groupSortOrder'],
-  grid: ['borderRadius', 'gap', 'contentMarginX', 'gridSize', 'bgColor', 'nodeGridGapV', 'nodeGridGapH', 'compactMode', 'compactHeader', 'collapseHierarchy'],
+  grid: ['borderRadius', 'gap', 'contentMarginX', 'gridSize', 'bgColor', 'nodeGridGapV', 'nodeGridGapH', 'firstLevelImagesFirst', 'compactMode', 'compactHeader', 'collapseHierarchy'],
   colors: ['rainbowEnabled', 'rainbowColors', 'markColors', 'showMarkBadge', 'showViewerMarkBorder', 'rootTitleColor', 'childTitleColor', 'rootTitleBgColor', 'childTitleBgColor'],
   viewer: ['viewerBgMode', 'viewerBgColor', 'autoPan', 'autoCenter', 'openWithPrograms'],
   shortcuts: ['keyBindings', 'keyAltBindings'],
@@ -47,6 +47,7 @@ const defaultSettings = {
   rootTitleBgColor: '#222240', childTitleBgColor: '#23234d',
   nodeGridGapV: 4,
   nodeGridGapH: 4,
+  firstLevelImagesFirst: true,
   compactMode: false,
   compactHeader: false,
   collapseHierarchy: false,
@@ -404,6 +405,14 @@ onUnmounted(() => {
               <input type="range" v-model.number="localSettings.nodeGridGapH" min="0" max="40" step="1" />
               <span class="setting-value">{{ localSettings.nodeGridGapH }}px</span>
             </div>
+            <div class="setting-row">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="localSettings.firstLevelImagesFirst" class="toggle-input" />
+                <span class="toggle-switch"></span>
+                {{ $t('settings.images_first') }}
+              </label>
+            </div>
+            <div class="setting-hint">{{ $t('settings.images_first_hint') }}</div>
             <div class="setting-row">
               <label class="toggle-label">
                 <input type="checkbox" v-model="localSettings.compactMode" class="toggle-input" />
