@@ -627,7 +627,6 @@ function collectProcessedImages(node: FolderNode, nodeKey: string): ImageItem[] 
 }
 
 function handleBatchRename() {
-  if (!realFolderPath.value) return
   batchRenameDirect.value = getProcessedImages(props.node.images, manualSortKey.value)
   batchRenameAll.value = collectProcessedImages(props.node, manualSortKey.value)
   batchRenameShow.value = true
@@ -1153,7 +1152,7 @@ function getNodeGridContainerBg(depth: number): string {
         </button>
         <!-- 批量重命名（扩展启用后显示） -->
         <button
-          v-if="realFolderPath && state.settings.batchRenameEnabled"
+          v-if="state.settings.batchRenameEnabled"
           class="ctx-menu-item"
           @click="handleBatchRename(), closeHeaderCtxMenu()"
         >
