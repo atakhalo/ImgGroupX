@@ -629,8 +629,9 @@ function navigateToOffset(offset: -1 | 1, sameIndex = false): boolean {
   const cur = viewingNavIndex.value
   const target = cur + offset
   if (target < 0 || target >= list.length) return false
-  // 不跨越 scope 边界
-  if (list[target].scopeId !== list[cur].scopeId) return false
+  // 分组查看器内只在本分组范围内导航；主视图允许跨虚拟分组 / 跨真实树连续导航
+  const viewerScope = groupViewerIndex.value >= 0 ? `vg:${groupViewerIndex.value}` : ''
+  if (viewerScope && list[cur].scopeId === viewerScope && list[target].scopeId !== viewerScope) return false
   const entry = list[target]
   const prevImageIndex = viewingIndex.value
   viewingImages.value = [...entry.images]
