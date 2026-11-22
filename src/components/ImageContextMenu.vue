@@ -110,6 +110,19 @@ async function handleCopyFile() {
   }
 }
 
+/* ===== 剪切为文件 ===== */
+async function handleCutFile() {
+  close()
+  const p = props.item?.path
+  if (!p) return
+  try {
+    await invoke('cut_files_to_clipboard', { files: [p] })
+    showToast(t('hint.cut_file') + ' — ' + t('hint.cut_file_tip'))
+  } catch (e: any) {
+    showToast(t('hint.cut_file') + '失败: ' + (e.message || e))
+  }
+}
+
 /* ===== 重命名 ===== */
 function handleRename() {
   close()
@@ -260,6 +273,17 @@ async function handleOpenDefault() {
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
         </svg>
         <span>{{ $t('hint.copy_file') }}</span>
+      </button>
+
+      <!-- 剪切为文件 -->
+      <button class="imctx-item" @click="handleCutFile" :title="$t('hint.cut_file_tip')">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>
+          <line x1="20" y1="4" x2="8.12" y2="15.88"/>
+          <line x1="14.47" y1="14.48" x2="20" y2="20"/>
+          <line x1="8.12" y1="8.12" x2="12" y2="12"/>
+        </svg>
+        <span>{{ $t('hint.cut_file') }}</span>
       </button>
 
       <div class="imctx-sep"></div>

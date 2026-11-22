@@ -38,6 +38,8 @@ tauri-plugin-clipboard = "2.1.11"
 wallpaper = "3"
 
 [target.'cfg(windows)'.dependencies]
+# 「剪切为文件」：写 CF_HDROP + Preferred DropEffect(MOVE)
+clipboard-win = "5.4"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_UI_Shell",

@@ -214,7 +214,7 @@ function handleClick(e: MouseEvent) {
 
 function handleContextMenu(e: MouseEvent) {
   e.preventDefault()
-  ctxMenu.value = { show: true, x: Math.min(e.clientX, window.innerWidth - 200), y: Math.min(e.clientY, window.innerHeight - 280) }
+  ctxMenu.value = { show: true, x: Math.min(e.clientX, window.innerWidth - 200), y: Math.min(e.clientY, window.innerHeight - 310) }
 }
 
 function closeCtxMenu() {

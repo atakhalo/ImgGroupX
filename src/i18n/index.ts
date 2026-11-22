@@ -338,6 +338,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'hint.copy_path': '复制路径',
     'hint.copy_file': '复制为文件',
     'hint.copy_file_tip': '可在资源管理器粘贴',
+    'hint.cut_file': '剪切为文件',
+    'hint.cut_file_tip': '粘贴后将移动源文件',
     'hint.paste_as_group': '粘贴为临时分组',
     'hint.wallpaper_set': '壁纸已设置',
     'hint.wallpaper_set_failed': '设置壁纸失败: {msg}',
@@ -814,6 +816,8 @@ const messages: Record<Lang, Record<string, string>> = {
     'group_viewer.close': 'Close group viewer',
     'hint.copy_file': 'Copy as File',
     'hint.copy_file_tip': 'Can paste in File Explorer',
+    'hint.cut_file': 'Cut as File',
+    'hint.cut_file_tip': 'Source file will be moved on paste',
     'hint.paste_as_group': 'Paste as Temporary Group',
     // Recent
     'recent.folders': 'Folders',

@@ -1523,6 +1523,67 @@ fn update_watcher(app_handle: AppHandle, paths: Vec<String>) -> Result<(), Strin
     Ok(())
 }
 
+/// 把文件以「剪切」形式写入剪贴板（资源管理器粘贴时执行移动，而不是复制）
+///
+/// 与「复制为文件」共用 `CF_HDROP`，额外写入 `Preferred DropEffect = DROPEFFECT_MOVE`，
+/// 目标程序（资源管理器）据此做 delete-on-paste：
+/// - 同卷：`MoveFile` 直接改名（瞬时）；
+/// - 跨卷：复制到目标后删除源文件。
+///
+/// 路径统一经 `to_shell_path` 规范化（正斜杠 / 相对路径 / `\\?\` 前缀都会被处理），
+/// 并在写入剪贴板前校验文件确实存在，避免资源管理器粘贴时报错。
+#[tauri::command]
+fn cut_files_to_clipboard(files: Vec<String>) -> Result<(), String> {
+    if files.is_empty() {
+        return Err("没有可剪切的文件".into());
+    }
+    let mut normalized = Vec::with_capacity(files.len());
+    for f in &files {
+        #[cfg(target_os = "windows")]
+        let p = to_shell_path(f);
+        #[cfg(not(target_os = "windows"))]
+        let p = f.clone();
+        if !Path::new(&p).is_file() {
+            return Err(format!("文件不存在：{}", p));
+        }
+        normalized.push(p);
+    }
+    write_cut_file_list(&normalized)
+}
+
+/// 写入「剪切」剪贴板数据：先 `CF_HDROP`，再追加 `Preferred DropEffect`
+///
+/// 必须一次打开剪贴板完成两次写入：`CF_HDROP` 的写入会清空剪贴板，
+/// 若分两次打开/写入，先写的数据会被后一次清空。
+#[cfg(target_os = "windows")]
+fn write_cut_file_list(files: &[String]) -> Result<(), String> {
+    use clipboard_win::{options, raw, register_format, Clipboard};
+
+    // `DROPEFFECT_MOVE`（Win32: 2）
+    const DROPEFFECT_MOVE: u32 = 2;
+
+    // 其他程序占用剪贴板时重试，避免偶发失败
+    let _clip = Clipboard::new_attempts(10)
+        .map_err(|e| format!("打开剪贴板失败：{}", e))?;
+    // 清空剪贴板并写入文件列表（CF_HDROP）
+    raw::set_file_list_with(files, options::DoClear)
+        .map_err(|e| format!("写入剪贴板文件列表失败：{}", e))?;
+    // 追加「首选拖放效果 = 移动」（不清空剪贴板）
+    let format = register_format("Preferred DropEffect")
+        .ok_or_else(|| "注册 Preferred DropEffect 格式失败".to_string())?;
+    raw::set_without_clear(format.get(), &DROPEFFECT_MOVE.to_le_bytes())
+        .map_err(|e| format!("写入剪贴板剪切标记失败：{}", e))?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn write_cut_file_list(_files: &[String]) -> Result<(), String> {
+    // Linux(X11) / macOS 没有与 Windows 等价的公开「剪切」剪贴板语义，
+    // Linux 的 x-special/gnome-copied-files 与 macOS Finder 私有机制都不通用，
+    // 这里明确报错，由前端提示，避免静默降级成「复制」误导用户。
+    Err("当前平台暂不支持「剪切为文件」，请使用「复制为文件」".into())
+}
+
 /// 获取多个文件的信息（用于细粒度刷新）
 #[tauri::command]
 fn get_files_info(paths: Vec<String>, scan_all_files: bool, include_videos: bool) -> Result<Vec<ImageInfo>, String> {
@@ -2312,6 +2373,7 @@ pub fn run() {
             load_video_thumbnail,
             get_video_duration,
             set_wallpaper_from_image_data,
+            cut_files_to_clipboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2320,6 +2382,16 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 「剪切为文件」入参校验：空列表 / 不存在的文件都在写剪贴板之前返回错误
+    /// （不触碰真实剪贴板，可在自动化测试中安全运行）
+    #[test]
+    fn cut_files_rejects_invalid_input() {
+        assert!(cut_files_to_clipboard(vec![]).is_err());
+        assert!(
+            cut_files_to_clipboard(vec![r"Z:\__dsh_missing__\a.png".to_string()]).is_err()
+        );
+    }
 
     /// 标记数据：保存 → 读取 → 占用统计 → 清除 的完整往返
     #[test]
