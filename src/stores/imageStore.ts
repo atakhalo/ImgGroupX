@@ -2472,14 +2472,77 @@ function computeSelectedFolderAbsolutePaths(): string[] {
   return result
 }
 
+/** 移动后清理已从磁盘移除的源根分组记录
+ * 移动整个根分组到其他分组后，源目录会被清空并删除，避免界面残留空分组。
+ * 只处理本次移动涉及的文件夹节点，避免误删其它原本就无图片的根。
+ * @param folderDirs 本次移动的文件夹节点绝对路径（移动前计算）
+ * @param destDir 本次移动的目标目录：位于该根内时保留该根（目标子目录仍在磁盘上）
+ */
+function cleanupMovedRoots(folderDirs: string[], destDir: string) {
+  if (folderDirs.length === 0 || state.loadedRootPaths.length === 0) return
+  const normDir = (p: string) => p.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase()
+  const destNorm = normDir(destDir)
+  const removedRoots = state.loadedRootPaths.filter(root => {
+    const norm = normDir(root)
+    // 只处理本次移动涉及的根节点
+    if (!folderDirs.some(d => normDir(d) === norm)) return false
+    // 目标在该根内（如移动到该根的子分组）时目录不会被清空，保留
+    if (destNorm === norm || destNorm.startsWith(norm + '/')) return false
+    return !state.allImages.some(img => {
+      const dir = normDir(img.dir)
+      return dir === norm || dir.startsWith(norm + '/')
+    })
+  })
+  if (removedRoots.length === 0) return
+  const removedSet = new Set(removedRoots)
+  state.loadedRootPaths = state.loadedRootPaths.filter(r => !removedSet.has(r))
+  for (const root of removedRoots) {
+    const norm = normDir(root)
+    rootExclusions.delete(norm)
+    // 清理该根路径下的扫描目录记录，避免重新加载时残留空目录
+    for (const d of [...state.scannedDirs]) {
+      if (normDir(d) === norm || normDir(d).startsWith(norm + '/')) {
+        state.scannedDirs.delete(d)
+        state.explicitDirs.delete(d)
+      }
+    }
+  }
+  setupFolderWatcher()
+}
+
+/** 目标目录是否会让被勾选的文件夹节点落到它自己身上
+ * （目标是该节点自身、其内部或其父目录时，都会产生自引用/嵌套副本，应拦截）
+ */
+function isTargetInsideSelectedFolders(destDir: string): boolean {
+  const dest = destDir.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase()
+  return computeSelectedFolderAbsolutePaths().some(dir => {
+    const n = dir.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase()
+    if (dest === n || dest.startsWith(n + '/')) return true
+    // 目标是父目录：目标下会落成同名目录，等于节点自身
+    const name = n.split('/').pop() || ''
+    return !!name && dest + '/' + name === n
+  })
+}
+
+/** 节点名是否可作为目标目录下的一级子目录名
+ * （盘符根如 `D:`、Unix 根等包含非法字符或为空时返回 ''，由调用方退回平铺）
+ */
+function safeNodeDirName(name: string): string {
+  const n = name.trim()
+  if (!n || /[<>:"/\\|?*]/.test(n)) return ''
+  return n
+}
+
 /** 收集选中图片 + 选中文件夹下所有图片的 [sourcePath, relativePath] 列表
  * @param mode - 'copy': 不过滤重复，同一文件可出现在多个选中项下
  *               'move': 深优先+去重，深层选中项优先处理，浅层跳过已处理文件
+ * 说明：勾选的文件夹节点（含根分组）整体以自身文件夹名作为一级目录，
+ * 复制/移动到另一个分组时该分组成为目标分组的子分组，
+ * 而不是把其一级图片平铺成目标分组的一级图片、子分组平铺成目标分组的子分组。
  */
 function collectSelectedFiles(mode: 'copy' | 'move'): [string, string][] {
   const result: [string, string][] = []
   const added = new Set<string>()
-  const roots = state.loadedRootPaths.map(r => r.replace(/\\/g, '/').replace(/\/$/, ''))
 
   // 1. 处理直接选中的图片（作为一级图片，不保留子目录结构）
   for (const path of state.selectedPaths) {
@@ -2499,9 +2562,9 @@ function collectSelectedFiles(mode: 'copy' | 'move'): [string, string][] {
       for (const fp of state.selectedFolderPaths) {
         const node = findSubTreeInTree(fullTree, fp)
         if (!node) continue
-        const isRoot = roots.includes(node.path)
-        const basePath = isRoot ? '' : node.name
-        const files = collectVGCopyFiles(node, basePath)
+        // 根分组与子分组一致：整体以一个同名子目录放入目标分组
+        // （盘符根等无法作为目录名的节点退回平铺，保持旧行为）
+        const files = collectVGCopyFiles(node, safeNodeDirName(node.name))
         for (const [src, rel] of files) {
           // 复制模式不跳过去重，同一文件可多次出现
           result.push([src, rel])
@@ -2519,9 +2582,9 @@ function collectSelectedFiles(mode: 'copy' | 'move'): [string, string][] {
       for (const fp of sorted) {
         const node = findSubTreeInTree(fullTree, fp)
         if (!node) continue
-        const isRoot = roots.includes(node.path)
-        const basePath = isRoot ? '' : node.name
-        const files = collectVGCopyFiles(node, basePath)
+        // 根分组与子分组一致：整体以一个同名子目录放入目标分组
+        // （盘符根等无法作为目录名的节点退回平铺，保持旧行为）
+        const files = collectVGCopyFiles(node, safeNodeDirName(node.name))
         for (const [src, rel] of files) {
           if (added.has(src)) continue
           added.add(src)
@@ -2559,6 +2622,11 @@ export async function copySelectedImages(): Promise<void> {
   if (!selected) return
 
   const destDir = String(selected).replace(/\\/g, '/')
+  // 目标在所选分组自身或其子目录内：会产生嵌套副本，拒绝执行
+  if (isTargetInsideSelectedFolders(destDir)) {
+    showToast(t('hint.copy_move_into_self'))
+    return
+  }
   await setSuppressWatcher(true)
   const created = await invoke<[string, string][]>('copy_files', { files, destDir })
   await setSuppressWatcher(false)
@@ -2593,6 +2661,11 @@ export async function moveSelectedImages(): Promise<void> {
   if (!selected) return
 
   const destDir = String(selected).replace(/\\/g, '/')
+  // 目标在所选分组自身或其子目录内：会造成自引用与误删，拒绝执行
+  if (isTargetInsideSelectedFolders(destDir)) {
+    showToast(t('hint.copy_move_into_self'))
+    return
+  }
   // 计算选中的文件夹节点的绝对路径，用于移动后清理空目录
   const cleanupDirs = computeSelectedFolderAbsolutePaths()
   await setSuppressWatcher(true)
@@ -2613,6 +2686,8 @@ export async function moveSelectedImages(): Promise<void> {
   }
   // 清除所有选中状态
   state.selectedFolderPaths.clear()
+  // 整个根分组被移走时清理已空的根，避免界面残留空分组
+  cleanupMovedRoots(cleanupDirs, destDir)
   // 不需要退出选择模式
 //   state.selectMode = 'view'
 
@@ -2623,10 +2698,16 @@ export async function moveSelectedImages(): Promise<void> {
   showToast(t('hint.moved_to_folder', { n: movedPaths.length, path: destDir }))
 }
 
-/** 复制选中图片到指定文件夹（跳过文件夹选择弹窗） */
+/** 复制选中图片到指定文件夹（跳过文件夹选择弹窗）
+ * 目标是一个分组节点：被勾选的文件夹节点（含根分组）整体作为其子分组 */
 export async function copyImagesToFolder(destDir: string): Promise<void> {
   const files = collectSelectedFiles('copy')
   if (files.length === 0) return
+  // 目标在所选分组自身或其子目录内：会产生嵌套副本，拒绝执行
+  if (isTargetInsideSelectedFolders(destDir)) {
+    showToast(t('hint.copy_move_into_self'))
+    return
+  }
 
   const srcInfo = state.selectedFolderPaths.size > 0
     ? t('dialog.src_info', { direct: state.selectedPaths.size, fromFolder: files.length - state.selectedPaths.size })
@@ -2648,10 +2729,16 @@ export async function copyImagesToFolder(destDir: string): Promise<void> {
   showToast(t('hint.copied_to_folder', { n: files.length, path: destDir }))
 }
 
-/** 移动选中图片到指定文件夹（跳过文件夹选择弹窗） */
+/** 移动选中图片到指定文件夹（跳过文件夹选择弹窗）
+ * 目标是一个分组节点：被勾选的文件夹节点（含根分组）整体作为其子分组 */
 export async function moveImagesToFolder(destDir: string): Promise<void> {
   const files = collectSelectedFiles('move')
   if (files.length === 0) return
+  // 目标在所选分组自身或其子目录内：会造成自引用与误删，拒绝执行
+  if (isTargetInsideSelectedFolders(destDir)) {
+    showToast(t('hint.copy_move_into_self'))
+    return
+  }
 
   const srcInfo = state.selectedFolderPaths.size > 0
     ? t('dialog.src_info', { direct: state.selectedPaths.size, fromFolder: files.length - state.selectedPaths.size })
@@ -2682,6 +2769,8 @@ export async function moveImagesToFolder(destDir: string): Promise<void> {
   }
   // 清除所有选中状态（选中的文件夹可能已被删除或内容已空）
   state.selectedFolderPaths.clear()
+  // 整个根分组被移走时清理已空的根，避免界面残留空分组
+  cleanupMovedRoots(cleanupDirs, destDir)
   // 不需要退出选择模式
 	//   state.selectMode = 'view'
 
