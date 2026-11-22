@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { t } from './i18n'
 import { matchShortcut, isEditableTarget } from './utils/shortcuts'
 import { MEDIA_FILTER_EXTENSIONS, IMAGE_FILTER_EXTENSIONS } from './utils/media'
-import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, recordRecentFolder, recordRecentFile, removeRecent, clearRecentRecords, getProcessedImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction, enterManualSortMode, exitManualSortMode, manualSortDragging, hiddenByMarkEvent, addSelectionToVirtualGroup, removeSelectionFromVirtualGroup, excludeNodeFromVirtualGroup, groupViewerNode, groupViewerIndex, openGroupViewer, closeGroupViewer, addTemporaryVirtualGroup } from './stores/imageStore'
+import { state, scanFilesAsVirtualGroup, clearAll, addVirtualGroup, removeVirtualGroup, loadConfig, saveConfig, excludeSubPath, rootExclusions, deleteImages, setupFolderWatcher, refreshFolders, applyFileChanges, startProgressiveScan, handleDirProgress, handleScanDirs, handleScanComplete, buildFolderTree, findSubTreeInTree, toastState, showToast, moveSelectedImages, copySelectedImages, collectAllSelectedPaths, deleteSelectedContents, copyImagesToFolder, moveImagesToFolder, closeRenameDialog, renameImage, navigableList, navIndexMap, loadRecent, recordRecentFolder, recordRecentFile, removeRecent, clearRecentRecords, getProcessedImages, filterImages, confirmRandomExtract, closeRandomExtractDialog, ctxFoldAction, enterManualSortMode, exitManualSortMode, manualSortDragging, hiddenByMarkEvent, addSelectionToVirtualGroup, removeSelectionFromVirtualGroup, excludeNodeFromVirtualGroup, groupViewerNode, groupViewerIndex, openGroupViewer, closeGroupViewer, addTemporaryVirtualGroup } from './stores/imageStore'
 import type { ImageItem, NavigableEntry, FolderNode } from './types'
 import GridView from './components/GridView.vue'
 import ImageViewer from './components/ImageViewer.vue'
@@ -189,6 +189,17 @@ async function handleRecentRemove(kind: 'folder' | 'file', path: string) {
 /** 清空最近记录 */
 async function clearRecent() {
   await clearRecentRecords()
+}
+
+/** 未分组模式：虚拟分组标题计数（筛选时显示匹配数） */
+function virtualGroupMatchCount(vg: FolderNode): number {
+  if (!state.settings.filterRegex) return vg.images.length
+  return filterImages(vg.images, state.settings.filterRegex, state.settings.filterTarget, state.virtualGroups).length
+}
+
+/** 未分组模式：筛选后没有匹配图片的虚拟分组整体隐藏 */
+function isVirtualGroupVisible(vg: FolderNode): boolean {
+  return !state.settings.filterRegex || virtualGroupMatchCount(vg) > 0
 }
 
 let unlistenDragDrop: (() => void) | null = null
@@ -1002,11 +1013,11 @@ async function handleRefresh() {
           <GridView :images="displayImages" @viewImage="(item: ImageItem, scope: ImageItem[]) => viewImage(item, scope)" @selectImage="selectImage" />
           <!-- 虚拟分组（未分组模式下额外显示；临时查看器分组不显示） -->
           <template v-for="(vg, vi) in state.virtualGroups" :key="vg.path">
-            <div v-if="!vg.temporary" class="vg-section">
+            <div v-if="!vg.temporary && isVirtualGroupVisible(vg)" class="vg-section">
               <div class="vg-section-header">
                 <span class="vg-section-icon">📦</span>
                 <span class="vg-section-title" :style="{ color: state.settings.rootTitleColor }">{{ vg.name }}</span>
-                <span class="vg-section-count">({{ vg.images.length }})</span>
+                <span class="vg-section-count">({{ virtualGroupMatchCount(vg) }})</span>
                 <button class="vg-section-del" @click="removeVirtualGroup(vi)" title="删除分组">
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />

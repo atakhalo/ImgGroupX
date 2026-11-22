@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch, onUnmounted } from 'vue'
+import { computed, ref, watch, onUnmounted, inject } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
-import { state, openInExplorer, saveVirtualGroup, getProcessedImages, requestImageDims, startProgressiveScan, renameVirtualGroup, createSubFolder, openRandomExtractDialog, showToast, ctxFoldAction, isManualSortActive, disableManualSort } from '../stores/imageStore'
+import { state, openInExplorer, saveVirtualGroup, getProcessedImages, compileFilterRegex, imageMatchesFilter, requestImageDims, startProgressiveScan, renameVirtualGroup, createSubFolder, openRandomExtractDialog, showToast, ctxFoldAction, isManualSortActive, disableManualSort } from '../stores/imageStore'
 import { observeVisibility, unobserveVisibility } from '../utils/lazyObserver'
 import { useManualSortDrag } from '../utils/manualSortDrag'
 import { t } from '../i18n'
@@ -338,6 +338,77 @@ const manualSortModeActive = computed(() =>
 )
 
 const processedImages = computed(() => getProcessedImages(props.node.images, manualSortKey.value))
+
+/**
+ * 筛选后本节点（含全部子节点）是否没有任何匹配。
+ * 匹配表由 FolderPanel 在筛选变化时统一计算并通过 provide 注入；
+ * 分组查看器（viewerMode）没有提供该函数，因此查看器内保持原样。
+ */
+const isFilteredOut = inject<((key: string) => boolean | undefined) | null>('isFilteredOut', null)
+const hiddenByFilter = computed(() => (isFilteredOut ? isFilteredOut(getExpandKey()) === true : false))
+
+/** 非紧凑模式下是否渲染本节点的图片区域（筛选生效时按匹配结果判断，避免出现空“无”区域） */
+const showImageArea = computed(() =>
+  props.node.images.length > 0 && (!state.settings.filterRegex || processedImages.value.length > 0)
+)
+
+/** 已编译的筛选正则（空或非法时为 null） */
+const filterRe = computed(() => compileFilterRegex(state.settings.filterRegex))
+
+/** 分组模式下标题匹配的虚拟分组内图片路径集合（与 filterImages 规则一致，只构建一次） */
+const matchingVgPaths = computed<Set<string> | null>(() => {
+  const re = filterRe.value
+  if (!re || state.settings.filterTarget !== 'group') return null
+  const set = new Set<string>()
+  for (const vg of state.virtualGroups) {
+    if (re.test(vg.name)) {
+      for (const img of vg.images) set.add(img.path)
+    }
+  }
+  return set
+})
+
+/** 单张图片是否通过当前筛选 */
+function matchesFilter(img: ImageItem): boolean {
+  const re = filterRe.value
+  if (!re) return true
+  return imageMatchesFilter(img, re, state.settings.filterTarget, matchingVgPaths.value)
+}
+
+/** 节点内（含子节点）筛选后可见且被勾选的图片数 */
+function countSelectedMatchingInNode(node: FolderNode): number {
+  let n = 0
+  for (const img of node.images) {
+    if (state.selectedPaths.has(img.path) && matchesFilter(img)) n++
+  }
+  for (const child of node.children) {
+    n += countSelectedMatchingInNode(child)
+  }
+  return n
+}
+
+/** 标题计数：筛选时显示子树匹配数（由 FolderPanel 统一计算），否则显示图片总数 */
+const getFilterMatchCount = inject<((key: string) => number | undefined) | null>('getFilterMatchCount', null)
+const displayTotalCount = computed(() => {
+  if (getFilterMatchCount) {
+    const matched = getFilterMatchCount(getExpandKey())
+    if (matched !== undefined) return matched
+  }
+  return totalCount(props.node)
+})
+
+/** 选择模式下标题显示的已选数量（筛选时只统计匹配图片） */
+const selectedCount = computed(() =>
+  state.settings.filterRegex ? countSelectedMatchingInNode(props.node) : countSelectedInNode(props.node)
+)
+
+/** 选择状态（筛选时按匹配结果判断全部/部分选中） */
+const selectionState = computed<'none' | 'partial' | 'all'>(() => {
+  if (!state.settings.filterRegex) return nodeSelectionState.value
+  const total = displayTotalCount.value
+  if (total === 0 || selectedCount.value === 0) return 'none'
+  return selectedCount.value >= total ? 'all' : 'partial'
+})
 
 /** 统一网格是否出现在视口附近（决定是否读取图片尺寸） */
 const unifiedGridRef = ref<HTMLElement | null>(null)
@@ -700,6 +771,8 @@ function getNodeGridContainerBg(depth: number): string {
 </script>
 
 <template>
+  <!-- 筛选后本节点（含所有子孙）没有任何匹配：整块隐藏（含标题） -->
+  <template v-if="!hiddenByFilter">
   <!-- 层级压缩：跳过当前节点，子节点继承路径 -->
   <template v-if="shouldCollapse">
     <FolderGroup
@@ -882,12 +955,12 @@ function getNodeGridContainerBg(depth: number): string {
           <span v-for="(seg, i) in collapsePrefixSegments" :key="i" :style="{ color: getSegmentColor(seg.level) }">{{ seg.name }}</span>
         </span>
         <span class="folder-name" :title="shouldCompactRoot() ? getNodeFullPath() : undefined" :style="{ color: realDepth === 0 ? state.settings.rootTitleColor : state.settings.childTitleColor }">{{ state.settings.privacyMode && props.anonName ? props.anonName : node.name }}</span>
-        <span v-if="totalCount(node) || isEmptyFolder" class="folder-count" :class="{ 'all-selected': state.selectMode === 'select' && nodeSelectionState === 'all' }">
-          <template v-if="state.selectMode === 'select' && nodeSelectionState !== 'none'">
-            (<span :class="{ 'partial-selected': nodeSelectionState === 'partial' }">{{ countSelectedInNode(props.node) }}</span><span class="sep">/</span>{{ totalCount(node) }})
+        <span v-if="displayTotalCount || isEmptyFolder" class="folder-count" :class="{ 'all-selected': state.selectMode === 'select' && selectionState === 'all' }">
+          <template v-if="state.selectMode === 'select' && selectionState !== 'none'">
+            (<span :class="{ 'partial-selected': selectionState === 'partial' }">{{ selectedCount }}</span><span class="sep">/</span>{{ displayTotalCount }})
           </template>
           <template v-else>
-            ({{ totalCount(node) }})
+            ({{ displayTotalCount }})
           </template>
         </span>
       </span>
@@ -1268,7 +1341,7 @@ function getNodeGridContainerBg(depth: number): string {
           </template>
         </div>
         <div
-          v-if="node.images.length && getExpanded(node, getExpandKey())"
+          v-if="showImageArea && getExpanded(node, getExpandKey())"
           class="folder-grid-wrapper"
           :class="{ 'folder-grid-collapsed': !getExpanded(node, getExpandKey()) }"
           :style="{ borderRadius: '20px', backgroundColor: getNodeGridWrapperBg(realDepth) }"
@@ -1284,6 +1357,7 @@ function getNodeGridContainerBg(depth: number): string {
       </div>
     </template>
   </div>
+  </template>
   </template>
 </template>
 

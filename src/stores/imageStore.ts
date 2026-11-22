@@ -675,35 +675,47 @@ export function sortFolderTreeCopy(nodes: FolderNode[]): FolderNode[] {
   return sortFolderTree(nodes.map(cloneFolderNode))
 }
 
+/** 编译筛选正则；空或非法正则返回 null（视为不筛选） */
+export function compileFilterRegex(regex: string): RegExp | null {
+  if (!regex) return null
+  try {
+    return new RegExp(regex, 'i')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 用已编译的正则判断单张图片是否匹配。
+ * matchingVgPaths：分组模式下标题匹配的虚拟分组内的图片路径集合（由调用方一次性构建）。
+ */
+export function imageMatchesFilter(
+  img: ImageItem,
+  re: RegExp,
+  target: FilterTarget = 'name',
+  matchingVgPaths?: Set<string> | null,
+): boolean {
+  if (target === 'name') return re.test(img.name)
+  if (target === 'path') return re.test(img.dir)
+  // 分组模式：匹配文件夹名（dir 最后一段）或虚拟分组标题
+  const folderName = img.dir.replace(/\\/g, '/').split('/').pop() || ''
+  return re.test(folderName) || !!matchingVgPaths?.has(img.path)
+}
+
 /** 应用正则筛选 */
 export function filterImages(images: ImageItem[], regex: string, target: FilterTarget = 'name', virtualGroups?: FolderNode[]): ImageItem[] {
-  if (!regex) return images
-  try {
-    const re = new RegExp(regex, 'i')
-    if (target === 'name') {
-      return images.filter(img => re.test(img.name))
-    }
-    if (target === 'path') {
-      return images.filter(img => re.test(img.dir))
-    }
-    // 分组模式：匹配文件夹名（dir 最后一段）或虚拟分组标题
-    const matchingVGPaths = new Set<string>()
-    if (virtualGroups) {
-      for (const vg of virtualGroups) {
-        if (re.test(vg.name)) {
-          for (const img of vg.images) {
-            matchingVGPaths.add(img.path)
-          }
-        }
+  const re = compileFilterRegex(regex)
+  if (!re) return images
+  let matchingVgPaths: Set<string> | null = null
+  if (target === 'group' && virtualGroups) {
+    matchingVgPaths = new Set<string>()
+    for (const vg of virtualGroups) {
+      if (re.test(vg.name)) {
+        for (const img of vg.images) matchingVgPaths.add(img.path)
       }
     }
-    return images.filter(img => {
-      const folderName = img.dir.replace(/\\/g, '/').split('/').pop() || ''
-      return re.test(folderName) || matchingVGPaths.has(img.path)
-    })
-  } catch {
-    return images
   }
+  return images.filter(img => imageMatchesFilter(img, re, target, matchingVgPaths))
 }
 
 /** 获取处理后的图片列表（排序+筛选）；manualKey 存在时优先使用该分组的手动顺序 */

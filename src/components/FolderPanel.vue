@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, reactive, ref, watch, onMounted, onUnmounted, provide } from 'vue'
 import type { FolderNode, ImageItem } from '../types'
 import { state, buildFolderTree, filterImages, sortFolderTree, addSelectionToVirtualGroup, removeSelectionFromVirtualGroup, excludeNodeFromVirtualGroup } from '../stores/imageStore'
 import FolderGroup from './FolderGroup.vue'
@@ -30,6 +30,8 @@ const expandedMap = reactive(new Map<string, boolean>())
  * （旧实现直接改写 expandedMap，导致取消筛选时全部展开）。
  */
 const filterExpandedMap = reactive(new Map<string, boolean>())
+/** 筛选期间每个节点子树的匹配图片数量（键与 filterExpandedMap 一致），用于标题计数 */
+const filterMatchCountMap = reactive(new Map<string, number>())
 /** 每个根路径的大文件夹检测标志 */
 const rootLargeDetected = reactive(new Map<string, boolean>())
 
@@ -136,7 +138,13 @@ const GROUP_RENDER_STEP = 12
 const GROUP_RENDER_IMAGE_BUDGET = 400
 
 const renderedGroupCount = ref(GROUP_RENDER_STEP)
-const visibleRootNodes = computed(() => allRootNodes.value.slice(0, renderedGroupCount.value))
+const visibleRootNodes = computed(() => {
+  const nodes = allRootNodes.value
+  // 筛选生效时直接过滤出可见根节点（结果通常很少，无需分批），
+  // 避免为注定隐藏的根节点创建组件实例
+  if (state.settings.filterRegex) return nodes.filter(isRootVisible)
+  return nodes.slice(0, renderedGroupCount.value)
+})
 const hasMoreGroups = computed(() => renderedGroupCount.value < allRootNodes.value.length)
 
 const nodeImageCountCache = new WeakMap<FolderNode, number>()
@@ -266,29 +274,71 @@ watch(() => state.loading, (loading) => {
 /**
  * 按筛选结果刷新展开覆盖表：只写 filterExpandedMap，不动用户的 expandedMap。
  * 清空筛选时直接丢弃覆盖表，展开状态自动回到筛选前。
+ * 同时该表兼作「节点子树是否有匹配」的可见性来源：FolderGroup 据此隐藏无结果的分组；
+ * filterMatchCountMap 记录子树匹配数，用于筛选时标题显示匹配数量。
  */
 function updateExpandedByFilter() {
   filterExpandedMap.clear()
+  filterMatchCountMap.clear()
   const regex = state.settings.filterRegex
   if (!regex) return
 
   // 后序遍历：每个节点只算一次子树匹配，避免逐节点重复递归
-  function walk(node: FolderNode, rootPath: string): boolean {
-    let hasMatch = filterImages(node.images, regex, state.settings.filterTarget, state.virtualGroups).length > 0
+  function walk(node: FolderNode, rootPath: string): number {
+    let count = filterImages(node.images, regex, state.settings.filterTarget, state.virtualGroups).length
     for (const child of node.children) {
-      if (walk(child, rootPath)) hasMatch = true
+      count += walk(child, rootPath)
     }
-    filterExpandedMap.set(absKeyFor(rootPath, node.path), hasMatch)
-    return hasMatch
+    const key = absKeyFor(rootPath, node.path)
+    filterMatchCountMap.set(key, count)
+    filterExpandedMap.set(key, count > 0)
+    return count
   }
   for (const node of folderTree.value) {
     walk(node, node.path)
   }
-  for (let vi = 0; vi < state.virtualGroups.length; vi++) {
-    const vg = state.virtualGroups[vi]
-    const filtered = filterImages(vg.images, regex, state.settings.filterTarget, state.virtualGroups)
-    filterExpandedMap.set(`vg:${vi}:${vg.path}`, filtered.length > 0)
+  // 虚拟分组同样按子树（含子节点）递归，键与 FolderGroup 的作用域展开键一致
+  function walkVg(node: FolderNode, vi: number): number {
+    let count = filterImages(node.images, regex, state.settings.filterTarget, state.virtualGroups).length
+    for (const child of node.children) {
+      count += walkVg(child, vi)
+    }
+    const key = `vg:${vi}:${node.path}`
+    filterMatchCountMap.set(key, count)
+    filterExpandedMap.set(key, count > 0)
+    return count
   }
+  for (let vi = 0; vi < state.virtualGroups.length; vi++) {
+    walkVg(state.virtualGroups[vi], vi)
+  }
+}
+
+/**
+ * 供 FolderGroup 查询：筛选激活期间该节点子树是否无匹配（键与展开键一致）。
+ * 返回 undefined 表示“不隐藏”（未筛选 / 尚未计算出结果，如扫描中新出现的节点）。
+ */
+function isFilteredOut(key: string): boolean | undefined {
+  if (!state.settings.filterRegex) return undefined
+  const matched = filterExpandedMap.get(key)
+  return matched === undefined ? undefined : !matched
+}
+
+/** 供 FolderGroup 查询：筛选激活期间该节点子树的匹配图片数量 */
+function getFilterMatchCount(key: string): number | undefined {
+  if (!state.settings.filterRegex) return undefined
+  return filterMatchCountMap.get(key)
+}
+
+provide('isFilteredOut', isFilteredOut)
+provide('getFilterMatchCount', getFilterMatchCount)
+
+/** 筛选期间根节点是否可见（子树无匹配的根节点整体隐藏） */
+function isRootVisible(node: FolderNode & { isVirtualGroup?: boolean; _vgIndex?: number }): boolean {
+  if (!state.settings.filterRegex) return true
+  const key = node.isVirtualGroup
+    ? `vg:${node._vgIndex}:${node.path}`
+    : absKeyFor(node.path, node.path)
+  return filterExpandedMap.get(key) !== false
 }
 
 watch(
@@ -420,6 +470,9 @@ defineExpose({ toggleAll, collapseLeaves })
     <div v-if="allRootNodes.length === 0" class="empty-hint">
       <p>{{ $t('empty.drop_hint') }}</p>
       <p class="sub-hint">{{ $t('empty.format_hint') }}</p>
+    </div>
+    <div v-else-if="state.settings.filterRegex && visibleRootNodes.length === 0" class="empty-hint">
+      <p>{{ $t('empty.no_results') }}</p>
     </div>
   </div>
 </template>
