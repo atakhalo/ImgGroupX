@@ -66,6 +66,7 @@
 
 ### 🖼️ Image Viewer
 - Zoom with mouse wheel, pan mode, fit to window, fullscreen
+- Navigate within a group (←/→ switch images; ↑/↓ switch groups while keeping the same index; Ctrl+←/→ switch groups)
 - **Mark menu** — Set/clear marks directly in the viewer
 - Open with external programs
 

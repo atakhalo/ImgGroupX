@@ -20,6 +20,8 @@ const emit = defineEmits<{
   indexChange: [index: number]
   prevNode: []
   nextNode: []
+  prevNodeSameIndex: []
+  nextNodeSameIndex: []
 }>()
 
 /** 元信息弹窗状态 */
@@ -324,6 +326,9 @@ function handleKeydown(e: KeyboardEvent) {
     else emit('close')
   } else if (e.ctrlKey && e.key === 'ArrowLeft') { e.preventDefault(); emit('prevNode') }
   else if (e.ctrlKey && e.key === 'ArrowRight') { e.preventDefault(); emit('nextNode') }
+  // ↑/↓：切换节点并指向同序号（Ctrl+←/→ 仍为切到首/末张）
+  else if (matchShortcut(e, 'viewer.prevNodeSameIndex')) { e.preventDefault(); emit('prevNodeSameIndex') }
+  else if (matchShortcut(e, 'viewer.nextNodeSameIndex')) { e.preventDefault(); emit('nextNodeSameIndex') }
   else if (matchShortcut(e, 'viewer.prev')) prevImage()
   else if (matchShortcut(e, 'viewer.next')) nextImage()
   else if (matchShortcut(e, 'viewer.zoomIn')) zoomIn()

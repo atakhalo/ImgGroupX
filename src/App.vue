@@ -621,8 +621,9 @@ watch(hiddenByMarkEvent, (ev) => {
   handleViewerHiddenByMark(ev.path)
 })
 
-/** 切到 navigableList 中的指定偏移位置，返回是否成功 */
-function navigateToOffset(offset: -1 | 1): boolean {
+/** 切到 navigableList 中的指定偏移位置，返回是否成功
+ *  sameIndex 为 true 时保持当前图片在分组内的序号（目标分组序号不足则取最后一张） */
+function navigateToOffset(offset: -1 | 1, sameIndex = false): boolean {
   if (viewingNavIndex.value < 0) return false
   const list = navigableList.value
   const cur = viewingNavIndex.value
@@ -631,8 +632,14 @@ function navigateToOffset(offset: -1 | 1): boolean {
   // 不跨越 scope 边界
   if (list[target].scopeId !== list[cur].scopeId) return false
   const entry = list[target]
+  const prevImageIndex = viewingIndex.value
   viewingImages.value = [...entry.images]
-  viewingIndex.value = offset === -1 ? entry.images.length - 1 : 0
+  if (sameIndex) {
+    // 同序号切换：沿用当前图片在分组内的位置；目标分组没有该序号时取最后一张
+    viewingIndex.value = Math.max(0, Math.min(prevImageIndex, entry.images.length - 1))
+  } else {
+    viewingIndex.value = offset === -1 ? entry.images.length - 1 : 0
+  }
   viewingNavIndex.value = target
   showToast(`切换至 ${entryDisplayPath(entry)}`, 1000)
   return true
@@ -648,6 +655,18 @@ function handleViewerPrevNode() {
 function handleViewerNextNode() {
   if (viewingNavIndex.value < 0) return
   navigateToOffset(1)
+}
+
+/** 大图查看器：切换到上一节点（指向同序号） */
+function handleViewerPrevNodeSameIndex() {
+  if (viewingNavIndex.value < 0) return
+  navigateToOffset(-1, true)
+}
+
+/** 大图查看器：切换到下一节点（指向同序号） */
+function handleViewerNextNodeSameIndex() {
+  if (viewingNavIndex.value < 0) return
+  navigateToOffset(1, true)
 }
 
 function toggleFolderGroup() { state.folderGroup = !state.folderGroup }
@@ -1174,7 +1193,7 @@ async function handleRefresh() {
     />
 
     <!-- 大图查看器 -->
-    <ImageViewer v-if="viewingIndex >= 0" :key="viewerKey" :images="viewingImages" :initialIndex="viewingIndex" @close="closeViewer" @deleteImage="handleViewerDelete" @indexChange="handleViewerIndexChange" @prevNode="handleViewerPrevNode" @nextNode="handleViewerNextNode" />
+    <ImageViewer v-if="viewingIndex >= 0" :key="viewerKey" :images="viewingImages" :initialIndex="viewingIndex" @close="closeViewer" @deleteImage="handleViewerDelete" @indexChange="handleViewerIndexChange" @prevNode="handleViewerPrevNode" @nextNode="handleViewerNextNode" @prevNodeSameIndex="handleViewerPrevNodeSameIndex" @nextNodeSameIndex="handleViewerNextNodeSameIndex" />
 
     <!-- 对比查看器（多图比对） -->
     <CompareViewer v-if="showCompare && compareImages.length >= 2" :images="compareImages" @close="closeCompare" />
