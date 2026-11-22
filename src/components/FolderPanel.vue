@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch, onMounted, onUnmounted, provide } from 'vue'
-import type { FolderNode, ImageItem } from '../types'
+import { computed, reactive, ref, watch, nextTick, onMounted, onUnmounted, provide } from 'vue'
+import type { FolderNode, HierarchyRow, ImageItem } from '../types'
 import { state, buildFolderTree, filterImages, sortFolderTree, addSelectionToVirtualGroup, removeSelectionFromVirtualGroup, excludeNodeFromVirtualGroup } from '../stores/imageStore'
+import { t } from '../i18n'
 import FolderGroup from './FolderGroup.vue'
+import HierarchyPanel from './HierarchyPanel.vue'
 
 const props = defineProps<{
   images: ImageItem[]
@@ -177,6 +179,10 @@ function scheduleMoreGroups() {
 onMounted(() => scheduleMoreGroups())
 onUnmounted(() => {
   if (renderRafId) cancelAnimationFrame(renderRafId)
+  if (jumpFlashTimer) {
+    clearTimeout(jumpFlashTimer)
+    jumpFlashTimer = null
+  }
 })
 
 watch(hasMoreGroups, (more) => {
@@ -346,6 +352,221 @@ watch(
   () => updateExpandedByFilter(),
 )
 
+/* ===================== 左侧层级面板 ===================== */
+
+/** 面板展开状态在本地存储中的键（不作为设置项，避免与配置文件结构耦合） */
+const HIERARCHY_OPEN_KEY = 'imggroup:hierarchy-panel-open'
+
+function readStoredHierarchyOpen(): boolean {
+  try {
+    return localStorage.getItem(HIERARCHY_OPEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+const hierarchyOpen = ref(readStoredHierarchyOpen())
+const panelScrollRef = ref<HTMLElement | null>(null)
+
+watch(hierarchyOpen, (open) => {
+  try {
+    localStorage.setItem(HIERARCHY_OPEN_KEY, open ? '1' : '0')
+  } catch { /* 忽略本地存储不可用 */ }
+})
+
+function toggleHierarchyPanel() {
+  hierarchyOpen.value = !hierarchyOpen.value
+}
+
+/** 与 FolderGroup.shouldCollapse 一致的层级压缩判定：只有一个子节点且无一级图片的中间节点被跳过 */
+function isCompressedMiddleNode(node: FolderNode, depth: number): boolean {
+  if (!state.settings.collapseHierarchy) return false
+  if (depth === 0) return false
+  if (node.children.length !== 1) return false
+  if (node.images.length > 0) return false
+  return true
+}
+
+/**
+ * 面板自己的展开状态表（与主视图的 expandedMap 完全独立）。
+ * 缺省视为展开，因此「展开全部」只需清空本表。
+ */
+const hierarchyExpandedMap = reactive(new Map<string, boolean>())
+
+function isRowExpanded(key: string): boolean {
+  const v = hierarchyExpandedMap.get(key)
+  return v === undefined ? true : v
+}
+
+/** 面板内单击某行的折叠箭头：只影响面板自身，不影响主视图 */
+function toggleHierarchyRow(row: HierarchyRow) {
+  hierarchyExpandedMap.set(row.key, !row.expanded)
+}
+
+/** 面板「展开全部」：清空覆盖表，全部回到默认展开 */
+function hierarchyExpandAllRows() {
+  hierarchyExpandedMap.clear()
+}
+
+/** 面板「折叠全部」：所有分组在面板中折叠（主视图不受影响） */
+function hierarchyCollapseAllRows() {
+  hierarchyExpandedMap.clear()
+  const roots = allRootNodes.value as (FolderNode & { isVirtualGroup?: boolean; _vgIndex?: number })[]
+  function setAll(node: FolderNode, vgIndex: number | undefined, rootPath: string) {
+    const key = vgIndex !== undefined ? `vg:${vgIndex}:${node.path}` : absKeyFor(rootPath, node.path)
+    hierarchyExpandedMap.set(key, false)
+    for (const child of node.children) {
+      setAll(child, vgIndex, rootPath)
+    }
+  }
+  for (const node of roots) {
+    setAll(node, node.isVirtualGroup ? node._vgIndex : undefined, node.path)
+  }
+}
+
+/**
+ * 生成层级面板的行。
+ * - 只包含分组（不含图片）
+ * - 展开状态来自面板自己的 hierarchyExpandedMap（与主视图互不影响）
+ * - 与主视图共用层级压缩规则（被压缩的中间节点不单独成行）
+ * - 筛选激活时只保留子树有匹配的分组，数量显示匹配数
+ */
+const hierarchyRows = computed<HierarchyRow[]>(() => {
+  const rows: HierarchyRow[] = []
+  const privacy = state.settings.privacyMode
+  const filtering = !!state.settings.filterRegex
+  const roots = allRootNodes.value as (FolderNode & { isVirtualGroup?: boolean; _vgIndex?: number })[]
+
+  function walk(
+    node: FolderNode,
+    depth: number,
+    parentKeys: string[],
+    namePrefix: string,
+    hintPrefix: string,
+    vgIndex: number | undefined,
+    rootPath: string,
+    rootIndex: number,
+    siblingIndex: number,
+  ) {
+    let cur = node
+    let curDepth = depth
+    let labelPrefix = namePrefix
+    let hint = hintPrefix
+    let sib = siblingIndex
+    // 层级压缩：跳过中间节点，名称合并到最终节点的标题中
+    while (isCompressedMiddleNode(cur, curDepth)) {
+      const child = cur.children[0]
+      labelPrefix += cur.name + ' / '
+      hint += cur.name + ' / '
+      cur = child
+      // 只有一个子节点，最终节点在同级中的序号为 0（隐私模式匿名名与主视图一致）
+      sib = 0
+    }
+    const key = vgIndex !== undefined ? `vg:${vgIndex}:${cur.path}` : absKeyFor(rootPath, cur.path)
+    // 筛选后无匹配的分组（含其子分组）整体不显示
+    if (isFilteredOut(key) === true) return
+    const matched = filtering ? getFilterMatchCount(key) : undefined
+    const count = matched !== undefined ? matched : countNodeImages(cur)
+    const hintPath = hint + cur.name
+    const label = privacy
+      ? `${t('control.anonymous_node')}${sib + 1}`
+      : labelPrefix + cur.name
+    const expanded = isRowExpanded(key)
+    const ancestorKeys = [...parentKeys, key]
+    rows.push({
+      key,
+      label,
+      depth: curDepth,
+      count,
+      hasChildren: cur.children.length > 0,
+      expanded,
+      isVirtual: vgIndex !== undefined,
+      isVirtualRoot: vgIndex !== undefined && curDepth === 0,
+      hint: hintPath,
+      ancestorKeys,
+      rootIndex,
+    })
+    if (!expanded) return
+    const childHint = hintPath + ' / '
+    for (let i = 0; i < cur.children.length; i++) {
+      walk(cur.children[i], curDepth + 1, ancestorKeys, '', childHint, vgIndex, rootPath, rootIndex, i)
+    }
+  }
+
+  for (let i = 0; i < roots.length; i++) {
+    const node = roots[i]
+    const vgIndex = node.isVirtualGroup ? node._vgIndex : undefined
+    walk(node, 0, [], '', '', vgIndex, node.path, i, 0)
+  }
+  return rows
+})
+
+/** 面板未展开时不做整棵树的行生成（避免每次渲染都遍历全部节点） */
+const hierarchyPanelRows = computed<HierarchyRow[]>(() =>
+  hierarchyOpen.value ? hierarchyRows.value : []
+)
+
+/** 在已挂载的分组中查找跳转目标元素（从目标自身向根回退，兼容层级压缩） */
+function findGroupElement(keys: string[]): HTMLElement | null {
+  const root = panelScrollRef.value
+  if (!root) return null
+  const map = new Map<string, HTMLElement>()
+  root.querySelectorAll<HTMLElement>('[data-group-key]').forEach((el) => {
+    const k = el.dataset.groupKey
+    if (k && !map.has(k)) map.set(k, el)
+  })
+  for (let i = keys.length - 1; i >= 0; i--) {
+    const el = map.get(keys[i])
+    if (el) return el
+  }
+  return null
+}
+
+/** 瞬时定位到目标分组（不使用平滑滚动：避免中间位置的图片被逐个加载） */
+function scrollToGroupInstant(el: HTMLElement) {
+  const scroller = panelScrollRef.value
+  if (!scroller) return
+  const offset = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+  scroller.scrollTop = Math.max(0, scroller.scrollTop + offset - 2)
+}
+
+let jumpFlashTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 跳转目标闪烁提示（元素由 FolderGroup 渲染，故使用全局样式类） */
+function flashGroupElement(el: HTMLElement) {
+  if (jumpFlashTimer) {
+    clearTimeout(jumpFlashTimer)
+    jumpFlashTimer = null
+  }
+  document.querySelectorAll('.hier-jump-flash').forEach((n) => n.classList.remove('hier-jump-flash'))
+  void el.offsetWidth
+  el.classList.add('hier-jump-flash')
+  jumpFlashTimer = setTimeout(() => {
+    el.classList.remove('hier-jump-flash')
+    jumpFlashTimer = null
+  }, 1200)
+}
+
+/**
+ * 点击面板条目：展开主视图中的祖先与目标分组自身（不递归展开其子分组），
+ * 确保根节点已挂载后瞬时定位过去。
+ */
+async function jumpToHierarchyGroup(row: HierarchyRow) {
+  // ancestorKeys 含自身：祖先用于让目标可见，自身用于显示该分组的图片/子分组
+  for (const key of row.ancestorKeys) {
+    setExpandedState(key, true)
+  }
+  // 目标根节点可能还在渐进渲染队列中
+  if (row.rootIndex >= renderedGroupCount.value) {
+    renderedGroupCount.value = row.rootIndex + 1
+  }
+  await nextTick()
+  const el = findGroupElement(row.ancestorKeys)
+  if (!el) return
+  scrollToGroupInstant(el)
+  flashGroupElement(el)
+}
+
 function handleViewImage(item: ImageItem, scope?: ImageItem[], navKey?: string, imageIndex?: number) {
   emit('viewImage', item, scope, navKey, imageIndex)
 }
@@ -372,9 +593,71 @@ defineExpose({ toggleAll, collapseLeaves })
 </script>
 
 <template>
-  <div class="folder-panel">
-    <div v-if="state.settings.compactMode && state.settings.rootCompactMode" class="folder-panel-compact" :style="{ gap: state.settings.nodeGridGapH + 'px' }">
-      <template v-for="(node, i) in visibleRootNodes" :key="node.path || `vg-${i}`">
+  <div class="folder-panel-shell">
+    <!-- 左侧层级面板：只列分组，与主视图显示条目一致，点击快速跳转 -->
+    <HierarchyPanel
+      :rows="hierarchyPanelRows"
+      :open="hierarchyOpen"
+      @togglePanel="toggleHierarchyPanel"
+      @toggleRow="toggleHierarchyRow"
+      @jump="jumpToHierarchyGroup"
+      @expandAll="hierarchyExpandAllRows"
+      @collapseAll="hierarchyCollapseAllRows"
+    />
+    <div
+      ref="panelScrollRef"
+      class="folder-panel"
+      :style="{ marginLeft: state.settings.contentMarginX + 'px', marginRight: state.settings.contentMarginX + 'px' }"
+    >
+      <div v-if="state.settings.compactMode && state.settings.rootCompactMode" class="folder-panel-compact" :style="{ gap: state.settings.nodeGridGapH + 'px' }">
+        <template v-for="(node, i) in visibleRootNodes" :key="node.path || `vg-${i}`">
+          <FolderGroup
+            v-if="(node as any).isVirtualGroup"
+            :node="node"
+            :depth="0"
+            :rootPath="node.path"
+            :showTitle="state.showGroupTitle"
+            :getExpanded="makeVgExpanded((node as any)._vgIndex)"
+            :isVirtualRoot="true"
+            :vgIndex="(node as any)._vgIndex"
+            collapsePrefix=""
+            :siblingNodes="allRootNodes as any"
+            :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (i + 1) : undefined"
+            @toggle="toggleNode"
+            @viewImage="handleViewImage"
+            @selectImage="handleSelectImage"
+            @removeRoot="() => handleDeleteVg((node as any)._vgIndex)"
+            @excludeNode="handleVirtualExcludeNode"
+            @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
+            @addToVirtualGroup="addSelectionToVirtualGroup((node as any)._vgIndex)"
+            @removeFromVirtualGroup="removeSelectionFromVirtualGroup((node as any)._vgIndex)"
+            @copyToFolder="(p:string) => emit('copyToFolder', p)"
+            @moveToFolder="(p:string) => emit('moveToFolder', p)"
+          />
+          <!-- 文件夹树节点 -->
+          <FolderGroup
+            v-else
+            :node="node"
+            :depth="0"
+            :rootPath="node.path"
+            :showTitle="state.showGroupTitle"
+            :getExpanded="isExpanded"
+            collapsePrefix=""
+            :siblingNodes="allRootNodes as any"
+            :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (i + 1) : undefined"
+            @toggle="toggleNode"
+            @viewImage="handleViewImage"
+            @selectImage="handleSelectImage"
+            @removeRoot="(p:string) => emit('removeRoot', p)"
+            @excludeNode="handleExcludeNode"
+            @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
+            @copyToFolder="(p:string) => emit('copyToFolder', p)"
+            @moveToFolder="(p:string) => emit('moveToFolder', p)"
+            @expandNode="expandNode"
+          />
+        </template>
+      </div>
+      <template v-else v-for="(node, i) in visibleRootNodes" :key="node.path || `vg-${i}`">
         <FolderGroup
           v-if="(node as any).isVirtualGroup"
           :node="node"
@@ -420,66 +703,34 @@ defineExpose({ toggleAll, collapseLeaves })
           @expandNode="expandNode"
         />
       </template>
-    </div>
-    <template v-else v-for="(node, i) in visibleRootNodes" :key="node.path || `vg-${i}`">
-      <FolderGroup
-        v-if="(node as any).isVirtualGroup"
-        :node="node"
-        :depth="0"
-        :rootPath="node.path"
-        :showTitle="state.showGroupTitle"
-        :getExpanded="makeVgExpanded((node as any)._vgIndex)"
-        :isVirtualRoot="true"
-        :vgIndex="(node as any)._vgIndex"
-        collapsePrefix=""
-        :siblingNodes="allRootNodes as any"
-        :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (i + 1) : undefined"
-        @toggle="toggleNode"
-        @viewImage="handleViewImage"
-        @selectImage="handleSelectImage"
-        @removeRoot="() => handleDeleteVg((node as any)._vgIndex)"
-        @excludeNode="handleVirtualExcludeNode"
-        @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
-        @addToVirtualGroup="addSelectionToVirtualGroup((node as any)._vgIndex)"
-        @removeFromVirtualGroup="removeSelectionFromVirtualGroup((node as any)._vgIndex)"
-        @copyToFolder="(p:string) => emit('copyToFolder', p)"
-        @moveToFolder="(p:string) => emit('moveToFolder', p)"
-      />
-      <!-- 文件夹树节点 -->
-      <FolderGroup
-        v-else
-        :node="node"
-        :depth="0"
-        :rootPath="node.path"
-        :showTitle="state.showGroupTitle"
-        :getExpanded="isExpanded"
-        collapsePrefix=""
-        :siblingNodes="allRootNodes as any"
-        :anonName="state.settings.privacyMode ? $t('control.anonymous_node') + (i + 1) : undefined"
-        @toggle="toggleNode"
-        @viewImage="handleViewImage"
-        @selectImage="handleSelectImage"
-        @removeRoot="(p:string) => emit('removeRoot', p)"
-        @excludeNode="handleExcludeNode"
-        @toggleSelectFolder="(p:string) => emit('toggleSelectFolder', p)"
-        @copyToFolder="(p:string) => emit('copyToFolder', p)"
-        @moveToFolder="(p:string) => emit('moveToFolder', p)"
-        @expandNode="expandNode"
-      />
-    </template>
-    <div v-if="allRootNodes.length === 0" class="empty-hint">
-      <p>{{ $t('empty.drop_hint') }}</p>
-      <p class="sub-hint">{{ $t('empty.format_hint') }}</p>
-    </div>
-    <div v-else-if="state.settings.filterRegex && visibleRootNodes.length === 0" class="empty-hint">
-      <p>{{ $t('empty.no_results') }}</p>
+      <div v-if="allRootNodes.length === 0" class="empty-hint">
+        <p>{{ $t('empty.drop_hint') }}</p>
+        <p class="sub-hint">{{ $t('empty.format_hint') }}</p>
+      </div>
+      <div v-else-if="state.settings.filterRegex && visibleRootNodes.length === 0" class="empty-hint">
+        <p>{{ $t('empty.no_results') }}</p>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* 整体：左层级面板 + 右侧滚动内容区并排（内容区自身滚动，面板固定不随内容滚动） */
+.folder-panel-shell {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+
 .folder-panel {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* 为底部固定控制栏留出空间，避免最后图片被遮挡 */
+  padding-bottom: 80px;
 }
 
 .folder-panel-compact {
@@ -512,14 +763,24 @@ defineExpose({ toggleAll, collapseLeaves })
 }
 </style>
 
-<style scoped>
-.folder-panel {
-  width: 100%;
+<style>
+/* 层级面板跳转目标闪烁（目标元素由 FolderGroup 渲染，需全局样式才匹配得到） */
+.hier-jump-flash {
+  animation: hier-jump-flash 1.1s ease-out;
 }
 
-.empty-hint {
-  text-align: center;
-  padding: 40px;
-  color: rgba(255, 255, 255, 0.3);
+@keyframes hier-jump-flash {
+  0% {
+    outline: 2px solid rgba(130, 140, 255, 0.95);
+    outline-offset: 1px;
+  }
+  70% {
+    outline: 2px solid rgba(130, 140, 255, 0.55);
+    outline-offset: 3px;
+  }
+  100% {
+    outline: 2px solid rgba(130, 140, 255, 0);
+    outline-offset: 6px;
+  }
 }
 </style>

@@ -282,6 +282,15 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.manual_sort_badge_tip': '当前分组已手动排序，点击取消手动排序',
     'folder.batch_rename': '批量重命名',
 
+    // 层级面板
+    'hierarchy.title': '层级',
+    'hierarchy.expand': '展开层级面板',
+    'hierarchy.collapse': '收起层级面板',
+    'hierarchy.expand_all': '展开全部',
+    'hierarchy.collapse_all': '折叠全部',
+    'hierarchy.count_tip': '当前显示的分组数量',
+    'hierarchy.empty': '暂无分组',
+
     // 空状态
     'empty.drop_hint': '拖入图片或文件夹到此处',
     'empty.format_hint': '支持 JPG、PNG、WebP 格式',
@@ -755,6 +764,15 @@ const messages: Record<Lang, Record<string, string>> = {
     'folder.manual_sort_badge': 'Manual Sort',
     'folder.manual_sort_badge_tip': 'This group is manually sorted; click to cancel manual sorting',
     'folder.batch_rename': 'Batch Rename',
+
+    // Hierarchy panel
+    'hierarchy.title': 'Hierarchy',
+    'hierarchy.expand': 'Expand hierarchy panel',
+    'hierarchy.collapse': 'Collapse hierarchy panel',
+    'hierarchy.expand_all': 'Expand all',
+    'hierarchy.collapse_all': 'Collapse all',
+    'hierarchy.count_tip': 'Number of visible groups',
+    'hierarchy.empty': 'No groups',
 
     'empty.drop_hint': 'Drop images or folders here',
     'empty.format_hint': 'Supports JPG, PNG, WebP formats',

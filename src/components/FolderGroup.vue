@@ -812,6 +812,7 @@ function getNodeGridContainerBg(depth: number): string {
   <template v-else>
     <div
       class="folder-group"
+    :data-group-key="getExpandKey()"
     :class="{ 
       'folder-group-selected': isSelected(),
       'folder-group-compact': isCompactNode,

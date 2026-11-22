@@ -59,6 +59,36 @@ export interface FolderNode {
   temporary?: boolean
 }
 
+/**
+ * 层级面板中的一行（一个分组条目）。
+ * 由 FolderPanel 按主视图的显示规则（层级压缩、筛选隐藏、展开状态）生成，
+ * 面板只负责渲染与交互，不自行判断可见性。
+ */
+export interface HierarchyRow {
+  /** 展开状态键：真实树为节点绝对路径，虚拟分组为 `vg:{索引}:{节点路径}` */
+  key: string
+  /** 显示名称（层级压缩时包含合并到本行的上级路径前缀） */
+  label: string
+  /** 缩进层级（已扣除被压缩的中间节点） */
+  depth: number
+  /** 图片数量（筛选激活时为匹配数量） */
+  count: number
+  /** 是否有子分组（决定是否显示折叠箭头） */
+  hasChildren: boolean
+  /** 主视图当前是否展开（与主视图共用展开状态） */
+  expanded: boolean
+  /** 是否属于虚拟分组树 */
+  isVirtual: boolean
+  /** 是否为虚拟分组根节点 */
+  isVirtualRoot: boolean
+  /** 完整层级路径（用于悬浮提示） */
+  hint: string
+  /** 从根到自身的展开键链（含自身），用于跳转前展开祖先 */
+  ancestorKeys: string[]
+  /** 在根节点列表中的序号（用于定位尚未渐进挂载的根节点） */
+  rootIndex: number
+}
+
 /** 视图模式 */
 export type ViewMode = 'grid' | 'detail'
 

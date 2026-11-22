@@ -66,6 +66,8 @@ function handleContentCtxMenu(e: MouseEvent) {
   if (target.closest('.folder-header')) return
   // 顶栏/底栏有自己的交互，不弹出内容区菜单
   if (target.closest('.top-bar') || target.closest('.bottom-bar')) return
+  // 左侧层级面板是导航区，不弹出内容区菜单
+  if (target.closest('.hier-dock')) return
   e.preventDefault()
   // 分组内容背景右键时会预先登记折叠动作（同一事件才生效）
   const pending = ctxFoldAction.value
@@ -829,6 +831,8 @@ async function handleDeleteSelection() {
 }
 
 function handleContentWheel(e: WheelEvent) {
+  // 层级面板内的滚轮用于滚动面板列表，不参与格子大小调整
+  if ((e.target as HTMLElement | null)?.closest?.('.hier-dock')) return
   if (e.ctrlKey || e.metaKey) {
     e.preventDefault()
     const delta = e.deltaY > 0 ? -10 : 10
@@ -952,7 +956,8 @@ async function handleRefresh() {
 
       <div
         class="content-area"
-        :style="{ marginLeft: state.settings.contentMarginX + 'px', marginRight: state.settings.contentMarginX + 'px' }"
+        :class="{ 'content-area-group': state.folderGroup }"
+        :style="state.folderGroup ? undefined : { marginLeft: state.settings.contentMarginX + 'px', marginRight: state.settings.contentMarginX + 'px' }"
         @wheel="handleContentWheel"
       >
         <!-- 内容区右键菜单（模式切换） -->
@@ -1287,6 +1292,13 @@ body.manual-sort-drag-active .grid-item {
   overflow-y: auto;
   overflow-x: hidden;
   padding-bottom: 80px; /* 为底部固定控制栏留出空间，避免最后图片被遮挡 */
+}
+/* 分组视图：层级面板与滚动内容区并排，滚动与左右内容边距都交给 FolderPanel 内部处理
+   （这样左侧面板/悬浮按钮不受「内容边距」设置影响） */
+.content-area-group {
+  display: flex;
+  overflow: hidden;
+  padding-bottom: 0;
 }
 
 /* 内容区右键菜单 */

@@ -46,6 +46,7 @@
 - **Virtual groups** — Create temporary groups from arbitrary selected images; tick "Open in viewer" to focus on and keep working with the group in a dedicated viewer (released on close)
 - **Multi-folder viewing** — Browse multiple folders at once; compact mode for efficient small-folder handling
 - **Rainbow tier coloring** — Depth-based auto-cycling background colors for clear hierarchy
+- **Hierarchy panel** — Expandable group tree on the left listing only currently visible groups (filter-aware); click to jump
 
 ### 🏷️ 5-Level Mark System
 - Customizable mark colors with visible borders and badges in grid view
